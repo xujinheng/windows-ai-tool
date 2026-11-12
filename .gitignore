@@ -1,0 +1,20 @@
+# Local, potentially sensitive runtime configuration
+config.json
+**/config.json
+*.local.json
+.env
+.env.*
+
+# Build artifacts / model files / logs
+*.exe
+*.msi
+*.zip
+*.gguf
+*.dll
+*.log
+*.wav
+*.pcm
+*.pdb
+*.test
+bin/
+dist/
