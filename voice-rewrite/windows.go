@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-13-intent-popup-v6"
+const buildID = "2026-11-13-modern-card-v7"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -74,6 +74,7 @@ const (
 	WM_HOLD_TIMEOUT = 0x8000 + 51
 	WM_TOGGLE_READY = 0x8000 + 56
 	WM_SHOW_ANSWER  = 0x8000 + 61
+	WM_APPLY_RESULT = 0x8000 + 65
 	HOTKEY_RECORD   = 100
 	HOTKEY_EXIT     = 101
 	MOD_ALT         = 0x0001
@@ -173,8 +174,8 @@ func (a *appState) setStatus(s trayState) {
 	}
 }
 
-func (a *appState) showAnswer(title, body string, anchor trayPoint) {
-	msg := popupMessage{title: title, body: body, anchor: anchor}
+func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *selectedText, allowApply bool) {
+	msg := popupMessage{title: title, body: body, anchor: anchor, app: a, selection: selection, allowApply: allowApply}
 	select {
 	case a.popups <- msg:
 	default:
@@ -366,6 +367,25 @@ func runApp() {
 		rv, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(rv) <= 0 {
 			break
+		}
+		if msg.Message == WM_APPLY_RESULT {
+			if activeAnswer != nil && activeAnswer.window != 0 && msg.WParam == activeAnswer.window {
+				popup := activeAnswer
+				if popup.applyResult != nil {
+					select {
+					case err := <-popup.applyResult:
+						if err == nil {
+							l.Print("popup apply: selection replaced")
+							closeActiveAnswer()
+						} else {
+							l.Printf("popup apply failed: %v", err)
+							popup.setNote("无法安全替换，请使用复制结果")
+						}
+					default:
+					}
+				}
+			}
+			continue
 		}
 		if msg.Message == WM_SHOW_ANSWER {
 			select {
@@ -710,14 +730,17 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 		app.fail(e)
 		return
 	}
-	// Native EDIT/RichEdit controls only. Browser article, unknown and read-only
-	// selections always use popup output, even when the model labels it an edit.
+	// Strict model+voice permission, then determine how we can deliver it.
+	// Browser editors use clipboard selection verification before and after
+	// paste; unchanged selection signals a read-only/no-op and becomes preview.
 	editable := isSafelyEditableControl(sel.TargetWindow)
-	action := routeTask(answer, instruction, editable)
-	app.logger.Printf("route=%s intent=%s editable=%t", action, answer.Intent, editable)
-	if action == "replace" {
+	browserSurface := isBrowserEditorSurface(sel.TargetWindow)
+	action := routeTask(answer, instruction, editable, browserSurface)
+	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t", action, answer.Intent, editable, browserSurface)
+	allowApply := action == "replace" || action == "try_replace" || answer.Intent == "edit" || answer.Intent == "translate"
+	if action == "replace" || action == "try_replace" {
 		startedPaste := time.Now()
-		e = replaceSelection(app.Window, sel, answer.Result, app.cfg)
+		e = replaceSelectionWithVerification(app.Window, sel, answer.Result, app.cfg, action == "try_replace")
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 		if e == nil {
 			app.setStatus(traySuccess)
@@ -725,23 +748,21 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 			app.logger.Printf("text transformation success; intent=%s result_chars=%d", answer.Intent, utf8.RuneCountInString(answer.Result))
 			return
 		}
-		app.logger.Printf("auto replacement was unsafe/failed; showing result instead: %v", e)
-		app.showAnswer("改写预览（未自动替换）", answer.Result, sel.Anchor)
-		app.setStatus(trayError)
-		return
+		app.logger.Printf("auto replacement failed; preview instead: %v", e)
 	}
 	title := "AI 解释"
 	switch answer.Intent {
 	case "edit":
-		title = "改写预览（未修改原文）"
+		title = "改写预览"
 	case "summarize":
 		title = "AI 摘要"
 	case "translate":
-		title = "翻译结果（原文未修改）"
+		title = "翻译结果"
 	case "ambiguous":
-		title = "AI 回答（请核对）"
+		title = "AI 回答"
 	}
-	app.showAnswer(title, answer.Result, sel.Anchor)
+	selectionCopy := sel
+	app.showAnswer(title, answer.Result, sel.Anchor, &selectionCopy, allowApply)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Result))
 }
@@ -938,6 +959,13 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	return sel, nil
 }
 func replaceSelection(hwnd uintptr, sel selectedText, replacement string, cfg Config) error {
+	return replaceSelectionWithVerification(hwnd, sel, replacement, cfg, false)
+}
+
+// For Chromium/Electron editors we cannot infer editability from the top-level
+// HWND. Only explicit transformations use this probe. If Ctrl+V leaves the same
+// text selected, the surface probably ignored paste: return a popup preview.
+func replaceSelectionWithVerification(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool) error {
 	if !waitKeysReleased(3 * time.Second) {
 		return errors.New("请松开 Ctrl/Alt 等快捷键后再试")
 	}
@@ -965,7 +993,19 @@ func replaceSelection(hwnd uintptr, sel selectedText, replacement string, cfg Co
 		return e
 	}
 	// Small grace interval for applications that read the clipboard asynchronously.
-	time.Sleep(350 * time.Millisecond)
+	time.Sleep(270 * time.Millisecond)
+	if verifyBrowser {
+		if !isSameForegroundWindow(sel.TargetWindow) {
+			return errors.New("粘贴后窗口切换，无法验证结果")
+		}
+		stillSelected, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
+		if verifyErr == nil && stillSelected == sel.Text {
+			return errors.New("原始文字仍然处于选中状态，网页可能是只读内容；改为预览")
+		}
+		// No selected text after paste is the expected browser-edit behavior.
+		// The clipboard can have changed during verification; never restore it
+		// unless it still belongs to us.
+	}
 	if sel.HadOriginalClipboard && clipboardSeq() == ownedSeq {
 		if e := setClipboardText(hwnd, sel.OriginalClipboard); e != nil {
 			return fmt.Errorf("改写已粘贴，但恢复文本剪贴板失败: %w", e)

@@ -43,3 +43,12 @@ go test -run TestNativePopupPaintAndClose -v
 ```
 
 此版本没有在用户的真实 Windows 11 桌面进行测试，Windows 交互行为需本机验收。
+
+## v7: modern result card and browser text transformations
+
+- Build ID: `2026-11-13-modern-card-v7`; default Mouse5 hold-to-talk is unchanged.
+- Explicit editing/translating instructions in verified native Win32 Edit/RichEdit controls use the existing checked replacement path.
+- For Chromium/Firefox/Electron rendering windows, an explicit edit/translate instruction can try a **guarded browser replacement**. The originally selected text and foreground window are verified before pasting. A second clipboard check detects unchanged selections (a common sign of a read-only page); then the result is shown as a preview. **This is a heuristic, not a guaranteed browser editability detector.** Use it on non-sensitive text and keep undo available.
+- For questions, explanations, summaries, uncertain instructions, and any unsuccessful replacement, show a near-cursor card with white background, a Windows 11 rounded frame, readable typography, scrollable text and custom-drawn buttons.
+- The card shows `应用到原文` only for transformations. Clicking it restores focus to the original window, rechecks the original selection on a worker and tries to apply; failure leaves the preview visible. Other actions: `复制结果`, `关闭`, `Esc`, and the tray's `关闭 AI 结果窗口`.
+- DWM rounding uses native Windows 11 APIs. Windows desktop tests are still required for Chrome rich editors, monitor DPI variations, and mouse focus changes. No browser extension or WebView2 is installed.

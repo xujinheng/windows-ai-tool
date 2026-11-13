@@ -14,27 +14,31 @@ func TestIntentsRouting(t *testing.T) {
 	for _, tc := range []struct {
 		instruction, intent string
 		editable            bool
+		browser             bool
 		want                string
 	}{
-		{"改得简洁一点", "edit", true, "replace"},
-		{"改得简洁一点", "edit", false, "popup"},
-		{"这是什么意思？", "answer", true, "popup"},
-		{"为什么这样写？", "edit", true, "popup"},
-		{"总结这段话", "summarize", true, "popup"},
-		{"翻译成中文", "translate", true, "replace"},
-		{"翻译成中文并替换原文", "edit", true, "replace"},
-		{"replace this with a shorter version", "edit", true, "replace"},
-		{"总结这段话", "edit", true, "popup"},
-		{"请写成英文", "translate", true, "replace"},
-		{"请写成英文", "translate", false, "popup"},
-		{"翻译成英文", "translate", false, "popup"},
-		{"英文是什么意思？", "answer", true, "popup"},
-		{"怎么用英文说？", "translate", true, "popup"},
-		{"把这句话改成英文", "edit", true, "replace"},
-		{"解释一下这个术语", "edit", true, "popup"},
-		{"帮我润色一下", "ambiguous", true, "popup"},
+		{"改得简洁一点", "edit", true, false, "replace"},
+		{"改得简洁一点", "edit", false, true, "try_replace"},
+		{"改得简洁一点", "edit", false, false, "popup"},
+		{"这是什么意思？", "answer", true, true, "popup"},
+		{"为什么这样写？", "edit", true, true, "popup"},
+		{"总结这段话", "summarize", true, true, "popup"},
+		{"翻译成中文", "translate", true, false, "replace"},
+		{"翻译成中文", "translate", false, true, "try_replace"},
+		{"翻译成中文并替换原文", "edit", true, false, "replace"},
+		{"replace this with a shorter version", "edit", true, false, "replace"},
+		{"总结这段话", "edit", true, true, "popup"},
+		{"请写成英文", "translate", true, false, "replace"},
+		{"请写成英文", "translate", false, true, "try_replace"},
+		{"请写成英文", "translate", false, false, "popup"},
+		{"翻译成英文", "translate", false, true, "try_replace"},
+		{"英文是什么意思？", "answer", true, true, "popup"},
+		{"怎么用英文说？", "translate", true, false, "popup"},
+		{"把这句话改成英文", "edit", true, false, "replace"},
+		{"解释一下这个术语", "edit", true, true, "popup"},
+		{"帮我润色一下", "ambiguous", true, true, "popup"},
 	} {
-		got := routeTask(AssistantResult{Intent: tc.intent, Result: "text"}, tc.instruction, tc.editable)
+		got := routeTask(AssistantResult{Intent: tc.intent, Result: "text"}, tc.instruction, tc.editable, tc.browser)
 		if got != tc.want {
 			t.Errorf("%s intent=%s editable=%t: got %s want %s", tc.instruction, tc.intent, tc.editable, got, tc.want)
 		}

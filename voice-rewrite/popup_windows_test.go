@@ -58,3 +58,10 @@ func TestNativePopupPaintAndClose(t *testing.T) {
 		t.Fatal("Close button failed")
 	}
 }
+
+// Verify Win32 DRAWITEMSTRUCT's x64 layout before owner-draw button callbacks.
+func TestDrawItemLayoutX64(t *testing.T) {
+	if unsafe.Sizeof(uintptr(0)) == 8 && unsafe.Sizeof(drawItemStruct{}) != 64 {
+		t.Fatalf("DRAWITEMSTRUCT layout invalid: %d", unsafe.Sizeof(drawItemStruct{}))
+	}
+}
