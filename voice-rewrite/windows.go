@@ -69,6 +69,7 @@ const (
 	MOD_NOREPEAT    = 0x4000
 	MOD_SHIFT       = 0x0004
 	VK_F9           = 0x78
+	VK_PAUSE        = 0x13
 	VK_F10          = 0x79
 	VK_CONTROL      = 0x11
 	VK_MENU         = 0x12
@@ -159,9 +160,12 @@ func (a *appState) fail(e error) {
 var hotkeyPattern = regexp.MustCompile(`(?i)^Ctrl\+Alt\+(Shift\+)?F([1-9]|1[0-9]|2[0-4])$`)
 
 func parseHotkey(s string) (uintptr, uintptr, error) {
+	if strings.EqualFold(strings.TrimSpace(s), "Pause") || strings.EqualFold(strings.TrimSpace(s), "Break") {
+		return MOD_NOREPEAT, VK_PAUSE, nil
+	}
 	match := hotkeyPattern.FindStringSubmatch(strings.TrimSpace(s))
 	if match == nil {
-		return 0, 0, fmt.Errorf("invalid hotkey %q: use Ctrl+Alt+F9 or Ctrl+Alt+Shift+F9", s)
+		return 0, 0, fmt.Errorf("invalid hotkey %q: use Pause, Ctrl+Alt+F9 or Ctrl+Alt+Shift+F9", s)
 	}
 	num, _ := strconv.Atoi(match[2])
 	mods := uintptr(MOD_CTRL | MOD_ALT | MOD_NOREPEAT)
