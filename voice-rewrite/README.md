@@ -79,3 +79,18 @@ Get-Content "$env:LOCALAPPDATA\VoiceRewrite\VoiceRewrite.log" -Tail 60
 ```
 
 Logs may contain model names and configured endpoint addresses. Remove any private details before sharing. This build has passed Go tests and Windows x64 cross-compilation, but has **not been tested on an actual Windows keyboard or microphone**.
+
+## Diagnostic build: hold-watch-v2
+
+The startup log now includes `build=2026-11-13-holdwatch-v2`, `mode=hold`, and the recording hotkey. If the build field is absent, a previous EXE is still running.
+
+In hold mode, a separate watcher polls physical key release and posts a message to the Windows UI thread. Once released, the indicator immediately changes from red (recording) to yellow (processing). The configured maximum recording time becomes a safety limit, so the icon cannot remain indefinitely red if the release is not detected.
+
+PowerShell checks:
+
+```powershell
+Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*VoiceRewrite*' } | Select-Object ProcessId, ExecutablePath, CommandLine
+Get-Content "$env:LOCALAPPDATA\VoiceRewrite\VoiceRewrite.log" -Encoding UTF8 -Tail 35
+```
+
+Windows x64 builds and Go unit tests were verified; test the release action on the actual Windows desktop.

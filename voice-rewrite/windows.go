@@ -24,6 +24,8 @@ import (
 	"unsafe"
 )
 
+const buildID = "2026-11-13-holdwatch-v2"
+
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
 	kernel32                       = syscall.NewLazyDLL("kernel32.dll")
@@ -66,6 +68,8 @@ const (
 	WM_HOTKEY       = 0x0312
 	WM_TIMER        = 0x0113
 	RECORD_TIMER_ID = 3001
+	WM_HOLD_RELEASE = 0x8000 + 50
+	WM_HOLD_TIMEOUT = 0x8000 + 51
 	HOTKEY_RECORD   = 100
 	HOTKEY_EXIT     = 101
 	MOD_ALT         = 0x0001
@@ -279,7 +283,7 @@ func runApp() {
 		app.tray = nil
 		app.trayMu.Unlock()
 	}()
-	l.Printf("started; ASR=%s LLM=%s (model=%s)", cfg.ASRBaseURL, cfg.LLMBaseURL, cfg.TextModel)
+	l.Printf("started; build=%s mode=%s hotkey=%s ASR=%s LLM=%s (model=%s)", buildID, cfg.RecordMode, cfg.HotkeyRecord, cfg.ASRBaseURL, cfg.LLMBaseURL, cfg.TextModel)
 	// First-run guidance, but don't steal focus every time.
 	marker := filepath.Join(logDir, "startup-v1.marker")
 	if _, e := os.Stat(marker); os.IsNotExist(e) {
@@ -293,15 +297,22 @@ func runApp() {
 	var active *audioRecorder
 	var selected selectedText
 	var holdTargetWindow uintptr
-	var releaseTicks int
-	stopTimer := func() { procKillTimer.Call(0, RECORD_TIMER_ID) }
-	defer stopTimer()
+	var holdSession uintptr
+	var holdWatch chan struct{}
+	stopHoldWatch := func() {
+		if holdWatch != nil {
+			close(holdWatch)
+			holdWatch = nil
+		}
+	}
+	defer stopHoldWatch()
 	finish := func() {
 		if active == nil { return }
-		if cfg.RecordMode == "hold" { stopTimer() }
+		if cfg.RecordMode == "hold" { stopHoldWatch() }
 		rec := active
 		active = nil
 		rec.Stop()
+		app.setStatus(trayTranscribing)
 		beep(520, 75)
 		// In hold mode F9 remains physically down while recording. Simulating
 		// Ctrl+C during that time is unreliable. Capture the selection *after*
@@ -372,22 +383,29 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_EXIT || (msg.Message == WM_HOTKEY && msg.WParam == HOTKEY_EXIT) {
 			if active != nil {
-				stopTimer()
+				stopHoldWatch()
 				active.Stop()
 				_ = <-active.result
 			}
 			l.Print("stopped via exit action")
 			return
 		}
-		if msg.Message == WM_TIMER && msg.WParam == RECORD_TIMER_ID {
-			if cfg.RecordMode != "hold" || active == nil {
-				continue
-			}
-			// GetAsyncKeyState's high bit tracks physical key state on ordinary F keys.
-			down, _, _ := procGetAsyncKeyState.Call(recordVK)
-			if releaseDebounced(down&0x8000 != 0, &releaseTicks) {
-				l.Print("hold key released; stopping recording")
+		if msg.Message == WM_HOLD_RELEASE {
+			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
+				l.Print("hold key released; completing recording")
 				finish()
+			}
+			continue
+		}
+		if msg.Message == WM_HOLD_TIMEOUT {
+			if cfg.RecordMode == "hold" && active != nil && msg.WParam == holdSession {
+				stopHoldWatch()
+				rec := active
+				active = nil
+				rec.Stop()
+				go func() { <-rec.result }()
+				l.Print("ERROR: hold watcher exceeded maximum duration without observing key release")
+				app.fail(errors.New("未检测到 F 键松开，录音已自动结束。请检查当前是否运行最新版，或换一个功能键。"))
 			}
 			continue
 		}
@@ -397,7 +415,7 @@ func runApp() {
 		switch msg.WParam {
 		case HOTKEY_EXIT:
 			if active != nil {
-				stopTimer()
+				stopHoldWatch()
 				active.Stop()
 				_ = <-active.result
 			}
@@ -427,14 +445,9 @@ func runApp() {
 				holdTargetWindow = win
 				active = rec
 				app.setStatus(trayRecording)
-				releaseTicks = 0
-				if timerID, _, _ := procSetTimer.Call(0, RECORD_TIMER_ID, 25, 0); timerID == 0 {
-					active = nil
-					rec.Stop()
-					go func() { <-rec.result }()
-					app.fail(errors.New("无法监听录音按键松开事件：SetTimer 失败"))
-					continue
-				}
+				holdSession++
+				holdWatch = make(chan struct{})
+				go watchHoldRelease(hwnd, recordVK, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
 				beep(900, 60)
 				l.Printf("recording started, mode=hold")
 				continue
@@ -456,6 +469,44 @@ func runApp() {
 			app.setStatus(trayRecording)
 			beep(900, 90)
 			l.Printf("recording started, mode=toggle, selected characters=%d", utf8.RuneCountInString(sel.Text))
+		}
+	}
+}
+
+// Poll F-key release independently of the Windows window-message timer. Post
+// a message back to the UI thread so it owns all recording state changes.
+func watchHoldRelease(hwnd, vk, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
+	tick := time.NewTicker(25*time.Millisecond)
+	defer tick.Stop()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	start := time.Now()
+	releasedTicks := 0
+	polls := 0
+	logger.Printf("hold watcher started; session=%d", session)
+	for {
+		select {
+		case <-canceled:
+			return
+		case <-deadline.C:
+			logger.Printf("hold watcher deadline reached; session=%d", session)
+			if ok, _, err := procPostMessage.Call(hwnd, WM_HOLD_TIMEOUT, session, 0); ok == 0 {
+				logger.Printf("ERROR: cannot post hold timeout: %v", err)
+			}
+			return
+		case <-tick.C:
+			pressedValue, _, _ := procGetAsyncKeyState.Call(vk)
+			polls++
+			if polls == 40 || polls%80 == 0 {
+				logger.Printf("hold watcher state; session=%d down=%t elapsed=%s", session, pressedValue&0x8000 != 0, time.Since(start).Truncate(time.Millisecond))
+			}
+			if releaseDebounced(pressedValue&0x8000 != 0, &releasedTicks) {
+				logger.Printf("hold watcher detected key release; session=%d elapsed=%s", session, time.Since(start).Truncate(time.Millisecond))
+				if ok, _, err := procPostMessage.Call(hwnd, WM_HOLD_RELEASE, session, 0); ok == 0 {
+					logger.Printf("ERROR: cannot post hold release: %v", err)
+				}
+				return
+			}
 		}
 	}
 }
