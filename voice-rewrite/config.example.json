@@ -9,5 +9,7 @@
   "hotkey_exit": "Ctrl+Alt+F10",
   "system_prompt": "",
   "max_record_seconds": 60,
-  "max_selected_characters": 12000
+  "max_selected_characters": 12000,
+  "selection_copy_attempts": 3,
+  "selection_copy_timeout_ms": 1800
 }
