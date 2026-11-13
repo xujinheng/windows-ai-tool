@@ -139,3 +139,11 @@ func TestThinkingTag(t *testing.T) {
 		t.Fatal(s)
 	}
 }
+
+func TestHoldReleaseDebounce(t *testing.T) {
+	polls := 0
+	for _, pressed := range []bool{true, true, false, true, true, false} {
+		if releaseDebounced(pressed, &polls) { t.Fatalf("premature release") }
+	}
+	if !releaseDebounced(false, &polls) { t.Fatal("release not detected") }
+}

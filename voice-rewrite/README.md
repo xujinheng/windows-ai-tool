@@ -65,3 +65,17 @@ Hover over the icon to see the current state. **Right-click → 退出 VoiceRewr
 **Windows 11 tip:** Windows decides whether new tray icons appear next to the clock or inside the hidden-icons section. If the indicator is under `^`, open Settings → Personalization → Taskbar → Other system tray icons (wording may vary) and enable VoiceRewrite, or drag the icon to the visible tray.
 
 The tray API is provided by the native Windows Shell. No additional Go modules or third-party libraries are required.
+## Recording / tray reliability fix
+
+The hold-to-talk flow starts microphone recording immediately on the F-key press, but waits until **after the key is released** before copying selected text. This avoids sending Ctrl+C while the recording hotkey itself remains held. The WinMM recycler preserves the WAVEHDR `WHDR_PREPARED` flag, and reports requeue failures. Tray icon changes are handled on the Windows UI thread instead of a worker thread. Background panics are logged where recoverable.
+
+Test: Start your configured ASR and text Instruct model server, select text in Notepad, hold F9 for 2–3 seconds, speak an editing instruction and release. The icon should change red → yellow → blue → green (or orange on error).
+
+For diagnostics:
+
+```powershell
+Get-Process VoiceRewrite* -ErrorAction SilentlyContinue
+Get-Content "$env:LOCALAPPDATA\VoiceRewrite\VoiceRewrite.log" -Tail 60
+```
+
+Logs may contain model names and configured endpoint addresses. Remove any private details before sharing. This build has passed Go tests and Windows x64 cross-compilation, but has **not been tested on an actual Windows keyboard or microphone**.

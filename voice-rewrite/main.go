@@ -333,3 +333,14 @@ func rewrite(ctx context.Context, cfg Config, original, instruction string) (str
 }
 
 func main() { runApp() }
+
+// releaseDebounced needs two consecutive polls with the recording key up.
+// This prevents transient keyboard-state gaps from cutting off dictation.
+func releaseDebounced(keyDown bool, upPolls *int) bool {
+	if keyDown {
+		*upPolls = 0
+		return false
+	}
+	*upPolls++
+	return *upPolls >= 2
+}
