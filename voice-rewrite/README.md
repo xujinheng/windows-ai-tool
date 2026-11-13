@@ -21,3 +21,18 @@ Logs are written under the local user profile's application-data directory at ru
 ## Pause / Break recording key
 
 Set `"hotkey_record": "Pause"` in your local `config.json` and restart VoiceRewrite. Press Pause once to start recording and again to stop. `Ctrl+Alt+F9` and `Ctrl+Alt+Shift+F9` remain supported. If Windows or another app captures Pause, switch back to a Ctrl+Alt combination. The exit shortcut stays `Ctrl+Alt+F10` by default.
+
+## Clipboard timing: intermittent selection failures
+
+Some Windows applications update the clipboard asynchronously after Ctrl+C. VoiceRewrite now retries while checking that the original editor remains foreground.
+
+Use these settings in your local `config.json`:
+
+```json
+{
+  "selection_copy_attempts": 3,
+  "selection_copy_timeout_ms": 1800
+}
+```
+
+The above values are additional properties in the existing JSON config, not a complete replacement. For particularly slow applications, try timeout `3000` (limits: 500–5000 ms, 1–5 attempts). The tool will not intentionally retry copying from a different foreground window. Restart VoiceRewrite after changing config.
