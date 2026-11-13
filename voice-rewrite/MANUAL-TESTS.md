@@ -27,3 +27,14 @@ Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*VoiceRewrite*' } 
 ```
 
 Do not upload screenshots containing a full local path or raw configuration with private API keys.
+
+
+## v5 required tests
+
+1. On a read-only webpage, select “retrieval-augmented generation,” hold Mouse5, say “这是什么意思”, and release. Expect a popup near the mouse with an explanation. The webpage must not change.
+2. Click “复制答案”; verify text is copied. Click “关闭”; verify popup closes.
+3. On Windows Notepad's native EDIT, select a sentence and request “改得简洁一点”. Verify safe replacement without popup when the focused control is recognized as editable.
+4. On browser textarea and contenteditable, request an edit: expect non-destructive preview until stronger editability checks are implemented.
+5. When LLM replies with malformed JSON, verify popup-only fallback and never paste raw JSON into a document.
+6. Check startup log `build=2026-11-13-intent-popup-v5` and one LLM completion request per operation (the optional model-list request does not count).
+7. Close popup, switch applications mid-recording, and repeat 10 times; verify no desktop mouse lag or accidental paste.

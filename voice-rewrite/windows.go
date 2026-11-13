@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-13-tray-menu-v4"
+const buildID = "2026-11-13-intent-popup-v5"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -71,6 +71,7 @@ const (
 	WM_HOLD_RELEASE = 0x8000 + 50
 	WM_HOLD_TIMEOUT = 0x8000 + 51
 	WM_TOGGLE_READY = 0x8000 + 56
+	WM_SHOW_ANSWER  = 0x8000 + 61
 	HOTKEY_RECORD   = 100
 	HOTKEY_EXIT     = 101
 	MOD_ALT         = 0x0001
@@ -146,6 +147,7 @@ type selectedText struct {
 	OriginalClipboard    string
 	HadOriginalClipboard bool
 	TargetWindow         uintptr
+	Anchor               trayPoint
 }
 type appState struct {
 	Window uintptr
@@ -155,6 +157,7 @@ type appState struct {
 	status atomic.Int32
 	trayMu sync.Mutex
 	tray   *trayIndicator
+	popups chan popupMessage
 }
 
 // Shell notification APIs and icon lifetime are owned by the Windows UI thread.
@@ -165,6 +168,19 @@ func (a *appState) setStatus(s trayState) {
 	a.logger.Printf("status=%s", trayInfo(s).label)
 	if ok, _, err := procPostMessage.Call(a.Window, WM_TRAY_UPDATE, 0, 0); ok == 0 {
 		a.logger.Printf("failed to queue tray update: %v", err)
+	}
+}
+
+func (a *appState) showAnswer(title, body string, anchor trayPoint) {
+	msg := popupMessage{title: title, body: body, anchor: anchor}
+	select {
+	case a.popups <- msg:
+	default:
+		a.logger.Print("popup queue full; dropping result")
+		return
+	}
+	if ok, _, err := procPostMessage.Call(a.Window, WM_SHOW_ANSWER, 0, 0); ok == 0 {
+		a.logger.Printf("cannot show popup: %v", err)
 	}
 }
 
@@ -242,7 +258,8 @@ func runApp() {
 		return
 	}
 	defer procDestroyWindow.Call(hwnd)
-	app := &appState{Window: hwnd, logger: l, cfg: cfg}
+	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4)}
+	defer closeActiveAnswer()
 	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
 	var recordMods, recordVK uintptr
 	if usingMouse {
@@ -334,9 +351,11 @@ func runApp() {
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		if cfg.RecordMode == "hold" {
-			go processRecordedHold(app, rec, holdTargetWindow)
+			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint())
 		} else {
-			go processRecorded(app, rec, selected)
+			sel := selected
+			sel.Anchor = currentCursorPoint()
+			go processRecorded(app, rec, sel)
 		}
 	}
 
@@ -345,6 +364,17 @@ func runApp() {
 		rv, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(rv) <= 0 {
 			break
+		}
+		if msg.Message == WM_SHOW_ANSWER {
+			select {
+			case answer := <-app.popups:
+				if err := showAnswerPopup(answer); err != nil {
+					l.Printf("popup window: %v", err)
+					app.fail(err)
+				}
+			default:
+			}
+			continue
 		}
 		if msg.Message == WM_TOGGLE_READY {
 			result := <-toggleResult
@@ -591,7 +621,7 @@ func watchHoldRelease(hwnd, vk, session uintptr, canceled <-chan struct{}, timeo
 
 // The selection must be copied AFTER releasing the held shortcut. This function
 // runs off the UI and low-level mouse-hook threads, and enforces a small time budget.
-func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr) {
+func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr, anchor trayPoint) {
 	started := time.Now()
 	defer app.busy.Store(false)
 	defer func() {
@@ -607,6 +637,7 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 		return
 	}
 	sel, err := captureSelection(app.Window, app.cfg)
+	sel.Anchor = anchor
 	app.logger.Printf("stage=selection mode=hold ms=%d", time.Since(started).Milliseconds())
 	if err == nil && sel.TargetWindow != expectedWindow {
 		err = errors.New("选区所属窗口已变化")
@@ -659,23 +690,46 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 	app.setStatus(trayRewriting)
 	app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
 	startedLLM := time.Now()
-	rewritten, e := rewrite(ctx, app.cfg, sel.Text, instruction)
-	app.logger.Printf("stage=llm ms=%d", time.Since(startedLLM).Milliseconds())
+	answer, e := completeSelectedTask(ctx, app.cfg, sel.Text, instruction)
+	app.logger.Printf("stage=llm ms=%d intent=%s", time.Since(startedLLM).Milliseconds(), answer.Intent)
 	if e != nil {
 		app.fail(e)
 		return
 	}
-	app.logger.Printf("worker: rewrite generated %d characters; attempting paste", utf8.RuneCountInString(rewritten))
-	startedPaste := time.Now()
-	e = replaceSelection(app.Window, sel, rewritten, app.cfg)
-	app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
-	if e != nil {
-		app.fail(e)
+	// Native EDIT/RichEdit controls only. Browser article, unknown and read-only
+	// selections always use popup output, even when the model labels it an edit.
+	editable := isSafelyEditableControl(sel.TargetWindow)
+	action := routeTask(answer, instruction, editable)
+	app.logger.Printf("route=%s intent=%s editable=%t", action, answer.Intent, editable)
+	if action == "replace" {
+		startedPaste := time.Now()
+		e = replaceSelection(app.Window, sel, answer.Result, app.cfg)
+		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
+		if e == nil {
+			app.setStatus(traySuccess)
+			beep(1050, 110)
+			app.logger.Printf("rewrite success; result_chars=%d", utf8.RuneCountInString(answer.Result))
+			return
+		}
+		app.logger.Printf("auto replacement was unsafe/failed; showing result instead: %v", e)
+		app.showAnswer("改写预览（未自动替换）", answer.Result, sel.Anchor)
+		app.setStatus(trayError)
 		return
 	}
+	title := "AI 解释"
+	switch answer.Intent {
+	case "edit":
+		title = "改写预览（未修改原文）"
+	case "summarize":
+		title = "AI 摘要"
+	case "translate":
+		title = "AI 翻译"
+	case "ambiguous":
+		title = "AI 回答（请核对）"
+	}
+	app.showAnswer(title, answer.Result, sel.Anchor)
 	app.setStatus(traySuccess)
-	beep(1050, 110)
-	app.logger.Printf("rewrite success; resulting chars=%d", utf8.RuneCountInString(rewritten))
+	app.logger.Printf("popup result shown; chars=%d", utf8.RuneCountInString(answer.Result))
 }
 
 func waitKeysReleased(max time.Duration) bool {
