@@ -33,6 +33,8 @@ type Config struct {
 	SystemPrompt     string `json:"system_prompt"`
 	MaxRecordSeconds int    `json:"max_record_seconds"`
 	MaxSelectedRunes int    `json:"max_selected_characters"`
+	SelectionCopyAttempts int `json:"selection_copy_attempts"`
+	SelectionCopyTimeoutMS int `json:"selection_copy_timeout_ms"`
 }
 
 func defaults() Config {
@@ -45,6 +47,8 @@ func defaults() Config {
 		HotkeyExit:       "Ctrl+Alt+F10",
 		MaxRecordSeconds: 60,
 		MaxSelectedRunes: 12000,
+		SelectionCopyAttempts: 3,
+		SelectionCopyTimeoutMS: 1800,
 	}
 }
 
@@ -88,6 +92,12 @@ func loadConfig() (Config, error) {
 	}
 	if cfg.MaxSelectedRunes <= 0 || cfg.MaxSelectedRunes > 100000 {
 		cfg.MaxSelectedRunes = 12000
+	}
+	if cfg.SelectionCopyAttempts < 1 || cfg.SelectionCopyAttempts > 5 {
+		cfg.SelectionCopyAttempts = 3
+	}
+	if cfg.SelectionCopyTimeoutMS < 500 || cfg.SelectionCopyTimeoutMS > 5000 {
+		cfg.SelectionCopyTimeoutMS = 1800
 	}
 	for _, x := range []string{cfg.ASRBaseURL, cfg.LLMBaseURL} {
 		u, e := url.Parse(x)
