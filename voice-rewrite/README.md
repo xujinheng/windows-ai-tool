@@ -154,3 +154,7 @@ Get-Content "$env:LOCALAPPDATA\VoiceRewrite\VoiceRewrite.log" -Encoding UTF8 -Ta
 ```
 
 This build is cross-compiled and unit-tested on Linux; real Windows keyboard, microphone and tray functionality requires desktop testing.
+
+## Tray context-menu fix (v4)
+
+The tray callback now uses a custom registered Win32 window procedure rather than a STATIC window. Shell notifications are forwarded to the UI message queue as WM_TRAY_EVENT, supporting sent and posted notifications. A separate tiny top-level toolwindow is foregrounded before TrackPopupMenu, and a WM_NULL is posted after closing for reliable repeated menus. The right-click menu contains **Edit config.json**, **View log**, and **Exit VoiceRewrite**. Local logs record menu-request and choice events without logging any user text. Build stamp: `2026-11-13-tray-menu-v4`. Real Windows desktop verification is still required.

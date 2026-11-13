@@ -13,7 +13,8 @@ import (
 // Windows notification-area (system tray) indicator. The icon is painted in
 // memory; no icon files, third-party dependencies, or background services.
 const (
-	WM_TRAY_NOTIFY      = 0x8000 + 47 // WM_APP + 47
+	WM_TRAY_NOTIFY      = 0x8000 + 47 // Shell callback to our registered window procedure
+	WM_TRAY_EVENT       = 0x8000 + 58 // Queued notification forwarded by WndProc
 	WM_TRAY_UPDATE      = 0x8000 + 48
 	WM_TRAY_EXIT        = 0x8000 + 49
 	WM_TRAY_CONFIG      = 0x8000 + 54
@@ -24,6 +25,8 @@ const (
 	NIM_ADD             = 0
 	NIM_MODIFY          = 1
 	NIM_DELETE          = 2
+	NIM_SETVERSION      = 4
+	NOTIFYICON_VERSION_4 = 4
 	NIF_MESSAGE         = 1
 	NIF_ICON            = 2
 	NIF_TIP             = 4
@@ -34,6 +37,11 @@ const (
 	DIB_RGB_COLORS      = 0
 	BI_RGB              = 0
 	TRAY_ICON_ID        = 1
+	WS_POPUP            = 0x80000000
+	WS_EX_TOOLWINDOW    = 0x00000080
+	SW_SHOW             = 5
+	SW_HIDE             = 0
+	WM_NULL             = 0
 )
 
 type trayState int32
@@ -126,11 +134,14 @@ var (
 	procDestroyMenu           = user32.NewProc("DestroyMenu")
 	procGetCursorPos          = user32.NewProc("GetCursorPos")
 	procSetForegroundWindow   = user32.NewProc("SetForegroundWindow")
+	procShowWindow            = user32.NewProc("ShowWindow")
+	procSetWindowPos          = user32.NewProc("SetWindowPos")
 	procRegisterWindowMessage = user32.NewProc("RegisterWindowMessageW")
 )
 
 type trayIndicator struct {
 	hwnd           uintptr
+	menuOwner      uintptr
 	icons          [6]uintptr
 	taskbarCreated uint32
 	created        bool
@@ -188,6 +199,15 @@ func colorIcon(rgb uint32) (uintptr, error) {
 
 func newTrayIndicator(hwnd uintptr) (*trayIndicator, error) {
 	t := &trayIndicator{hwnd: hwnd}
+	class, _ := syscall.UTF16PtrFromString("STATIC")
+	title, _ := syscall.UTF16PtrFromString("VoiceRewriteMenuOwner")
+	owner, _, _ := procCreateWindow.Call(WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), WS_POPUP, 0, 0, 1, 1, 0, 0, 0, 0)
+	runtime.KeepAlive(class)
+	runtime.KeepAlive(title)
+	if owner == 0 {
+		return nil, errors.New("CreateWindowExW for popup menu owner failed")
+	}
+	t.menuOwner = owner
 	for i := range t.icons {
 		h, e := colorIcon(trayInfo(trayState(i)).color)
 		if e != nil {
@@ -203,6 +223,11 @@ func newTrayIndicator(hwnd uintptr) (*trayIndicator, error) {
 	if e := t.notify(trayIdle, true); e != nil {
 		t.close()
 		return nil, e
+	}
+	// Explicitly select modern notification-event semantics on Windows 11.
+	versionData := notifyIconData{Size: uint32(unsafe.Sizeof(notifyIconData{})), Hwnd: t.hwnd, ID: TRAY_ICON_ID, Timeout: NOTIFYICON_VERSION_4}
+	if ok, _, _ := procShellNotifyIcon.Call(NIM_SETVERSION, uintptr(unsafe.Pointer(&versionData))); ok == 0 {
+		// Older Windows shells may not support v4; WM_RBUTTONUP still works.
 	}
 	return t, nil
 }
@@ -243,11 +268,18 @@ func (t *trayIndicator) close() {
 			t.icons[i] = 0
 		}
 	}
+	if t.menuOwner != 0 {
+		procDestroyWindow.Call(t.menuOwner)
+		t.menuOwner = 0
+	}
 }
-func (t *trayIndicator) contextMenu() {
+func (t *trayIndicator) contextMenu() (uintptr, error) {
+	if t == nil || t.menuOwner == 0 {
+		return 0, errors.New("tray menu owner unavailable")
+	}
 	m, _, _ := procCreatePopupMenu.Call()
 	if m == 0 {
-		return
+		return 0, errors.New("CreatePopupMenu failed")
 	}
 	defer procDestroyMenu.Call(m)
 	configLabel, _ := syscall.UTF16PtrFromString("编辑 config.json")
@@ -262,18 +294,22 @@ func (t *trayIndicator) contextMenu() {
 	runtime.KeepAlive(exitLabel)
 	var p trayPoint
 	if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
-		return
+		return 0, errors.New("GetCursorPos failed")
 	}
-	procSetForegroundWindow.Call(t.hwnd)
-	selected, _, _ := procTrackPopupMenu.Call(m, TPM_RETURNCMD|TPM_RIGHTBUTTON, int32ptr(p.X), int32ptr(p.Y), 0, t.hwnd, 0)
+	// TrackPopupMenu needs a real foreground top-level owner window.
+	procSetWindowPos.Call(t.menuOwner, 0, int32ptr(p.X), int32ptr(p.Y), 1, 1, 0x0014)
+	procShowWindow.Call(t.menuOwner, SW_SHOW)
+	procSetForegroundWindow.Call(t.menuOwner)
+	selected, _, _ := procTrackPopupMenu.Call(m, TPM_RETURNCMD|TPM_RIGHTBUTTON, int32ptr(p.X), int32ptr(p.Y), 0, t.menuOwner, 0)
+	// Required workaround for repeated notification-area menus.
+	procPostMessage.Call(t.menuOwner, WM_NULL, 0, 0)
+	procShowWindow.Call(t.menuOwner, SW_HIDE)
 	switch selected {
-	case 1:
-		procPostMessage.Call(t.hwnd, WM_TRAY_EXIT, 0, 0)
-	case 2:
-		procPostMessage.Call(t.hwnd, WM_TRAY_CONFIG, 0, 0)
-	case 3:
-		procPostMessage.Call(t.hwnd, WM_TRAY_LOG, 0, 0)
+	case 1: procPostMessage.Call(t.hwnd, WM_TRAY_EXIT, 0, 0)
+	case 2: procPostMessage.Call(t.hwnd, WM_TRAY_CONFIG, 0, 0)
+	case 3: procPostMessage.Call(t.hwnd, WM_TRAY_LOG, 0, 0)
 	}
+	return selected, nil
 }
 func int32ptr(v int32) uintptr { return uintptr(uint32(v)) }
 

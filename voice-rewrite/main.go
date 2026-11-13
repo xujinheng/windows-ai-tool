@@ -357,3 +357,8 @@ func releaseDebounced(keyDown bool, upPolls *int) bool {
 	*upPolls++
 	return *upPolls >= 2
 }
+
+// Recognize both legacy WM_RBUTTONUP and v4 WM_CONTEXTMENU callbacks.
+func trayMenuRequested(event uint32) bool {
+ return event == 0x0205 || event == 0x007b
+}

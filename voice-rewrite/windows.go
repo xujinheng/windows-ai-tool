@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-13-threaded-input-v3"
+const buildID = "2026-11-13-tray-menu-v4"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -236,13 +236,9 @@ func runApp() {
 		winErr(e.Error())
 		return
 	}
-	class, _ := syscall.UTF16PtrFromString("STATIC")
-	title, _ := syscall.UTF16PtrFromString("VoiceRewriteHiddenWindow")
-	hwnd, _, _ := procCreateWindow.Call(0, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), 0, 0, 0, 0, 0, 0, 0, 0, 0)
-	runtime.KeepAlive(class)
-	runtime.KeepAlive(title)
-	if hwnd == 0 {
-		winErr("无法初始化 Windows 剪贴板窗口")
+	hwnd, e := createTrayCallbackWindow()
+	if e != nil {
+		winErr("无法初始化 Windows 托盘消息窗口：" + e.Error())
 		return
 	}
 	defer procDestroyWindow.Call(hwnd)
@@ -379,9 +375,16 @@ func runApp() {
 			}
 			continue
 		}
-		if msg.Message == WM_TRAY_NOTIFY {
-			if msg.LParam&0xffff == WM_RBUTTONUP || msg.LParam&0xffff == WM_CONTEXTMENU {
-				indicator.contextMenu()
+		if msg.Message == WM_TRAY_EVENT {
+			event := uint32(msg.LParam & 0xffff)
+			if trayMenuRequested(event) {
+				l.Printf("tray: context menu requested event=0x%04x", event)
+				command, menuErr := indicator.contextMenu()
+				if menuErr != nil {
+					l.Printf("tray: menu failed: %v", menuErr)
+				} else {
+					l.Printf("tray: menu dismissed command=%d", command)
+				}
 			}
 			continue
 		}
