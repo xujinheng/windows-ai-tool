@@ -1,3 +1,14 @@
+## v8 edit-first acceptance checklist
+
+1. WeChat compose box: select plain text, say "请写成英文". Expect replaced text, not a card.
+2. VS Code editor: select a sentence, say "润色一下". Expect Ctrl+V replacement.
+3. ChatGPT / Chrome contenteditable input: select text, say "请写成英文". Expect direct replacement if the selection remains valid.
+4. Read-only webpage article: select a term, say "这是什么意思". Expect an answer card, no paste.
+5. For read-only article, explicitly say "请写成英文". Expect guarded paste attempt followed by preview if the selection is unchanged. This is heuristic; use only test text.
+6. Switch focus during LLM processing: must NOT overwrite the wrong editor.
+7. Context menu, Escape, Copy, Close and Apply buttons remain functional.
+8. Check `route=try_replace` and `stage=paste` timing; native controls use `route=replace`.
+
 # Windows 11 acceptance checklist — Intent Popup v6
 
 1. Exit all old VoiceRewrite processes. Ensure the latest startup log shows `build=2026-11-13-intent-popup-v6`.

@@ -19,7 +19,7 @@ func TestIntentsRouting(t *testing.T) {
 	}{
 		{"改得简洁一点", "edit", true, false, "replace"},
 		{"改得简洁一点", "edit", false, true, "try_replace"},
-		{"改得简洁一点", "edit", false, false, "popup"},
+		{"改得简洁一点", "edit", false, false, "try_replace"},
 		{"这是什么意思？", "answer", true, true, "popup"},
 		{"为什么这样写？", "edit", true, true, "popup"},
 		{"总结这段话", "summarize", true, true, "popup"},
@@ -30,13 +30,22 @@ func TestIntentsRouting(t *testing.T) {
 		{"总结这段话", "edit", true, true, "popup"},
 		{"请写成英文", "translate", true, false, "replace"},
 		{"请写成英文", "translate", false, true, "try_replace"},
-		{"请写成英文", "translate", false, false, "popup"},
+		{"请写成英文", "translate", false, false, "try_replace"},
 		{"翻译成英文", "translate", false, true, "try_replace"},
 		{"英文是什么意思？", "answer", true, true, "popup"},
 		{"怎么用英文说？", "translate", true, false, "popup"},
 		{"把这句话改成英文", "edit", true, false, "replace"},
 		{"解释一下这个术语", "edit", true, true, "popup"},
-		{"帮我润色一下", "ambiguous", true, true, "popup"},
+		// v7 regressions: WeChat, VS Code and browser inputs have unknown Win32 classes.
+		{"请写成英文", "translate", false, false, "try_replace"}, // WeChat
+		{"帮我润色一下", "edit", false, false, "try_replace"},     // VS Code
+		{"翻译成中文", "translate", false, false, "try_replace"}, // nonnative editor
+		{"请写成英文", "answer", false, false, "try_replace"},    // conflicting model intent
+		{"改成英文", "ambiguous", false, false, "try_replace"},
+		{"这是什么意思", "answer", false, false, "popup"},
+		{"为什么会出现这个错误", "answer", false, false, "popup"},
+		{"总结这段话", "summarize", false, false, "popup"},
+		{"帮我润色一下", "ambiguous", true, true, "replace"},
 	} {
 		got := routeTask(AssistantResult{Intent: tc.intent, Result: "text"}, tc.instruction, tc.editable, tc.browser)
 		if got != tc.want {

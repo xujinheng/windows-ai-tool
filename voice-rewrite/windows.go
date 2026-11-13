@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-13-modern-card-v7"
+const buildID = "2026-11-13-edit-first-v8"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -730,16 +730,29 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 		app.fail(e)
 		return
 	}
-	// Strict model+voice permission, then determine how we can deliver it.
-	// Browser editors use clipboard selection verification before and after
-	// paste; unchanged selection signals a read-only/no-op and becomes preview.
+	// The selected text is the user's editing surface regardless of its Win32
+	// class (WeChat/VS Code/Chrome may expose only a renderer HWND). The voice
+	// command remains the primary signal. If a model mislabels a clear edit as
+	// an answer, regenerate as plain replacement text before touching the editor.
+	if (clearlyRequestsEdit(instruction) || clearlyRequestsTranslation(instruction)) &&
+		answer.Intent != "edit" && answer.Intent != "translate" {
+		app.logger.Printf("intent conflict; voice requires edit but model returned %s; retrying rewrite", answer.Intent)
+		fixed, rewriteErr := rewrite(ctx, app.cfg, sel.Text, instruction)
+		if rewriteErr != nil {
+			app.fail(fmt.Errorf("模型误判意图，重新生成改写文字失败: %w", rewriteErr))
+			return
+		}
+		answer.Result = fixed
+		answer.Intent = "edit"
+	}
 	editable := isSafelyEditableControl(sel.TargetWindow)
 	browserSurface := isBrowserEditorSurface(sel.TargetWindow)
 	action := routeTask(answer, instruction, editable, browserSurface)
-	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t", action, answer.Intent, editable, browserSurface)
+	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t voice_edit=%t voice_translate=%t", action, answer.Intent, editable, browserSurface, clearlyRequestsEdit(instruction), clearlyRequestsTranslation(instruction))
 	allowApply := action == "replace" || action == "try_replace" || answer.Intent == "edit" || answer.Intent == "translate"
 	if action == "replace" || action == "try_replace" {
 		startedPaste := time.Now()
+		// All unknown controls receive the same pre/post paste checks as a browser.
 		e = replaceSelectionWithVerification(app.Window, sel, answer.Result, app.cfg, action == "try_replace")
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 		if e == nil {
@@ -962,9 +975,11 @@ func replaceSelection(hwnd uintptr, sel selectedText, replacement string, cfg Co
 	return replaceSelectionWithVerification(hwnd, sel, replacement, cfg, false)
 }
 
-// For Chromium/Electron editors we cannot infer editability from the top-level
-// HWND. Only explicit transformations use this probe. If Ctrl+V leaves the same
-// text selected, the surface probably ignored paste: return a popup preview.
+// Unknown editor types (Chrome/Edge/WeChat/VS Code and more) cannot be
+// classified reliably via Win32 HWND. First verify the selected text and
+// foreground window; then paste and check whether the same original selection
+// remains. If it does, the surface likely refused the paste, so show a preview.
+// This remains a heuristic: it cannot prove an application's content changed.
 func replaceSelectionWithVerification(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool) error {
 	if !waitKeysReleased(3 * time.Second) {
 		return errors.New("请松开 Ctrl/Alt 等快捷键后再试")

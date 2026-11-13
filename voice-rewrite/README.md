@@ -1,3 +1,22 @@
+## v8: edit-first cross-application behavior (2026-11-13)
+
+**Direct replacement is the primary feature.** For clear rewrite, polish,
+correction, abbreviation or translation commands, the app attempts the original
+cross-application Ctrl+C -> LLM -> verify selected text -> Ctrl+V workflow,
+including WeChat, VS Code, Chrome/Edge and other desktop editors. It must NOT
+require a native Win32 EDIT class, since browser/Electron controls lack one.
+
+Questions and explanations ("这是什么意思", "为什么") and summaries still display
+an answer card. An explicit transformation incorrectly labeled as an answer by
+the model triggers an edit-only LLM retry rather than pasting an explanation.
+Unknown controls receive an additional post-paste no-op probe; this is best-effort,
+not a 100% reliable read-only check. If selection changed or paste appears to do
+nothing, the result is displayed in a copyable card instead of overwriting a
+potentially unrelated window.
+
+Build ID: `2026-11-13-edit-first-v8`. Config remains unchanged. **Close all
+older VoiceRewrite processes before starting**: multiple mouse hooks will fight.
+
 # VoiceRewrite v6 — 语音改写 + 划词问答
 
 Windows 11 x64 / Go 标准库 / 离线优先。默认 **Mouse5 按住录音、松开提交**，使用现有 Qwen3-ASR OneClick 与 LM Studio 文本模型。
