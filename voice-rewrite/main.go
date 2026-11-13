@@ -44,13 +44,26 @@ func defaults() Config {
 		LLMBaseURL:             "http://127.0.0.1:1234/v1",
 		TextModel:              "auto",
 		ASRModel:               "whisper-1",
-		HotkeyRecord:           "Ctrl+Alt+F9",
-		RecordMode:             "toggle",
+		HotkeyRecord:           "Mouse5",
+		RecordMode:             "hold",
 		HotkeyExit:             "Ctrl+Alt+F10",
 		MaxRecordSeconds:       60,
 		MaxSelectedRunes:       12000,
 		SelectionCopyAttempts:  3,
 		SelectionCopyTimeoutMS: 1800,
+	}
+}
+
+// mouseSideButton reports the Windows XBUTTON identifier. Mouse4 is XBUTTON1
+// and Mouse5 is XBUTTON2, independent of how the mouse is physically arranged.
+func mouseSideButton(s string) (uint16, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "mouse4", "xbutton1":
+		return 1, true
+	case "mouse5", "xbutton2":
+		return 2, true
+	default:
+		return 0, false
 	}
 }
 
@@ -84,10 +97,10 @@ func loadConfig() (Config, error) {
 		cfg.ASRModel = "whisper-1"
 	}
 	if cfg.HotkeyRecord == "" {
-		cfg.HotkeyRecord = "Ctrl+Alt+F9"
+		cfg.HotkeyRecord = "Mouse5"
 	}
 	if cfg.RecordMode == "" {
-		cfg.RecordMode = "toggle"
+		cfg.RecordMode = "hold"
 	}
 	if cfg.RecordMode != "toggle" && cfg.RecordMode != "hold" {
 		return cfg, fmt.Errorf("invalid record_mode %q: use toggle or hold", cfg.RecordMode)

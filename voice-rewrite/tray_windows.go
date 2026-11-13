@@ -16,6 +16,8 @@ const (
 	WM_TRAY_NOTIFY      = 0x8000 + 47 // WM_APP + 47
 	WM_TRAY_UPDATE      = 0x8000 + 48
 	WM_TRAY_EXIT        = 0x8000 + 49
+	WM_TRAY_CONFIG      = 0x8000 + 54
+	WM_TRAY_LOG         = 0x8000 + 55
 	TRAY_RESET_TIMER_ID = 3002
 	WM_RBUTTONUP        = 0x0205
 	WM_CONTEXTMENU      = 0x007B
@@ -28,6 +30,7 @@ const (
 	TPM_RETURNCMD       = 0x0100
 	TPM_RIGHTBUTTON     = 0x0002
 	MF_STRING           = 0
+	MF_SEPARATOR        = 0x0800
 	DIB_RGB_COLORS      = 0
 	BI_RGB              = 0
 	TRAY_ICON_ID        = 1
@@ -110,6 +113,7 @@ var (
 	shell32                   = syscall.NewLazyDLL("shell32.dll")
 	gdi32                     = syscall.NewLazyDLL("gdi32.dll")
 	procShellNotifyIcon       = shell32.NewProc("Shell_NotifyIconW")
+	procShellExecute          = shell32.NewProc("ShellExecuteW")
 	procCreateDIBSection      = gdi32.NewProc("CreateDIBSection")
 	procCreateBitmap          = gdi32.NewProc("CreateBitmap")
 	procDeleteObject          = gdi32.NewProc("DeleteObject")
@@ -246,17 +250,46 @@ func (t *trayIndicator) contextMenu() {
 		return
 	}
 	defer procDestroyMenu.Call(m)
-	label, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
-	procAppendMenu.Call(m, MF_STRING, 1, uintptr(unsafe.Pointer(label)))
-	runtime.KeepAlive(label)
+
+	configLabel, _ := syscall.UTF16PtrFromString("编辑 config.json")
+	logLabel, _ := syscall.UTF16PtrFromString("查看日志")
+	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
+	procAppendMenu.Call(m, MF_STRING, 2, uintptr(unsafe.Pointer(configLabel)))
+	procAppendMenu.Call(m, MF_STRING, 3, uintptr(unsafe.Pointer(logLabel)))
+	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
+	procAppendMenu.Call(m, MF_STRING, 1, uintptr(unsafe.Pointer(exitLabel)))
+	runtime.KeepAlive(configLabel)
+	runtime.KeepAlive(logLabel)
+	runtime.KeepAlive(exitLabel)
 	var p trayPoint
 	if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
 		return
 	}
 	procSetForegroundWindow.Call(t.hwnd)
 	selected, _, _ := procTrackPopupMenu.Call(m, TPM_RETURNCMD|TPM_RIGHTBUTTON, int32ptr(p.X), int32ptr(p.Y), 0, t.hwnd, 0)
-	if selected == 1 {
+	switch selected {
+	case 1:
 		procPostMessage.Call(t.hwnd, WM_TRAY_EXIT, 0, 0)
+	case 2:
+		procPostMessage.Call(t.hwnd, WM_TRAY_CONFIG, 0, 0)
+	case 3:
+		procPostMessage.Call(t.hwnd, WM_TRAY_LOG, 0, 0)
 	}
 }
 func int32ptr(v int32) uintptr { return uintptr(uint32(v)) }
+	
+// Open local configuration or log via the Windows user's default application.
+func shellOpenLocalFile(path string) error {
+	verb, _ := syscall.UTF16PtrFromString("open")
+	filename, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	rv, _, e := procShellExecute.Call(0, uintptr(unsafe.Pointer(verb)), uintptr(unsafe.Pointer(filename)), 0, 0, 1)
+	runtime.KeepAlive(verb)
+	runtime.KeepAlive(filename)
+	if rv <= 32 {
+		return fmt.Errorf("无法打开文件（ShellExecute 错误码 %d）: %v", rv, e)
+	}
+	return nil
+}

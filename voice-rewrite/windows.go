@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-13-holdwatch-v2"
+const buildID = "2026-11-13-mouse5-hold-v1"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -242,30 +242,42 @@ func runApp() {
 	}
 	defer procDestroyWindow.Call(hwnd)
 	app := &appState{Window: hwnd, logger: l, cfg: cfg}
-	recordMods, recordVK, e := parseHotkey(cfg.HotkeyRecord)
-	if e != nil {
-		winErr(e.Error())
-		return
+
+	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
+	var recordMods, recordVK uintptr
+	if usingMouse {
+		if cfg.RecordMode != "hold" {
+			winErr("Mouse4/Mouse5 目前仅支持 record_mode=hold")
+			return
+		}
+	} else {
+		recordMods, recordVK, e = parseHotkey(cfg.HotkeyRecord)
+		if e != nil {
+			winErr(e.Error())
+			return
+		}
 	}
 	exitMods, exitVK, e := parseHotkey(cfg.HotkeyExit)
 	if e != nil {
 		winErr(e.Error())
 		return
 	}
-	if recordMods == exitMods && recordVK == exitVK {
+	if !usingMouse && recordMods == exitMods && recordVK == exitVK {
 		winErr("Record and exit hotkeys must differ")
 		return
 	}
-	if cfg.RecordMode == "hold" && (recordMods != MOD_NOREPEAT || recordVK == VK_PAUSE) {
+	if cfg.RecordMode == "hold" && !usingMouse && (recordMods != MOD_NOREPEAT || recordVK == VK_PAUSE) {
 		winErr("按住录音模式请使用 F1~F24 等单独的功能键，例如 F9。Pause/Break 通常没有可靠的松开事件，Ctrl+Alt 组合键会干扰复制选中文字。")
 		return
 	}
-	recordVirtualKey = recordVK
-	if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_RECORD, recordMods, recordVK); rv == 0 {
-		winErr("Cannot register record hotkey: " + cfg.HotkeyRecord + " (already in use?)")
-		return
+	if !usingMouse {
+		recordVirtualKey = recordVK
+		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_RECORD, recordMods, recordVK); rv == 0 {
+			winErr("Cannot register record hotkey: " + cfg.HotkeyRecord + " (already in use?)")
+			return
+		}
+		defer procUnregisterHotKey.Call(0, HOTKEY_RECORD)
 	}
-	defer procUnregisterHotKey.Call(0, HOTKEY_RECORD)
 	if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_EXIT, exitMods, exitVK); rv == 0 {
 		winErr("Cannot register exit hotkey: " + cfg.HotkeyExit)
 		return
@@ -293,6 +305,17 @@ func runApp() {
 		}
 		winErr("VoiceRewrite 已启动。\n\n1. 先选中文字。\n2. " + guidance + "\n3. 等待自动替换文字。\n\n按 " + cfg.HotkeyExit + " 退出。\n\n模式与 API 地址从 config.json 读取。")
 		_ = os.WriteFile(marker, []byte("shown\n"), 0600)
+	}
+	// Install after the first-run dialog. The hook callback only queues events;
+	// the Windows UI thread owns the state machine, tray and audio start/stop.
+	if usingMouse {
+		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton)
+		if hookErr != nil {
+			winErr(hookErr.Error())
+			return
+		}
+		defer mouseHook.close()
+		l.Printf("mouse hook installed: button=%d", selectedMouseButton)
 	}
 	var active *audioRecorder
 	var selected selectedText
@@ -375,6 +398,14 @@ func runApp() {
 			}
 			continue
 		}
+		if msg.Message == WM_TRAY_CONFIG {
+			if err := shellOpenLocalFile(configPath()); err != nil { app.fail(err) }
+			continue
+		}
+		if msg.Message == WM_TRAY_LOG {
+			if err := shellOpenLocalFile(filepath.Join(logDir, "VoiceRewrite.log")); err != nil { app.fail(err) }
+			continue
+		}
 		if indicator.taskbarCreated != 0 && msg.Message == indicator.taskbarCreated {
 			if err := indicator.notify(trayState(app.status.Load()), true); err != nil {
 				l.Printf("tray re-add failed: %v", err)
@@ -405,9 +436,20 @@ func runApp() {
 				rec.Stop()
 				go func() { <-rec.result }()
 				l.Print("ERROR: hold watcher exceeded maximum duration without observing key release")
-				app.fail(errors.New("未检测到 F 键松开，录音已自动结束。请检查当前是否运行最新版，或换一个功能键。"))
+				app.fail(errors.New("未收到录音按键或鼠标侧键的松开事件，已自动结束。请检查是否有鼠标驱动将侧键映射为其他按键。"))
 			}
 			continue
+		}
+		if usingMouse && msg.Message == WM_SIDE_UP {
+			if cfg.RecordMode == "hold" && active != nil {
+				l.Print("mouse side button released; completing recording")
+				finish()
+			}
+			continue
+		}
+		if usingMouse && msg.Message == WM_SIDE_DOWN {
+			msg.Message = WM_HOTKEY
+			msg.WParam = HOTKEY_RECORD
 		}
 		if msg.Message != WM_HOTKEY {
 			continue
@@ -447,9 +489,15 @@ func runApp() {
 				app.setStatus(trayRecording)
 				holdSession++
 				holdWatch = make(chan struct{})
-				go watchHoldRelease(hwnd, recordVK, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+				if usingMouse {
+					// Mouse release is delivered by the low-level hook. Only the
+					// deadline guard is necessary (no F-key polling).
+					go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+				} else {
+					go watchHoldRelease(hwnd, recordVK, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+				}
 				beep(900, 60)
-				l.Printf("recording started, mode=hold")
+				l.Printf("recording started, mode=hold hotkey=%s", cfg.HotkeyRecord)
 				continue
 			}
 			// In toggle mode, the hotkey has already been released.
@@ -475,6 +523,20 @@ func runApp() {
 
 // Poll F-key release independently of the Windows window-message timer. Post
 // a message back to the UI thread so it owns all recording state changes.
+func watchMouseHoldTimeout(hwnd, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-canceled:
+		return
+	case <-timer.C:
+		logger.Printf("mouse hold timed out; session=%d", session)
+		if ok, _, err := procPostMessage.Call(hwnd, WM_HOLD_TIMEOUT, session, 0); ok == 0 {
+			logger.Printf("ERROR: cannot post mouse timeout: %v", err)
+		}
+	}
+}
+
 func watchHoldRelease(hwnd, vk, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
 	tick := time.NewTicker(25*time.Millisecond)
 	defer tick.Stop()

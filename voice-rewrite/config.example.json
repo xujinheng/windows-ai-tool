@@ -5,7 +5,7 @@
   "asr_model": "whisper-1",
   "asr_api_key": "",
   "llm_api_key": "",
-  "hotkey_record": "F9",
+  "hotkey_record": "Mouse5",
   "hotkey_exit": "Ctrl+Alt+F10",
   "system_prompt": "",
   "max_record_seconds": 60,

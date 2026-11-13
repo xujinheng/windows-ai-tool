@@ -1,3 +1,53 @@
+# VoiceRewrite — Windows Local Voice Edit
+
+## Default control: hold Mouse5 (second side button)
+
+Select text in a Windows application, **hold the second mouse side button (Mouse5 / XBUTTON2)** and speak your editing instruction, then **release** it. The application transcribes speech with your configured local ASR service and rewrites the selected text with a local text LLM.
+
+- Default `record_mode`: `hold`
+- Default `hotkey_record`: `Mouse5` (Windows XBUTTON2). If the physical layout is reversed, use `Mouse4` (XBUTTON1).
+- Default `hotkey_exit`: `Ctrl+Alt+F10`
+- The selected mouse button's normal browser forward/back action is suppressed while VoiceRewrite runs. The other side button works as usual.
+- F-key (`F9`) hold and Ctrl+Alt+F9 toggle modes remain configurable, but are **not** the default.
+- Mouse side button support uses the native Windows `WH_MOUSE_LL` hook, not Python or a mouse-vendor utility.
+
+### System tray
+
+The notification-area icon is always present while running. Gray = idle; red = recording; yellow = ASR; blue = rewriting; green = success; orange = error. Hover the icon for a text status. **Right-click** the icon for:
+
+- **编辑 config.json** — open editable local config
+- **查看日志** — open the local troubleshooting log
+- **退出 VoiceRewrite** — fully exit and release the mouse-button hook
+
+The chosen mouse side button is consumed by VoiceRewrite across applications. You regain the original button behavior when you exit. If your mouse-vendor software maps a physical side button to a keyboard shortcut instead of exposing XBUTTON events, set that key as the configured hotkey or disable the vendor remapping.
+
+### Configuration
+
+Each runtime folder has its own `config.json` beside the EXE. On first start, an absent file is created with defaults. Existing `config.json` files are **never overwritten**. To switch an existing installation from F9/toggle to the new default, edit these two keys and restart:
+
+```json
+"record_mode": "hold",
+"hotkey_record": "Mouse5"
+```
+
+Keep your existing ASR and LLM service URLs and other settings. `config.example.json` contains all supported fields without personal computer paths, usernames, or API keys. Use `Mouse4` for the other side button. Pause/Break is not suitable for hold mode.
+
+### First functional test
+
+1. Start Qwen3-ASR OneClick (`http://127.0.0.1:8081/v1`) and the LM Studio local text-model server (`http://127.0.0.1:1234/v1`).
+2. Exit all older VoiceRewrite instances; only one tray icon should exist. Launch the new EXE in the folder holding your `config.json`.
+3. Select editable text in Notepad and hold Mouse5 while saying "改得简洁一些", then release.
+4. The icon should transition **red → yellow → blue → green**. If it remains red, check the log for mouse button press/release and timeout events.
+5. Right-click the icon and choose **退出 VoiceRewrite** to restore normal Mouse5 behavior.
+
+The log file is located in `%LOCALAPPDATA%\VoiceRewrite\VoiceRewrite.log` and records the build ID plus mode/hotkey on startup, not the selected text, dictated instruction, or audio data.
+
+**Validation limits:** Go unit tests, mock HTTP integration tests, and Windows x64 cross-compilation can be run in a Linux environment. Real mouse hook delivery, tray status, microphone input and clipboard replacement must be verified on Windows 11 hardware.
+
+---
+
+## Previous keyboard-mode notes (optional)
+
 # VoiceRewrite
 
 Native Windows app: select some text, press the configured hotkey, dictate a revision instruction, press the hotkey again, and let a text LLM rewrite the selection.
@@ -8,7 +58,7 @@ Native Windows app: select some text, press the configured hotkey, dictate a rev
 2. Run an OpenAI-compatible **text** chat model in LM Studio, Ollama/llama.cpp or another supported server. ASR-only models cannot rewrite text.
 3. Build `VoiceRewrite.exe` or download the executable from GitHub Actions. Place VoiceRewrite in a **different folder** than OneClick.
 4. On first launch VoiceRewrite creates `config.json`; edit its `asr_base_url`, `llm_base_url`, `text_model`, API keys, and hotkeys as needed. You may start with `config.example.json`.
-5. Default shortcut: select text, **Ctrl+Alt+F9** to start speaking, **Ctrl+Alt+F9** to stop; **Ctrl+Alt+F10** exits. The configured shortcuts may use `Ctrl+Alt+F1..F24` or `Ctrl+Alt+Shift+F1..F24`.
+5. Keyboard shortcuts remain available through `config.json` for users who prefer them.
 
 The code makes a WAV in memory, sends it to ASR, and sends **only the selected text and recognized instruction** to the configured text-model API. It does not send anything to any other service. It checks the target window and selected text before replacing; if either changed, the result goes to clipboard instead. The clipboard integration is plain-text oriented; avoid relying on restoration of rich clipboard formats.
 
@@ -30,7 +80,7 @@ The recording shortcut can also be set to `"hotkey_record": "Pause"` (or a Ctrl+
 
 VoiceRewrite supports two recording modes through its per-program `config.json`:
 
-- `"record_mode": "toggle"`: press your configured hotkey to start; press again to stop (backward-compatible default).
+- `"record_mode": "toggle"`: press your configured hotkey to start; press again to stop (previous default).
 - `"record_mode": "hold"`: **hold down an unmodified function key** to record; **release** it to stop and run the rewrite. Example: `"hotkey_record": "F9"`.
 
 Example additional settings inside your existing `config.json`:
@@ -65,32 +115,35 @@ Hover over the icon to see the current state. **Right-click → 退出 VoiceRewr
 **Windows 11 tip:** Windows decides whether new tray icons appear next to the clock or inside the hidden-icons section. If the indicator is under `^`, open Settings → Personalization → Taskbar → Other system tray icons (wording may vary) and enable VoiceRewrite, or drag the icon to the visible tray.
 
 The tray API is provided by the native Windows Shell. No additional Go modules or third-party libraries are required.
-## Recording / tray reliability fix
 
-The hold-to-talk flow starts microphone recording immediately on the F-key press, but waits until **after the key is released** before copying selected text. This avoids sending Ctrl+C while the recording hotkey itself remains held. The WinMM recycler preserves the WAVEHDR `WHDR_PREPARED` flag, and reports requeue failures. Tray icon changes are handled on the Windows UI thread instead of a worker thread. Background panics are logged where recoverable.
+## 2026-11 reliability fixes
 
-Test: Start your configured ASR and text Instruct model server, select text in Notepad, hold F9 for 2–3 seconds, speak an editing instruction and release. The icon should change red → yellow → blue → green (or orange on error).
+The push-to-talk flow now starts recording immediately on keydown but waits until **after the key is released** before copying selected text. This avoids Ctrl+C being sent while the hotkey itself is still held. The WinMM buffer recycler no longer clears the WAVEHDR `WHDR_PREPARED` state and reports requeue failures rather than silently dropping audio. Tray icon changes are handled on the Windows UI thread. Worker goroutine panics are logged and surfaced as errors where recoverable.
 
-For diagnostics:
+To test, keep an ASR server configured in `asr_base_url` and a loaded text-instruct model accessible via `llm_base_url`. Select a phrase in Notepad, hold F9 for 2–3 seconds while speaking an edit instruction, and release. The icon should transition from red to yellow to blue, then green on success (or orange if a step fails).
+
+For diagnostics, if the icon disappears or the rewrite fails, inspect the log **locally** using:
 
 ```powershell
-Get-Process VoiceRewrite* -ErrorAction SilentlyContinue
 Get-Content "$env:LOCALAPPDATA\VoiceRewrite\VoiceRewrite.log" -Tail 60
+Get-Process VoiceRewrite* -ErrorAction SilentlyContinue
 ```
 
-Logs may contain model names and configured endpoint addresses. Remove any private details before sharing. This build has passed Go tests and Windows x64 cross-compilation, but has **not been tested on an actual Windows keyboard or microphone**.
+Do not publish log contents without removing any private paths, hostnames, or identifiers. Audio and selected-text payloads are not logged by this program; step names and character counts are logged instead.
+
+The Windows tray and WinMM paths require real Windows 11 validation. A successful cross-compile or mock HTTP test alone cannot verify physical hotkey release or actual microphone device behavior.
 
 ## Diagnostic build: hold-watch-v2
 
-The startup log now includes `build=2026-11-13-holdwatch-v2`, `mode=hold`, and the recording hotkey. If the build field is absent, a previous EXE is still running.
+The startup log now contains `build=2026-11-13-holdwatch-v2`, `mode=hold`, and the selected recording hotkey. If the log does not contain that build ID, a previous EXE is still running.
 
-In hold mode, a separate watcher polls physical key release and posts a message to the Windows UI thread. Once released, the indicator immediately changes from red (recording) to yellow (processing). The configured maximum recording time becomes a safety limit, so the icon cannot remain indefinitely red if the release is not detected.
+In hold mode, a separate keyboard-state watcher detects physical key release and posts a message back to the Windows UI thread. After releasing F9, the tray icon switches from red to processing. If the key release cannot be detected by the configured maximum recording duration, recording is canceled with a visible error rather than staying red forever.
 
-PowerShell checks:
+Use PowerShell to check the running executable location and version:
 
 ```powershell
 Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*VoiceRewrite*' } | Select-Object ProcessId, ExecutablePath, CommandLine
 Get-Content "$env:LOCALAPPDATA\VoiceRewrite\VoiceRewrite.log" -Encoding UTF8 -Tail 35
 ```
 
-Windows x64 builds and Go unit tests were verified; test the release action on the actual Windows desktop.
+This build is cross-compiled and unit-tested on Linux; real Windows keyboard, microphone and tray functionality requires desktop testing.
