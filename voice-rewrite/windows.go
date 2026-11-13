@@ -275,7 +275,7 @@ func runApp() {
 					app.fail(errors.New("请松开 Ctrl 和 Alt 键后重试"))
 					continue
 				}
-				sel, e := captureSelection(hwnd)
+				sel, e := captureSelection(hwnd, cfg)
 				if e != nil {
 					app.fail(e)
 					continue
@@ -324,7 +324,7 @@ func runApp() {
 						app.fail(e)
 						return
 					}
-					if e = replaceSelection(app.Window, sel, rewritten); e != nil {
+					if e = replaceSelection(app.Window, sel, rewritten, app.cfg); e != nil {
 						app.fail(e)
 						return
 					}
@@ -445,12 +445,12 @@ func setClipboardText(hwnd uintptr, s string) error {
 	return nil
 }
 
-func clipboardCopy(hwnd uintptr) (string, error) {
+func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, error) {
 	old := clipboardSeq()
 	if err := sendCombo('C'); err != nil {
 		return "", err
 	}
-	deadline := time.Now().Add(1400 * time.Millisecond)
+	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if clipboardSeq() != old {
 			s, ok, e := getClipboardText(hwnd)
@@ -462,7 +462,41 @@ func clipboardCopy(hwnd uintptr) (string, error) {
 	}
 	return "", errors.New("未获取到选中文字。请先在原窗口选中文字再按快捷键；某些受保护或管理员窗口无法自动复制")
 }
-func captureSelection(hwnd uintptr) (selectedText, error) {
+
+func isSameForegroundWindow(target uintptr) bool {
+    if target == 0 {
+        return false
+    }
+    foreground, _, _ := procGetForegroundWindow.Call()
+    valid, _, _ := procIsWindow.Call(target)
+    return valid != 0 && foreground == target
+}
+
+// Copy only while the original editor is foreground. Some applications update the
+// clipboard asynchronously, so retry without crossing application boundaries.
+func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
+    time.Sleep(100 * time.Millisecond) // Let hotkey key-up and UI selection settle.
+    var lastErr error
+    for i := 0; i < cfg.SelectionCopyAttempts; i++ {
+        if !isSameForegroundWindow(target) {
+            return "", errors.New("编辑窗口已切换，已停止自动复制，避免读取其他窗口的文字")
+        }
+        text, err := clipboardCopy(hwnd, time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond)
+        if !isSameForegroundWindow(target) {
+            return "", errors.New("复制期间编辑窗口发生切换，已停止自动复制")
+        }
+        if err == nil && strings.TrimSpace(text) != "" {
+            return text, nil
+        }
+        lastErr = err
+        if i+1 < cfg.SelectionCopyAttempts {
+            time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
+        }
+    }
+    return "", fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
+}
+
+func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	var sel selectedText
 	sel.TargetWindow, _, _ = procGetForegroundWindow.Call()
 	if sel.TargetWindow == 0 {
@@ -474,7 +508,7 @@ func captureSelection(hwnd uintptr) (selectedText, error) {
 	}
 	sel.OriginalClipboard = old
 	sel.HadOriginalClipboard = exists
-	text, e := clipboardCopy(hwnd)
+	text, e := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
 	if e != nil {
 		if exists {
 			_ = setClipboardText(hwnd, old)
@@ -484,7 +518,7 @@ func captureSelection(hwnd uintptr) (selectedText, error) {
 	sel.Text = text
 	return sel, nil
 }
-func replaceSelection(hwnd uintptr, sel selectedText, replacement string) error {
+func replaceSelection(hwnd uintptr, sel selectedText, replacement string, cfg Config) error {
 	if !waitKeysReleased(3 * time.Second) {
 		return errors.New("请松开 Ctrl/Alt 等快捷键后再试")
 	}
@@ -497,7 +531,7 @@ func replaceSelection(hwnd uintptr, sel selectedText, replacement string) error 
 		return errors.New("编辑窗口已经切换；为了避免覆盖错误位置，改写内容已复制到剪贴板，请返回原窗口手动粘贴。")
 	}
 	// Re-check selection; otherwise Ctrl+V might insert into a different place.
-	actual, e := clipboardCopy(hwnd)
+	actual, e := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
 	if e != nil || actual != sel.Text {
 		if e2 := setClipboardText(hwnd, replacement); e2 != nil {
 			return e2
