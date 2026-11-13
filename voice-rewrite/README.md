@@ -17,3 +17,7 @@ The code makes a WAV in memory, sends it to ASR, and sends **only the selected t
 All user-specific choices are in `config.json`, next to the EXE. Default loopback addresses are placeholders, not the user's LAN or home directory. `asr_api_key` and `llm_api_key` are separate and empty by default. Keep real credentials out of git.
 
 Logs are written under the local user profile's application-data directory at runtime; the repository includes no logs.
+
+## Pause / Break recording key
+
+Set `"hotkey_record": "Pause"` in your local `config.json` and restart VoiceRewrite. Press Pause once to start recording and again to stop. `Ctrl+Alt+F9` and `Ctrl+Alt+Shift+F9` remain supported. If Windows or another app captures Pause, switch back to a Ctrl+Alt combination. The exit shortcut stays `Ctrl+Alt+F10` by default.
