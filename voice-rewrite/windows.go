@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-13-mouse5-hold-v1"
+const buildID = "2026-11-13-threaded-input-v3"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -70,6 +70,7 @@ const (
 	RECORD_TIMER_ID = 3001
 	WM_HOLD_RELEASE = 0x8000 + 50
 	WM_HOLD_TIMEOUT = 0x8000 + 51
+	WM_TOGGLE_READY = 0x8000 + 56
 	HOTKEY_RECORD   = 100
 	HOTKEY_EXIT     = 101
 	MOD_ALT         = 0x0001
@@ -135,6 +136,11 @@ type waveHdr struct {
 	Reserved      uintptr
 }
 
+type togglePrepareResult struct {
+	rec *audioRecorder
+	sel selectedText
+}
+
 type selectedText struct {
 	Text                 string
 	OriginalClipboard    string
@@ -176,8 +182,7 @@ func (a *appState) fail(e error) {
 		return
 	}
 	a.logger.Printf("ERROR: %v", e)
-	a.setStatus(trayError)
-	winErr(e.Error())
+	a.setStatus(trayError) // non-modal: tooltip + log via tray menu
 }
 
 var hotkeyPattern = regexp.MustCompile(`(?i)^Ctrl\+Alt\+(Shift\+)?F([1-9]|1[0-9]|2[0-4])$`)
@@ -242,7 +247,6 @@ func runApp() {
 	}
 	defer procDestroyWindow.Call(hwnd)
 	app := &appState{Window: hwnd, logger: l, cfg: cfg}
-
 	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
 	var recordMods, recordVK uintptr
 	if usingMouse {
@@ -296,18 +300,8 @@ func runApp() {
 		app.trayMu.Unlock()
 	}()
 	l.Printf("started; build=%s mode=%s hotkey=%s ASR=%s LLM=%s (model=%s)", buildID, cfg.RecordMode, cfg.HotkeyRecord, cfg.ASRBaseURL, cfg.LLMBaseURL, cfg.TextModel)
-	// First-run guidance, but don't steal focus every time.
-	marker := filepath.Join(logDir, "startup-v1.marker")
-	if _, e := os.Stat(marker); os.IsNotExist(e) {
-		guidance := "按 " + cfg.HotkeyRecord + " 开始录音；再按一次结束。"
-		if cfg.RecordMode == "hold" {
-			guidance = "按住 " + cfg.HotkeyRecord + " 录音，松开后自动提交修改要求。"
-		}
-		winErr("VoiceRewrite 已启动。\n\n1. 先选中文字。\n2. " + guidance + "\n3. 等待自动替换文字。\n\n按 " + cfg.HotkeyExit + " 退出。\n\n模式与 API 地址从 config.json 读取。")
-		_ = os.WriteFile(marker, []byte("shown\n"), 0600)
-	}
-	// Install after the first-run dialog. The hook callback only queues events;
-	// the Windows UI thread owns the state machine, tray and audio start/stop.
+	// The tray icon is the UI. Do not steal focus with an instructional MessageBox.
+	// Install the hook on its own locked OS thread; the UI remains independent.
 	if usingMouse {
 		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton)
 		if hookErr != nil {
@@ -319,6 +313,7 @@ func runApp() {
 	}
 	var active *audioRecorder
 	var selected selectedText
+	toggleResult := make(chan togglePrepareResult, 1)
 	var holdTargetWindow uintptr
 	var holdSession uintptr
 	var holdWatch chan struct{}
@@ -330,47 +325,39 @@ func runApp() {
 	}
 	defer stopHoldWatch()
 	finish := func() {
-		if active == nil { return }
-		if cfg.RecordMode == "hold" { stopHoldWatch() }
+		if active == nil {
+			return
+		}
+		if cfg.RecordMode == "hold" {
+			stopHoldWatch()
+		}
 		rec := active
 		active = nil
 		rec.Stop()
+		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
-		beep(520, 75)
-		// In hold mode F9 remains physically down while recording. Simulating
-		// Ctrl+C during that time is unreliable. Capture the selection *after*
-		// the key is released, and verify the originally focused editor.
+		l.Print("recording stop requested; selection/model processing moved to worker")
 		if cfg.RecordMode == "hold" {
-			if !isSameForegroundWindow(holdTargetWindow) {
-				l.Print("ERROR: active editor changed while recording")
-				go func() { <-rec.result }()
-				app.fail(errors.New("录音期间切换了编辑窗口；已取消改写，避免覆盖错误文字"))
-				return
-			}
-			var e error
-			selected, e = captureSelection(hwnd, cfg)
-			if e == nil && selected.TargetWindow != holdTargetWindow {
-				e = errors.New("编辑窗口发生变化，已取消改写")
-			}
-			if e == nil && utf8.RuneCountInString(selected.Text) > cfg.MaxSelectedRunes {
-				e = fmt.Errorf("选中文字超过 %d 字限制", cfg.MaxSelectedRunes)
-			}
-			if e != nil {
-				go func() { <-rec.result }()
-				app.fail(e)
-				return
-			}
-			l.Printf("selection captured after key release; chars=%d", utf8.RuneCountInString(selected.Text))
+			go processRecordedHold(app, rec, holdTargetWindow)
+		} else {
+			go processRecorded(app, rec, selected)
 		}
-		app.busy.Store(true)
-		app.setStatus(trayTranscribing)
-		go processRecorded(app, rec, selected)
 	}
+
 	for {
 		var msg winMSG
 		rv, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(rv) <= 0 {
 			break
+		}
+		if msg.Message == WM_TOGGLE_READY {
+			result := <-toggleResult
+			active = result.rec
+			selected = result.sel
+			app.busy.Store(false)
+			app.setStatus(trayRecording)
+			l.Printf("recording started, mode=toggle, selected characters=%d", utf8.RuneCountInString(selected.Text))
+			continue
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
@@ -399,11 +386,15 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_CONFIG {
-			if err := shellOpenLocalFile(configPath()); err != nil { app.fail(err) }
+			if err := shellOpenLocalFile(configPath()); err != nil {
+				app.fail(err)
+			}
 			continue
 		}
 		if msg.Message == WM_TRAY_LOG {
-			if err := shellOpenLocalFile(filepath.Join(logDir, "VoiceRewrite.log")); err != nil { app.fail(err) }
+			if err := shellOpenLocalFile(filepath.Join(logDir, "VoiceRewrite.log")); err != nil {
+				app.fail(err)
+			}
 			continue
 		}
 		if indicator.taskbarCreated != 0 && msg.Message == indicator.taskbarCreated {
@@ -416,7 +407,7 @@ func runApp() {
 			if active != nil {
 				stopHoldWatch()
 				active.Stop()
-				_ = <-active.result
+				go func(rec *audioRecorder) { <-rec.result }(active)
 			}
 			l.Print("stopped via exit action")
 			return
@@ -459,7 +450,7 @@ func runApp() {
 			if active != nil {
 				stopHoldWatch()
 				active.Stop()
-				_ = <-active.result
+				go func(rec *audioRecorder) { <-rec.result }(active)
 			}
 			l.Print("stopped via exit hotkey")
 			return
@@ -483,7 +474,10 @@ func runApp() {
 					continue
 				}
 				rec, e := startRecorder(cfg.MaxRecordSeconds)
-				if e != nil { app.fail(e); continue }
+				if e != nil {
+					app.fail(e)
+					continue
+				}
 				holdTargetWindow = win
 				active = rec
 				app.setStatus(trayRecording)
@@ -500,29 +494,48 @@ func runApp() {
 				l.Printf("recording started, mode=hold hotkey=%s", cfg.HotkeyRecord)
 				continue
 			}
-			// In toggle mode, the hotkey has already been released.
-			if !waitKeysReleased(2500 * time.Millisecond) {
-				app.fail(errors.New("请松开快捷键后重试"))
-				continue
-			}
-			sel, e := captureSelection(hwnd, cfg)
-			if e == nil && utf8.RuneCountInString(sel.Text) > cfg.MaxSelectedRunes {
-				e = fmt.Errorf("选中文字超过 %d 字限制", cfg.MaxSelectedRunes)
-			}
-			if e != nil { app.fail(e); continue }
-			rec, e := startRecorder(cfg.MaxRecordSeconds)
-			if e != nil { app.fail(e); continue }
-			selected = sel
-			active = rec
-			app.setStatus(trayRecording)
-			beep(900, 90)
-			l.Printf("recording started, mode=toggle, selected characters=%d", utf8.RuneCountInString(sel.Text))
+			// Legacy toggle mode also prepares its selection on a worker.
+			app.busy.Store(true)
+			app.setStatus(trayTranscribing)
+			go func() {
+				if !waitKeysReleased(2500 * time.Millisecond) {
+					app.fail(errors.New("请松开快捷键后重试"))
+					app.busy.Store(false)
+					return
+				}
+				begin := time.Now()
+				sel, err := captureSelection(hwnd, cfg)
+				l.Printf("stage=selection mode=toggle ms=%d", time.Since(begin).Milliseconds())
+				if err == nil && utf8.RuneCountInString(sel.Text) > cfg.MaxSelectedRunes {
+					err = fmt.Errorf("选中文字超过 %d 字限制", cfg.MaxSelectedRunes)
+				}
+				if err != nil {
+					app.fail(err)
+					app.busy.Store(false)
+					return
+				}
+				rec, err := startRecorder(cfg.MaxRecordSeconds)
+				if err != nil {
+					app.fail(err)
+					app.busy.Store(false)
+					return
+				}
+				toggleResult <- togglePrepareResult{rec: rec, sel: sel}
+				if ok, _, _ := procPostMessage.Call(hwnd, WM_TOGGLE_READY, 0, 0); ok == 0 {
+					rec.Stop()
+					go func() { <-rec.result }()
+					app.fail(errors.New("无法通知 UI 线程准备录音"))
+					app.busy.Store(false)
+				}
+			}()
 		}
 	}
 }
 
-// Poll F-key release independently of the Windows window-message timer. Post
-// a message back to the UI thread so it owns all recording state changes.
+// watchHoldRelease polls physical key state on its own goroutine instead of relying
+// on WM_TIMER messages sharing the GUI message queue. The main UI thread owns all
+// state transitions, after a WM_APP message is posted to its hidden window.
+// The deadline is a second defense against indefinitely stuck red tray status.
 func watchMouseHoldTimeout(hwnd, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
@@ -538,7 +551,7 @@ func watchMouseHoldTimeout(hwnd, session uintptr, canceled <-chan struct{}, time
 }
 
 func watchHoldRelease(hwnd, vk, session uintptr, canceled <-chan struct{}, timeout time.Duration, logger *log.Logger) {
-	tick := time.NewTicker(25*time.Millisecond)
+	tick := time.NewTicker(25 * time.Millisecond)
 	defer tick.Stop()
 	deadline := time.NewTimer(timeout)
 	defer deadline.Stop()
@@ -573,6 +586,41 @@ func watchHoldRelease(hwnd, vk, session uintptr, canceled <-chan struct{}, timeo
 	}
 }
 
+// The selection must be copied AFTER releasing the held shortcut. This function
+// runs off the UI and low-level mouse-hook threads, and enforces a small time budget.
+func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr) {
+	started := time.Now()
+	defer app.busy.Store(false)
+	defer func() {
+		if reason := recover(); reason != nil {
+			app.logger.Printf("hold worker panic: %v\n%s", reason, debug.Stack())
+			app.fail(fmt.Errorf("录音处理线程发生错误：%v", reason))
+		}
+	}()
+	if !isSameForegroundWindow(expectedWindow) {
+		rec.Stop()
+		go func() { <-rec.result }()
+		app.fail(errors.New("编辑窗口已经变化，取消自动替换"))
+		return
+	}
+	sel, err := captureSelection(app.Window, app.cfg)
+	app.logger.Printf("stage=selection mode=hold ms=%d", time.Since(started).Milliseconds())
+	if err == nil && sel.TargetWindow != expectedWindow {
+		err = errors.New("选区所属窗口已变化")
+	}
+	if err == nil && utf8.RuneCountInString(sel.Text) > app.cfg.MaxSelectedRunes {
+		err = fmt.Errorf("选中文字超过 %d 字限制", app.cfg.MaxSelectedRunes)
+	}
+	if err != nil {
+		go func() { <-rec.result }()
+		app.fail(err)
+		return
+	}
+	app.logger.Printf("selection captured; chars=%d", utf8.RuneCountInString(sel.Text))
+	// We already own the busy flag and error recovery: avoid a second outer worker.
+	processAudioAndRewrite(app, rec, sel)
+}
+
 func processRecorded(app *appState, rec *audioRecorder, sel selectedText) {
 	defer app.busy.Store(false)
 	defer func() {
@@ -581,6 +629,10 @@ func processRecorded(app *appState, rec *audioRecorder, sel selectedText) {
 			app.fail(fmt.Errorf("录音处理线程发生错误：%v", reason))
 		}
 	}()
+	processAudioAndRewrite(app, rec, sel)
+}
+
+func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText) {
 	app.logger.Print("worker: waiting for recording buffer")
 	r := <-rec.result
 	if r.err != nil {
@@ -594,20 +646,27 @@ func processRecorded(app *appState, rec *audioRecorder, sel selectedText) {
 	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/32000)
 	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
+	startedASR := time.Now()
 	instruction, e := transcribe(ctx, app.cfg, r.pcm)
+	app.logger.Printf("stage=asr ms=%d", time.Since(startedASR).Milliseconds())
 	if e != nil {
 		app.fail(e)
 		return
 	}
 	app.setStatus(trayRewriting)
 	app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
+	startedLLM := time.Now()
 	rewritten, e := rewrite(ctx, app.cfg, sel.Text, instruction)
+	app.logger.Printf("stage=llm ms=%d", time.Since(startedLLM).Milliseconds())
 	if e != nil {
 		app.fail(e)
 		return
 	}
 	app.logger.Printf("worker: rewrite generated %d characters; attempting paste", utf8.RuneCountInString(rewritten))
-	if e = replaceSelection(app.Window, sel, rewritten, app.cfg); e != nil {
+	startedPaste := time.Now()
+	e = replaceSelection(app.Window, sel, rewritten, app.cfg)
+	app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
+	if e != nil {
 		app.fail(e)
 		return
 	}
@@ -754,7 +813,7 @@ func isSameForegroundWindow(target uintptr) bool {
 // Copy only while the original editor is foreground. Some applications update the
 // clipboard asynchronously, so retry without crossing application boundaries.
 func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
-	time.Sleep(100 * time.Millisecond) // Let hotkey key-up and UI selection settle.
+	time.Sleep(35 * time.Millisecond) // Let mouse key-up and selection settle.
 	var lastErr error
 	for i := 0; i < cfg.SelectionCopyAttempts; i++ {
 		if !isSameForegroundWindow(target) {
@@ -789,9 +848,7 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	sel.HadOriginalClipboard = exists
 	text, e := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
 	if e != nil {
-		if exists {
-			_ = setClipboardText(hwnd, old)
-		}
+		// Do not blindly overwrite the clipboard if another app/user changed it.
 		return sel, e
 	}
 	sel.Text = text
@@ -820,13 +877,15 @@ func replaceSelection(hwnd uintptr, sel selectedText, replacement string, cfg Co
 	if e = setClipboardText(hwnd, replacement); e != nil {
 		return e
 	}
+	ownedSeq := clipboardSeq()
 	if e = sendCombo('V'); e != nil {
 		return e
 	}
-	time.Sleep(700 * time.Millisecond)
-	if sel.HadOriginalClipboard {
+	// Small grace interval for applications that read the clipboard asynchronously.
+	time.Sleep(350 * time.Millisecond)
+	if sel.HadOriginalClipboard && clipboardSeq() == ownedSeq {
 		if e := setClipboardText(hwnd, sel.OriginalClipboard); e != nil {
-			return fmt.Errorf("改写已粘贴，但恢复原剪贴板文本失败: %w", e)
+			return fmt.Errorf("改写已粘贴，但恢复文本剪贴板失败: %w", e)
 		}
 	}
 	return nil

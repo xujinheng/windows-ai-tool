@@ -1,5 +1,12 @@
 # VoiceRewrite — Windows Local Voice Edit
 
+## 2026-11-13 performance refactor (threaded-input-v3)
+
+**Mouse5 hold-to-talk remains the default.** The low-level XBUTTON hook now has its own dedicated Windows message thread, and slow clipboard copy/revalidation and HTTP requests are handled on background workers. Errors during ordinary operation update the orange tray indicator and log details instead of showing focus-stealing modal dialogs. The default selection-copy retry budget was reduced to 2 attempts × 750ms; **existing `config.json` files are never overwritten**.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for thread design and known clipboard-format limitations, and [MANUAL-TESTS.md](MANUAL-TESTS.md) for a desktop acceptance checklist. **This is a cross-compiled build; GUI, hook and real-microphone behavior require Windows 11 testing**.
+
+
 ## Default control: hold Mouse5 (second side button)
 
 Select text in a Windows application, **hold the second mouse side button (Mouse5 / XBUTTON2)** and speak your editing instruction, then **release** it. The application transcribes speech with your configured local ASR service and rewrites the selected text with a local text LLM.

@@ -49,8 +49,8 @@ func defaults() Config {
 		HotkeyExit:             "Ctrl+Alt+F10",
 		MaxRecordSeconds:       60,
 		MaxSelectedRunes:       12000,
-		SelectionCopyAttempts:  3,
-		SelectionCopyTimeoutMS: 1800,
+		SelectionCopyAttempts:  2,
+		SelectionCopyTimeoutMS: 750,
 	}
 }
 

@@ -143,9 +143,13 @@ func TestThinkingTag(t *testing.T) {
 func TestHoldReleaseDebounce(t *testing.T) {
 	polls := 0
 	for _, pressed := range []bool{true, true, false, true, true, false} {
-		if releaseDebounced(pressed, &polls) { t.Fatalf("premature release") }
+		if releaseDebounced(pressed, &polls) {
+			t.Fatalf("premature release")
+		}
 	}
-	if !releaseDebounced(false, &polls) { t.Fatal("release not detected") }
+	if !releaseDebounced(false, &polls) {
+		t.Fatal("release not detected")
+	}
 }
 
 func TestDefaultMouse5Hold(t *testing.T) {
@@ -156,7 +160,11 @@ func TestDefaultMouse5Hold(t *testing.T) {
 }
 
 func TestMouseButtonMapping(t *testing.T) {
-	for _, tc := range []struct{ text string; want uint16; ok bool }{
+	for _, tc := range []struct {
+		text string
+		want uint16
+		ok   bool
+	}{
 		{"Mouse4", 1, true}, {"xbutton1", 1, true},
 		{"mOuSe5", 2, true}, {"XBUTTON2", 2, true},
 		{" Mouse5 ", 2, true}, {"F9", 0, false},

@@ -250,7 +250,6 @@ func (t *trayIndicator) contextMenu() {
 		return
 	}
 	defer procDestroyMenu.Call(m)
-
 	configLabel, _ := syscall.UTF16PtrFromString("编辑 config.json")
 	logLabel, _ := syscall.UTF16PtrFromString("查看日志")
 	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
@@ -277,7 +276,7 @@ func (t *trayIndicator) contextMenu() {
 	}
 }
 func int32ptr(v int32) uintptr { return uintptr(uint32(v)) }
-	
+
 // Open local configuration or log via the Windows user's default application.
 func shellOpenLocalFile(path string) error {
 	verb, _ := syscall.UTF16PtrFromString("open")
