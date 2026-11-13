@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-13-edit-first-v8"
+const buildID = "2026-11-13-reliability-v9"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -55,6 +55,8 @@ var (
 	procGlobalUnlock               = kernel32.NewProc("GlobalUnlock")
 	procGlobalFree                 = kernel32.NewProc("GlobalFree")
 	procGlobalSize                 = kernel32.NewProc("GlobalSize")
+	procCreateMutex                = kernel32.NewProc("CreateMutexW")
+	procCloseHandle                = kernel32.NewProc("CloseHandle")
 	procBeep                       = kernel32.NewProc("Beep")
 	procWaveInOpen                 = winmm.NewProc("waveInOpen")
 	procWaveInPrepareHeader        = winmm.NewProc("waveInPrepareHeader")
@@ -141,8 +143,9 @@ type waveHdr struct {
 }
 
 type togglePrepareResult struct {
-	rec *audioRecorder
-	sel selectedText
+	rec        *audioRecorder
+	sel        selectedText
+	generation uint64
 }
 
 type selectedText struct {
@@ -150,6 +153,7 @@ type selectedText struct {
 	OriginalClipboard    string
 	HadOriginalClipboard bool
 	TargetWindow         uintptr
+	CopyClipboardSeq     uintptr // clipboard after our simulated Ctrl+C
 	Anchor               trayPoint
 }
 type appState struct {
@@ -157,6 +161,7 @@ type appState struct {
 	logger *log.Logger
 	cfg    Config
 	busy   atomic.Bool
+	epoch  taskEpoch
 	status atomic.Int32
 	trayMu sync.Mutex
 	tray   *trayIndicator
@@ -174,8 +179,11 @@ func (a *appState) setStatus(s trayState) {
 	}
 }
 
-func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *selectedText, allowApply bool) {
-	msg := popupMessage{title: title, body: body, anchor: anchor, app: a, selection: selection, allowApply: allowApply}
+func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *selectedText, allowApply bool, generation uint64) {
+	if !a.epoch.valid(generation) {
+		return
+	}
+	msg := popupMessage{title: title, body: body, anchor: anchor, app: a, selection: selection, allowApply: allowApply, generation: generation}
 	select {
 	case a.popups <- msg:
 	default:
@@ -229,9 +237,34 @@ func parseHotkey(s string) (uintptr, uintptr, error) {
 
 var recordVirtualKey uintptr = VK_F9
 
+// A named Windows mutex prevents two app instances from swallowing the same
+// mouse side-button. We hold the handle until process exit.
+func singleInstanceGuard() (func(), error) {
+	name, err := syscall.UTF16PtrFromString("Local\\VoiceRewrite_OneInstance_v1")
+	if err != nil {
+		return nil, err
+	}
+	handle, _, callErr := procCreateMutex.Call(0, 0, uintptr(unsafe.Pointer(name)))
+	runtime.KeepAlive(name)
+	if handle == 0 {
+		return nil, fmt.Errorf("CreateMutexW: %w", callErr)
+	}
+	if callErr == syscall.Errno(183) {
+		procCloseHandle.Call(handle)
+		return nil, errors.New("VoiceRewrite 已在运行，请先从托盘退出旧版本（或在任务管理器结束旧进程）")
+	}
+	return func() { procCloseHandle.Call(handle) }, nil
+}
+
 func runApp() {
 	runtime.LockOSThread() // RegisterHotKey posts to the registering thread's message queue.
 	defer runtime.UnlockOSThread()
+	releaseInstance, singleErr := singleInstanceGuard()
+	if singleErr != nil {
+		winErr(singleErr.Error())
+		return
+	}
+	defer releaseInstance()
 	logDir := filepath.Join(os.Getenv("LOCALAPPDATA"), "VoiceRewrite")
 	if logDir == "VoiceRewrite" {
 		logDir = os.TempDir()
@@ -262,6 +295,7 @@ func runApp() {
 	}
 	defer procDestroyWindow.Call(hwnd)
 	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4)}
+	defer app.epoch.shutdown()
 	defer closeActiveAnswer()
 	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
 	var recordMods, recordVK uintptr
@@ -331,6 +365,8 @@ func runApp() {
 	var selected selectedText
 	toggleResult := make(chan togglePrepareResult, 1)
 	var holdTargetWindow uintptr
+	var holdGeneration uint64
+	var selectedGeneration uint64
 	var holdSession uintptr
 	var holdWatch chan struct{}
 	stopHoldWatch := func() {
@@ -354,11 +390,11 @@ func runApp() {
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
 		if cfg.RecordMode == "hold" {
-			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint())
+			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), holdGeneration)
 		} else {
 			sel := selected
 			sel.Anchor = currentCursorPoint()
-			go processRecorded(app, rec, sel)
+			go processRecorded(app, rec, sel, selectedGeneration)
 		}
 	}
 
@@ -390,6 +426,10 @@ func runApp() {
 		if msg.Message == WM_SHOW_ANSWER {
 			select {
 			case answer := <-app.popups:
+				if !app.epoch.valid(answer.generation) {
+					l.Print("discarded stale popup result")
+					continue
+				}
 				if err := showAnswerPopup(answer); err != nil {
 					l.Printf("popup window: %v", err)
 					app.fail(err)
@@ -402,6 +442,12 @@ func runApp() {
 		}
 		if msg.Message == WM_TOGGLE_READY {
 			result := <-toggleResult
+			if !app.epoch.valid(result.generation) {
+				result.rec.Stop()
+				go func() { <-result.rec.result }()
+				continue
+			}
+			selectedGeneration = result.generation
 			active = result.rec
 			selected = result.sel
 			app.busy.Store(false)
@@ -546,6 +592,7 @@ func runApp() {
 					continue
 				}
 				holdTargetWindow = win
+				holdGeneration = app.epoch.start()
 				active = rec
 				app.setStatus(trayRecording)
 				holdSession++
@@ -562,6 +609,7 @@ func runApp() {
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
+			generation := app.epoch.start()
 			app.busy.Store(true)
 			app.setStatus(trayTranscribing)
 			go func() {
@@ -577,17 +625,26 @@ func runApp() {
 					err = fmt.Errorf("选中文字超过 %d 字限制", cfg.MaxSelectedRunes)
 				}
 				if err != nil {
+					restoreSelectionClipboardIfOwned(hwnd, sel)
 					app.fail(err)
 					app.busy.Store(false)
 					return
 				}
 				rec, err := startRecorder(cfg.MaxRecordSeconds)
 				if err != nil {
+					restoreSelectionClipboardIfOwned(hwnd, sel)
 					app.fail(err)
 					app.busy.Store(false)
 					return
 				}
-				toggleResult <- togglePrepareResult{rec: rec, sel: sel}
+				if !app.epoch.valid(generation) {
+					restoreSelectionClipboardIfOwned(hwnd, sel)
+					rec.Stop()
+					go func() { <-rec.result }()
+					app.busy.Store(false)
+					return
+				}
+				toggleResult <- togglePrepareResult{rec: rec, sel: sel, generation: generation}
 				if ok, _, _ := procPostMessage.Call(hwnd, WM_TOGGLE_READY, 0, 0); ok == 0 {
 					rec.Stop()
 					go func() { <-rec.result }()
@@ -653,10 +710,24 @@ func watchHoldRelease(hwnd, vk, session uintptr, canceled <-chan struct{}, timeo
 	}
 }
 
+// Restore only pre-existing plain text, and only when no other clipboard
+// write happened after our most recent known Ctrl+C. Non-text data is NOT
+// preserved by this helper; see the manual test checklist for that limitation.
+func restoreSelectionClipboardIfOwned(hwnd uintptr, sel selectedText) {
+	if mayRestoreTextClipboard(sel.HadOriginalClipboard, sel.CopyClipboardSeq, clipboardSeq()) {
+		_ = setClipboardText(hwnd, sel.OriginalClipboard)
+	}
+}
+
 // The selection must be copied AFTER releasing the held shortcut. This function
 // runs off the UI and low-level mouse-hook threads, and enforces a small time budget.
-func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr, anchor trayPoint) {
+func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr, anchor trayPoint, generation uint64) {
 	started := time.Now()
+	if !app.epoch.valid(generation) {
+		rec.Stop()
+		go func() { <-rec.result }()
+		return
+	}
 	defer app.busy.Store(false)
 	defer func() {
 		if reason := recover(); reason != nil {
@@ -672,6 +743,7 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 	}
 	sel, err := captureSelection(app.Window, app.cfg)
 	sel.Anchor = anchor
+	defer restoreSelectionClipboardIfOwned(app.Window, sel)
 	app.logger.Printf("stage=selection mode=hold ms=%d", time.Since(started).Milliseconds())
 	if err == nil && sel.TargetWindow != expectedWindow {
 		err = errors.New("选区所属窗口已变化")
@@ -685,24 +757,34 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 		return
 	}
 	app.logger.Printf("selection captured; chars=%d", utf8.RuneCountInString(sel.Text))
+	if !app.epoch.valid(generation) {
+		return
+	}
 	// We already own the busy flag and error recovery: avoid a second outer worker.
-	processAudioAndRewrite(app, rec, sel)
+	processAudioAndRewrite(app, rec, sel, generation)
 }
 
-func processRecorded(app *appState, rec *audioRecorder, sel selectedText) {
+func processRecorded(app *appState, rec *audioRecorder, sel selectedText, generation uint64) {
 	defer app.busy.Store(false)
+	defer restoreSelectionClipboardIfOwned(app.Window, sel)
 	defer func() {
 		if reason := recover(); reason != nil {
 			app.logger.Printf("worker panic: %v\n%s", reason, debug.Stack())
 			app.fail(fmt.Errorf("录音处理线程发生错误：%v", reason))
 		}
 	}()
-	processAudioAndRewrite(app, rec, sel)
+	processAudioAndRewrite(app, rec, sel, generation)
 }
 
-func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText) {
+func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText, generation uint64) {
+	if !app.epoch.valid(generation) {
+		return
+	}
 	app.logger.Print("worker: waiting for recording buffer")
 	r := <-rec.result
+	if !app.epoch.valid(generation) {
+		return
+	}
 	if r.err != nil {
 		app.fail(r.err)
 		return
@@ -716,6 +798,9 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 	defer cancel()
 	startedASR := time.Now()
 	instruction, e := transcribe(ctx, app.cfg, r.pcm)
+	if !app.epoch.valid(generation) {
+		return
+	}
 	app.logger.Printf("stage=asr ms=%d", time.Since(startedASR).Milliseconds())
 	if e != nil {
 		app.fail(e)
@@ -725,6 +810,9 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 	app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
 	startedLLM := time.Now()
 	answer, e := completeSelectedTask(ctx, app.cfg, sel.Text, instruction)
+	if !app.epoch.valid(generation) {
+		return
+	}
 	app.logger.Printf("stage=llm ms=%d intent=%s", time.Since(startedLLM).Milliseconds(), answer.Intent)
 	if e != nil {
 		app.fail(e)
@@ -742,6 +830,9 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 			app.fail(fmt.Errorf("模型误判意图，重新生成改写文字失败: %w", rewriteErr))
 			return
 		}
+		if !app.epoch.valid(generation) {
+			return
+		}
 		answer.Result = fixed
 		answer.Intent = "edit"
 	}
@@ -753,12 +844,12 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 	if action == "replace" || action == "try_replace" {
 		startedPaste := time.Now()
 		// All unknown controls receive the same pre/post paste checks as a browser.
-		e = replaceSelectionWithVerification(app.Window, sel, answer.Result, app.cfg, action == "try_replace")
+		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == "try_replace", func() bool { return app.epoch.valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 		if e == nil {
 			app.setStatus(traySuccess)
 			beep(1050, 110)
-			app.logger.Printf("text transformation success; intent=%s result_chars=%d", answer.Intent, utf8.RuneCountInString(answer.Result))
+			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
 			return
 		}
 		app.logger.Printf("auto replacement failed; preview instead: %v", e)
@@ -775,7 +866,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText)
 		title = "AI 回答"
 	}
 	selectionCopy := sel
-	app.showAnswer(title, answer.Result, sel.Anchor, &selectionCopy, allowApply)
+	app.showAnswer(title, answer.Result, sel.Anchor, &selectionCopy, allowApply, generation)
 	app.setStatus(traySuccess)
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Result))
 }
@@ -964,6 +1055,7 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	sel.OriginalClipboard = old
 	sel.HadOriginalClipboard = exists
 	text, e := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
+	sel.CopyClipboardSeq = clipboardSeq()
 	if e != nil {
 		// Do not blindly overwrite the clipboard if another app/user changed it.
 		return sel, e
@@ -981,12 +1073,19 @@ func replaceSelection(hwnd uintptr, sel selectedText, replacement string, cfg Co
 // remains. If it does, the surface likely refused the paste, so show a preview.
 // This remains a heuristic: it cannot prove an application's content changed.
 func replaceSelectionWithVerification(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool) error {
+	return replaceSelectionWithGuard(hwnd, sel, replacement, cfg, verifyBrowser, nil)
+}
+
+func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement string, cfg Config, verifyBrowser bool, valid func() bool) error {
+	if valid != nil && !valid() {
+		return errors.New("任务已过期，禁止覆盖原文")
+	}
 	if !waitKeysReleased(3 * time.Second) {
 		return errors.New("请松开 Ctrl/Alt 等快捷键后再试")
 	}
 	fg, _, _ := procGetForegroundWindow.Call()
-	valid, _, _ := procIsWindow.Call(sel.TargetWindow)
-	if valid == 0 || fg != sel.TargetWindow {
+	windowValid, _, _ := procIsWindow.Call(sel.TargetWindow)
+	if windowValid == 0 || fg != sel.TargetWindow {
 		if e := setClipboardText(hwnd, replacement); e != nil {
 			return e
 		}
@@ -1000,10 +1099,24 @@ func replaceSelectionWithVerification(hwnd uintptr, sel selectedText, replacemen
 		}
 		return errors.New("原来的选中文字已经变化；为避免误覆盖，结果已复制到剪贴板。请手动粘贴。")
 	}
+	if valid != nil && !valid() {
+		restoreSelectionClipboardIfOwned(hwnd, selectedText{
+			HadOriginalClipboard: sel.HadOriginalClipboard, OriginalClipboard: sel.OriginalClipboard,
+			CopyClipboardSeq: clipboardSeq(),
+		})
+		return errors.New("任务已过期，禁止覆盖原文")
+	}
+	if !isSameForegroundWindow(sel.TargetWindow) {
+		return errors.New("粘贴前编辑窗口已变化，已取消覆盖")
+	}
 	if e = setClipboardText(hwnd, replacement); e != nil {
 		return e
 	}
 	ownedSeq := clipboardSeq()
+	if valid != nil && !valid() {
+		restoreSelectionClipboardIfOwned(hwnd, selectedText{HadOriginalClipboard: sel.HadOriginalClipboard, OriginalClipboard: sel.OriginalClipboard, CopyClipboardSeq: ownedSeq})
+		return errors.New("任务已过期，禁止粘贴")
+	}
 	if e = sendCombo('V'); e != nil {
 		return e
 	}
@@ -1013,17 +1126,28 @@ func replaceSelectionWithVerification(hwnd uintptr, sel selectedText, replacemen
 		if !isSameForegroundWindow(sel.TargetWindow) {
 			return errors.New("粘贴后窗口切换，无法验证结果")
 		}
+		// A post-paste Ctrl+C itself may overwrite the clipboard; track its
+		// sequence as part of our own operation instead of losing the backup.
+		beforeProbe := clipboardSeq()
 		stillSelected, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
-		if verifyErr == nil && stillSelected == sel.Text {
-			return errors.New("原始文字仍然处于选中状态，网页可能是只读内容；改为预览")
+		afterProbe := clipboardSeq()
+		if verifyErr == nil && afterProbe != beforeProbe {
+			ownedSeq = afterProbe
 		}
-		// No selected text after paste is the expected browser-edit behavior.
-		// The clipboard can have changed during verification; never restore it
-		// unless it still belongs to us.
+		if verifyErr == nil && stillSelected == sel.Text {
+			if mayRestoreTextClipboard(sel.HadOriginalClipboard, ownedSeq, clipboardSeq()) {
+				_ = setClipboardText(hwnd, sel.OriginalClipboard)
+			}
+			return errors.New("原始文字仍被选中，可能是只读内容；改为预览")
+		}
+		if afterProbe != beforeProbe && verifyErr != nil {
+			// Unknown clipboard writer: never overwrite that new value.
+			ownedSeq = 0
+		}
 	}
-	if sel.HadOriginalClipboard && clipboardSeq() == ownedSeq {
+	if mayRestoreTextClipboard(sel.HadOriginalClipboard, ownedSeq, clipboardSeq()) {
 		if e := setClipboardText(hwnd, sel.OriginalClipboard); e != nil {
-			return fmt.Errorf("改写已粘贴，但恢复文本剪贴板失败: %w", e)
+			return fmt.Errorf("改写已发送，但恢复纯文本剪贴板失败: %w", e)
 		}
 	}
 	return nil

@@ -1,3 +1,31 @@
+# v9 · Reliability checkpoint (2026-11-13)
+
+- **No change to edit-first default:** WeChat, VS Code, browser inputs and Notepad
+  still use explicit rewrite/translation -> guarded Ctrl+V; questions use the card.
+- **Single-instance mutex** prevents multiple new VoiceRewrite processes from
+  intercepting Mouse5 together (close old pre-v9 instances manually before start).
+- **Task generation fencing:** generated results and popup Apply actions must
+  belong to the active session. Exiting invalidates all sessions. Older requests
+  are still not actively canceled; recording while busy remains blocked.
+- **Plain-text clipboard recovery:** if an ASR/LLM step fails, restore the
+  previous text **only if** the clipboard sequence hasn't changed since the
+  application's selection copy. Post-paste Ctrl+C now tracks its sequence
+  instead of silently breaking restoration.
+- **Honest paste status:** a successful SendInput logs
+  `paste_status=unverified` (paste was sent; insertion is not proven).
+  This is not a test of success in every external editor.
+
+**Known limitation:** Non-text clipboard formats (images, HTML/RTF, files and
+custom formats) are not snapshotted by this implementation. Never rely on it
+for preservation of non-text clipboard history. A future version needs proper
+Windows OLE IDataObject support plus real desktop tests; this version does not
+claim to solve that problem.
+
+**Validation:** Go unit tests and Windows cross-compile are not equivalent to
+Windows 11 UI tests. Acceptance matrix: [CROSS_APP_ACCEPTANCE.md](CROSS_APP_ACCEPTANCE.md).
+
+---
+
 ## v8: edit-first cross-application behavior (2026-11-13)
 
 **Direct replacement is the primary feature.** For clear rewrite, polish,

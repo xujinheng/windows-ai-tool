@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unicode/utf8"
@@ -68,6 +69,7 @@ type popupMessage struct {
 	app         *appState
 	selection   *selectedText
 	allowApply  bool
+	generation  uint64
 }
 type answerPopup struct {
 	window, edit, note uintptr
@@ -78,6 +80,8 @@ type answerPopup struct {
 	selection          *selectedText
 	allowApply         bool
 	applyResult        chan error
+	generation         uint64
+	canceled           atomic.Bool
 }
 
 var activeAnswer *answerPopup
@@ -194,7 +198,7 @@ func (p *answerPopup) setNote(s string) {
 	runtime.KeepAlive(label)
 }
 func (p *answerPopup) apply() {
-	if p == nil || p.app == nil || p.selection == nil || !p.allowApply {
+	if p == nil || p.app == nil || p.selection == nil || !p.allowApply || p.canceled.Load() || !p.app.epoch.valid(p.generation) {
 		return
 	}
 	if !p.app.busy.CompareAndSwap(false, true) {
@@ -217,7 +221,7 @@ func (p *answerPopup) apply() {
 	go func() {
 		defer app.busy.Store(false)
 		time.Sleep(90 * time.Millisecond)
-		err := replaceSelectionWithVerification(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow))
+		err := replaceSelectionWithGuard(app.Window, sel, body, app.cfg, !isSafelyEditableControl(sel.TargetWindow), func() bool { return !p.canceled.Load() && app.epoch.valid(p.generation) })
 		if err != nil {
 			app.logger.Printf("manual apply failed: %v", err)
 		} else {
@@ -281,6 +285,7 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case WM_NCDESTROY:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
+			activeAnswer.canceled.Store(true)
 			for _, f := range activeAnswer.fonts {
 				if f != 0 {
 					procDeleteObject.Call(f)
@@ -450,7 +455,7 @@ func showAnswerPopup(msg popupMessage) error {
 	if hwnd == 0 {
 		return fmt.Errorf("create result card: %w", err)
 	}
-	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply}
+	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation}
 	activeAnswer = popup
 	popup.bgBrush, _, _ = procCreateSolidBrush.Call(colorRGB(255, 255, 255))
 	var bounds rect32
