@@ -46,3 +46,22 @@ Use a physical F1–F24 key that sends ordinary press AND release events. `Pause
 When you press the hold key, recording starts before the application copies the selected text; on release it submits audio to the configured ASR/LLM services. For applications that map F9 to their own command, choose a different F key. Existing local `config.json` files are **not overwritten**; restart VoiceRewrite after changing it.
 
 The key-release detection uses a short Windows timer that polls the physical key state. This has been cross-compiled for Windows but requires real-keyboard testing; accessibility/remote-desktop keyboards can behave differently.
+
+## Windows system tray state icon
+
+VoiceRewrite stays in the **notification area / system tray** (usually near the clock, sometimes under the `^` hidden-icons menu). Its microphone icon changes color to show the current state:
+
+| Color | State |
+| --- | --- |
+| Gray | Idle, ready to capture selected text |
+| Red | Recording (hold your F-key, or use the configured toggle hotkey) |
+| Yellow | Converting speech into an editing instruction |
+| Blue | Asking the text model to rewrite the selection |
+| Green | Rewrite succeeded; returns to gray after about 4.5 seconds |
+| Orange | Error; returns to gray after about 4.5 seconds |
+
+Hover over the icon to see the current state. **Right-click → 退出 VoiceRewrite** to quit. The icon is removed when the program exits, and is re-added if Windows Explorer restarts. The program does not bring any floating status window to the foreground during recording. It retains the original hotkeys and the local `config.json` settings.
+
+**Windows 11 tip:** Windows decides whether new tray icons appear next to the clock or inside the hidden-icons section. If the indicator is under `^`, open Settings → Personalization → Taskbar → Other system tray icons (wording may vary) and enable VoiceRewrite, or drag the icon to the visible tray.
+
+The tray API is provided by the native Windows Shell. No additional Go modules or third-party libraries are required.

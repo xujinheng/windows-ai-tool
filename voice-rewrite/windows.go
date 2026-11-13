@@ -142,6 +142,24 @@ type appState struct {
 	logger *log.Logger
 	cfg    Config
 	busy   atomic.Bool
+	status atomic.Int32
+	trayMu sync.Mutex
+	tray   *trayIndicator
+}
+
+// Apply the notification-area icon immediately, including while the UI thread
+// is waiting for Windows clipboard operations. Timer administration still runs
+// on the message-loop thread via a posted message.
+func (a *appState) setStatus(s trayState) {
+	a.status.Store(int32(s))
+	a.trayMu.Lock()
+	if a.tray != nil {
+		if err := a.tray.notify(s, false); err != nil {
+			a.logger.Printf("tray status update failed: %v", err)
+		}
+	}
+	a.trayMu.Unlock()
+	procPostMessage.Call(a.Window, WM_TRAY_UPDATE, 0, 0)
 }
 
 func winErr(msg string) {
@@ -158,6 +176,7 @@ func (a *appState) fail(e error) {
 		return
 	}
 	a.logger.Printf("ERROR: %v", e)
+	a.setStatus(trayError)
 	winErr(e.Error())
 }
 
@@ -252,6 +271,18 @@ func runApp() {
 		return
 	}
 	defer procUnregisterHotKey.Call(0, HOTKEY_EXIT)
+	indicator, err := newTrayIndicator(hwnd)
+	if err != nil {
+		winErr("无法创建系统托盘图标: " + err.Error())
+		return
+	}
+	app.tray = indicator
+	defer func() {
+		app.trayMu.Lock()
+		indicator.close()
+		app.tray = nil
+		app.trayMu.Unlock()
+	}()
 	l.Printf("started; ASR=%s LLM=%s (model=%s)", cfg.ASRBaseURL, cfg.LLMBaseURL, cfg.TextModel)
 	// First-run guidance, but don't steal focus every time.
 	marker := filepath.Join(logDir, "startup-v1.marker")
@@ -279,6 +310,7 @@ func runApp() {
 		active = nil
 		rec.Stop()
 		app.busy.Store(true)
+		app.setStatus(trayTranscribing)
 		beep(520, 110)
 		go processRecorded(app, rec, selected)
 	}
@@ -287,6 +319,43 @@ func runApp() {
 		rv, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(rv) <= 0 {
 			break
+		}
+		if msg.Message == WM_TRAY_UPDATE {
+			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
+			state := trayState(app.status.Load())
+			if state == traySuccess || state == trayError {
+				procSetTimer.Call(0, TRAY_RESET_TIMER_ID, 4500, 0)
+			}
+			continue
+		}
+		if msg.Message == WM_TIMER && msg.WParam == TRAY_RESET_TIMER_ID {
+			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
+			state := trayState(app.status.Load())
+			if state == traySuccess || state == trayError {
+				app.setStatus(trayIdle)
+			}
+			continue
+		}
+		if msg.Message == WM_TRAY_NOTIFY {
+			if msg.LParam&0xffff == WM_RBUTTONUP || msg.LParam&0xffff == WM_CONTEXTMENU {
+				indicator.contextMenu()
+			}
+			continue
+		}
+		if indicator.taskbarCreated != 0 && msg.Message == indicator.taskbarCreated {
+			if err := indicator.notify(trayState(app.status.Load()), true); err != nil {
+				l.Printf("tray re-add failed: %v", err)
+			}
+			continue
+		}
+		if msg.Message == WM_TRAY_EXIT || (msg.Message == WM_HOTKEY && msg.WParam == HOTKEY_EXIT) {
+			if active != nil {
+				stopTimer()
+				active.Stop()
+				_ = <-active.result
+			}
+			l.Print("stopped via exit action")
+			return
 		}
 		if msg.Message == WM_TIMER && msg.WParam == RECORD_TIMER_ID {
 			if cfg.RecordMode != "hold" || active == nil {
@@ -337,6 +406,7 @@ func runApp() {
 					app.fail(e)
 					continue
 				}
+				app.setStatus(trayRecording)
 				beep(900, 60)
 			} else if !waitKeysReleased(2500 * time.Millisecond) {
 				app.fail(errors.New("请松开快捷键后重试"))
@@ -360,6 +430,7 @@ func runApp() {
 					app.fail(e)
 					continue
 				}
+				app.setStatus(trayRecording)
 				beep(900, 90)
 			}
 			selected = sel
@@ -398,6 +469,7 @@ func processRecorded(app *appState, rec *audioRecorder, sel selectedText) {
 		app.fail(e)
 		return
 	}
+	app.setStatus(trayRewriting)
 	app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
 	rewritten, e := rewrite(ctx, app.cfg, sel.Text, instruction)
 	if e != nil {
@@ -408,6 +480,7 @@ func processRecorded(app *appState, rec *audioRecorder, sel selectedText) {
 		app.fail(e)
 		return
 	}
+	app.setStatus(traySuccess)
 	beep(1050, 110)
 	app.logger.Printf("rewrite success; resulting chars=%d", utf8.RuneCountInString(rewritten))
 }
