@@ -18,21 +18,31 @@ All user-specific choices are in `config.json`, next to the EXE. Default loopbac
 
 Logs are written under the local user profile's application-data directory at runtime; the repository includes no logs.
 
-## Pause / Break recording key
-
-Set `"hotkey_record": "Pause"` in your local `config.json` and restart VoiceRewrite. Press Pause once to start recording and again to stop. `Ctrl+Alt+F9` and `Ctrl+Alt+Shift+F9` remain supported. If Windows or another app captures Pause, switch back to a Ctrl+Alt combination. The exit shortcut stays `Ctrl+Alt+F10` by default.
-
 ## Clipboard timing: intermittent selection failures
 
-Some Windows applications update the clipboard asynchronously after Ctrl+C. VoiceRewrite now retries while checking that the original editor remains foreground.
+If the first hotkey press sometimes says no selected text was found, the Windows application may be responding to the simulated Ctrl+C too slowly. The tool now retries while checking that the original editor remains foreground.
 
-Use these settings in your local `config.json`:
+In your local `config.json`, use: `"selection_copy_attempts": 3` and `"selection_copy_timeout_ms": 1800`. If the target app is particularly slow, try increasing the timeout to 3000; values are limited to 500–5000 ms and 1–5 attempts. The copy retry never intentionally sends a copy command to a different foreground window.
+
+The recording shortcut can also be set to `"hotkey_record": "Pause"` (or a Ctrl+Alt+F-key combination). The exit hotkey defaults to `Ctrl+Alt+F10`. Restart VoiceRewrite after changing config.
+
+## Push-to-talk / press-and-hold recording
+
+VoiceRewrite supports two recording modes through its per-program `config.json`:
+
+- `"record_mode": "toggle"`: press your configured hotkey to start; press again to stop (backward-compatible default).
+- `"record_mode": "hold"`: **hold down an unmodified function key** to record; **release** it to stop and run the rewrite. Example: `"hotkey_record": "F9"`.
+
+Example additional settings inside your existing `config.json`:
 
 ```json
-{
-  "selection_copy_attempts": 3,
-  "selection_copy_timeout_ms": 1800
-}
+"record_mode": "hold",
+"hotkey_record": "F9",
+"hotkey_exit": "Ctrl+Alt+F10"
 ```
 
-The above values are additional properties in the existing JSON config, not a complete replacement. For particularly slow applications, try timeout `3000` (limits: 500–5000 ms, 1–5 attempts). The tool will not intentionally retry copying from a different foreground window. Restart VoiceRewrite after changing config.
+Use a physical F1–F24 key that sends ordinary press AND release events. `Pause/Break` is **not supported in hold mode** because many Windows keyboards do not reliably report key release. Modifier combinations (`Ctrl+Alt+F9`) remain supported in **toggle** mode, but are not supported in hold mode since keeping Ctrl+Alt pressed can interfere with reading selected text via Ctrl+C. You can switch back to toggle mode at any time.
+
+When you press the hold key, recording starts before the application copies the selected text; on release it submits audio to the configured ASR/LLM services. For applications that map F9 to their own command, choose a different F key. Existing local `config.json` files are **not overwritten**; restart VoiceRewrite after changing it.
+
+The key-release detection uses a short Windows timer that polls the physical key state. This has been cross-compiled for Windows but requires real-keyboard testing; accessibility/remote-desktop keyboards can behave differently.

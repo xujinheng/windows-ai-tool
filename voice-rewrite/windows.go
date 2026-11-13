@@ -31,6 +31,8 @@ var (
 	procRegisterHotKey             = user32.NewProc("RegisterHotKey")
 	procUnregisterHotKey           = user32.NewProc("UnregisterHotKey")
 	procGetMessage                 = user32.NewProc("GetMessageW")
+	procSetTimer                   = user32.NewProc("SetTimer")
+	procKillTimer                  = user32.NewProc("KillTimer")
 	procGetForegroundWindow        = user32.NewProc("GetForegroundWindow")
 	procIsWindow                   = user32.NewProc("IsWindow")
 	procSendInput                  = user32.NewProc("SendInput")
@@ -62,6 +64,8 @@ var (
 
 const (
 	WM_HOTKEY       = 0x0312
+	WM_TIMER        = 0x0113
+	RECORD_TIMER_ID = 3001
 	HOTKEY_RECORD   = 100
 	HOTKEY_EXIT     = 101
 	MOD_ALT         = 0x0001
@@ -158,14 +162,19 @@ func (a *appState) fail(e error) {
 }
 
 var hotkeyPattern = regexp.MustCompile(`(?i)^Ctrl\+Alt\+(Shift\+)?F([1-9]|1[0-9]|2[0-4])$`)
+var plainFKeyPattern = regexp.MustCompile(`(?i)^F([1-9]|1[0-9]|2[0-4])$`)
 
 func parseHotkey(s string) (uintptr, uintptr, error) {
+	if match := plainFKeyPattern.FindStringSubmatch(strings.TrimSpace(s)); match != nil {
+		num, _ := strconv.Atoi(match[1])
+		return MOD_NOREPEAT, uintptr(0x70 + num - 1), nil
+	}
 	if strings.EqualFold(strings.TrimSpace(s), "Pause") || strings.EqualFold(strings.TrimSpace(s), "Break") {
 		return MOD_NOREPEAT, VK_PAUSE, nil
 	}
 	match := hotkeyPattern.FindStringSubmatch(strings.TrimSpace(s))
 	if match == nil {
-		return 0, 0, fmt.Errorf("invalid hotkey %q: use Pause, Ctrl+Alt+F9 or Ctrl+Alt+Shift+F9", s)
+		return 0, 0, fmt.Errorf("invalid hotkey %q: use F9, Pause, Ctrl+Alt+F9 or Ctrl+Alt+Shift+F9", s)
 	}
 	num, _ := strconv.Atoi(match[2])
 	mods := uintptr(MOD_CTRL | MOD_ALT | MOD_NOREPEAT)
@@ -228,6 +237,10 @@ func runApp() {
 		winErr("Record and exit hotkeys must differ")
 		return
 	}
+	if cfg.RecordMode == "hold" && (recordMods != MOD_NOREPEAT || recordVK == VK_PAUSE) {
+		winErr("按住录音模式请使用 F1~F24 等单独的功能键，例如 F9。Pause/Break 通常没有可靠的松开事件，Ctrl+Alt 组合键会干扰复制选中文字。")
+		return
+	}
 	recordVirtualKey = recordVK
 	if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_RECORD, recordMods, recordVK); rv == 0 {
 		winErr("Cannot register record hotkey: " + cfg.HotkeyRecord + " (already in use?)")
@@ -243,16 +256,53 @@ func runApp() {
 	// First-run guidance, but don't steal focus every time.
 	marker := filepath.Join(logDir, "startup-v1.marker")
 	if _, e := os.Stat(marker); os.IsNotExist(e) {
-		winErr("VoiceRewrite 已启动。\n\n1. 选中文字。\n2. 按 " + cfg.HotkeyRecord + " 开始录音并说修改要求。\n3. 再按 " + cfg.HotkeyRecord + " 结束录音，等待自动替换。\n\n按 " + cfg.HotkeyExit + " 退出。\n\nASR 和文本模型地址从 config.json 读取。")
+		guidance := "按 " + cfg.HotkeyRecord + " 开始录音；再按一次结束。"
+		if cfg.RecordMode == "hold" {
+			guidance = "按住 " + cfg.HotkeyRecord + " 录音，松开后自动提交修改要求。"
+		}
+		winErr("VoiceRewrite 已启动。\n\n1. 先选中文字。\n2. " + guidance + "\n3. 等待自动替换文字。\n\n按 " + cfg.HotkeyExit + " 退出。\n\n模式与 API 地址从 config.json 读取。")
 		_ = os.WriteFile(marker, []byte("shown\n"), 0600)
 	}
 	var active *audioRecorder
 	var selected selectedText
+	var releaseTicks int
+	stopTimer := func() { procKillTimer.Call(0, RECORD_TIMER_ID) }
+	defer stopTimer()
+	finish := func() {
+		if active == nil {
+			return
+		}
+		if cfg.RecordMode == "hold" {
+			stopTimer()
+		}
+		rec := active
+		active = nil
+		rec.Stop()
+		app.busy.Store(true)
+		beep(520, 110)
+		go processRecorded(app, rec, selected)
+	}
 	for {
 		var msg winMSG
 		rv, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(rv) <= 0 {
 			break
+		}
+		if msg.Message == WM_TIMER && msg.WParam == RECORD_TIMER_ID {
+			if cfg.RecordMode != "hold" || active == nil {
+				continue
+			}
+			// GetAsyncKeyState's high bit tracks physical key state on ordinary F keys.
+			down, _, _ := procGetAsyncKeyState.Call(recordVK)
+			if down&0x8000 == 0 {
+				releaseTicks++
+				if releaseTicks >= 2 {
+					finish()
+				}
+			} else {
+				releaseTicks = 0
+			}
+			continue
 		}
 		if msg.Message != WM_HOTKEY {
 			continue
@@ -260,6 +310,7 @@ func runApp() {
 		switch msg.WParam {
 		case HOTKEY_EXIT:
 			if active != nil {
+				stopTimer()
 				active.Stop()
 				_ = <-active.result
 			}
@@ -270,70 +321,95 @@ func runApp() {
 				beep(320, 90)
 				continue
 			}
-			if active == nil {
-				if !waitKeysReleased(2500 * time.Millisecond) {
-					app.fail(errors.New("请松开 Ctrl 和 Alt 键后重试"))
-					continue
+			if active != nil {
+				if cfg.RecordMode == "toggle" {
+					finish()
 				}
-				sel, e := captureSelection(hwnd, cfg)
-				if e != nil {
-					app.fail(e)
-					continue
-				}
-				if utf8.RuneCountInString(sel.Text) > cfg.MaxSelectedRunes {
-					app.fail(fmt.Errorf("选中文字超过 %d 字限制，请缩小选择范围", cfg.MaxSelectedRunes))
-					continue
-				}
-				rec, e := startRecorder(cfg.MaxRecordSeconds)
-				if e != nil {
-					app.fail(e)
-					continue
-				}
-				selected = sel
-				active = rec
-				beep(900, 90) // start
-				l.Printf("recording started, selected characters=%d", utf8.RuneCountInString(sel.Text))
-			} else {
-				rec := active
-				active = nil
-				rec.Stop()
-				app.busy.Store(true)
-				beep(520, 110) // stop
-				go func(sel selectedText) {
-					defer app.busy.Store(false)
-					r := <-rec.result
-					if r.err != nil {
-						app.fail(r.err)
-						return
-					}
-					if len(r.pcm) < 3200 {
-						app.fail(errors.New("录音太短（至少约 0.1 秒）；请再试一次"))
-						return
-					}
-					app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/32000)
-					ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
-					defer cancel()
-					instruction, e := transcribe(ctx, app.cfg, r.pcm)
-					if e != nil {
-						app.fail(e)
-						return
-					}
-					app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
-					rewritten, e := rewrite(ctx, app.cfg, sel.Text, instruction)
-					if e != nil {
-						app.fail(e)
-						return
-					}
-					if e = replaceSelection(app.Window, sel, rewritten, app.cfg); e != nil {
-						app.fail(e)
-						return
-					}
-					beep(1050, 110)
-					app.logger.Printf("rewrite success; resulting chars=%d", utf8.RuneCountInString(rewritten))
-				}(selected)
+				continue
 			}
+			// In hold mode capture audio BEFORE reading the clipboard. This avoids
+			// losing the beginning of speech while the selected text is copied.
+			var rec *audioRecorder
+			var e error
+			if cfg.RecordMode == "hold" {
+				rec, e = startRecorder(cfg.MaxRecordSeconds)
+				if e != nil {
+					app.fail(e)
+					continue
+				}
+				beep(900, 60)
+			} else if !waitKeysReleased(2500 * time.Millisecond) {
+				app.fail(errors.New("请松开快捷键后重试"))
+				continue
+			}
+			sel, e := captureSelection(hwnd, cfg)
+			if e == nil && utf8.RuneCountInString(sel.Text) > cfg.MaxSelectedRunes {
+				e = fmt.Errorf("选中文字超过 %d 字限制，请缩小选择范围", cfg.MaxSelectedRunes)
+			}
+			if e != nil {
+				if rec != nil {
+					rec.Stop()
+					_ = <-rec.result
+				}
+				app.fail(e)
+				continue
+			}
+			if cfg.RecordMode == "toggle" {
+				rec, e = startRecorder(cfg.MaxRecordSeconds)
+				if e != nil {
+					app.fail(e)
+					continue
+				}
+				beep(900, 90)
+			}
+			selected = sel
+			active = rec
+			if cfg.RecordMode == "hold" {
+				releaseTicks = 0
+				if timerID, _, _ := procSetTimer.Call(0, RECORD_TIMER_ID, 25, 0); timerID == 0 {
+					active = nil
+					rec.Stop()
+					_ = <-rec.result
+					app.fail(errors.New("无法监听录音快捷键的松开事件（Windows SetTimer 失败）"))
+					continue
+				}
+			}
+			l.Printf("recording started, mode=%s, selected characters=%d", cfg.RecordMode, utf8.RuneCountInString(sel.Text))
 		}
 	}
+}
+
+func processRecorded(app *appState, rec *audioRecorder, sel selectedText) {
+	defer app.busy.Store(false)
+	r := <-rec.result
+	if r.err != nil {
+		app.fail(r.err)
+		return
+	}
+	if len(r.pcm) < 3200 {
+		app.fail(errors.New("录音太短（至少约 0.1 秒）；请再试一次"))
+		return
+	}
+	app.logger.Printf("audio capture complete; %.2f seconds", float64(len(r.pcm))/32000)
+	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
+	defer cancel()
+	instruction, e := transcribe(ctx, app.cfg, r.pcm)
+	if e != nil {
+		app.fail(e)
+		return
+	}
+	app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
+	rewritten, e := rewrite(ctx, app.cfg, sel.Text, instruction)
+	if e != nil {
+		app.fail(e)
+		return
+	}
+	if e = replaceSelection(app.Window, sel, rewritten, app.cfg); e != nil {
+		app.fail(e)
+		return
+	}
+	beep(1050, 110)
+	app.logger.Printf("rewrite success; resulting chars=%d", utf8.RuneCountInString(rewritten))
 }
 
 func waitKeysReleased(max time.Duration) bool {
@@ -462,38 +538,37 @@ func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, error) {
 	}
 	return "", errors.New("未获取到选中文字。请先在原窗口选中文字再按快捷键；某些受保护或管理员窗口无法自动复制")
 }
-
 func isSameForegroundWindow(target uintptr) bool {
-    if target == 0 {
-        return false
-    }
-    foreground, _, _ := procGetForegroundWindow.Call()
-    valid, _, _ := procIsWindow.Call(target)
-    return valid != 0 && foreground == target
+	if target == 0 {
+		return false
+	}
+	foreground, _, _ := procGetForegroundWindow.Call()
+	valid, _, _ := procIsWindow.Call(target)
+	return valid != 0 && foreground == target
 }
 
 // Copy only while the original editor is foreground. Some applications update the
 // clipboard asynchronously, so retry without crossing application boundaries.
 func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
-    time.Sleep(100 * time.Millisecond) // Let hotkey key-up and UI selection settle.
-    var lastErr error
-    for i := 0; i < cfg.SelectionCopyAttempts; i++ {
-        if !isSameForegroundWindow(target) {
-            return "", errors.New("编辑窗口已切换，已停止自动复制，避免读取其他窗口的文字")
-        }
-        text, err := clipboardCopy(hwnd, time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond)
-        if !isSameForegroundWindow(target) {
-            return "", errors.New("复制期间编辑窗口发生切换，已停止自动复制")
-        }
-        if err == nil && strings.TrimSpace(text) != "" {
-            return text, nil
-        }
-        lastErr = err
-        if i+1 < cfg.SelectionCopyAttempts {
-            time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
-        }
-    }
-    return "", fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
+	time.Sleep(100 * time.Millisecond) // Let hotkey key-up and UI selection settle.
+	var lastErr error
+	for i := 0; i < cfg.SelectionCopyAttempts; i++ {
+		if !isSameForegroundWindow(target) {
+			return "", errors.New("编辑窗口已切换，已停止自动复制，避免读取其他窗口的文字")
+		}
+		text, err := clipboardCopy(hwnd, time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond)
+		if !isSameForegroundWindow(target) {
+			return "", errors.New("复制期间编辑窗口发生切换，已停止自动复制")
+		}
+		if err == nil && strings.TrimSpace(text) != "" {
+			return text, nil
+		}
+		lastErr = err
+		if i+1 < cfg.SelectionCopyAttempts {
+			time.Sleep(time.Duration(100*(i+1)) * time.Millisecond)
+		}
+	}
+	return "", fmt.Errorf("复制选中文字失败（已尝试 %d 次）：%w", cfg.SelectionCopyAttempts, lastErr)
 }
 
 func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {

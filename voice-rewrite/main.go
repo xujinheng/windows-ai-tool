@@ -22,32 +22,34 @@ import (
 // VoiceRewrite never sends audio or selected text to a provider other than the
 // two HTTP endpoints explicitly configured by the user.
 type Config struct {
-	ASRBaseURL       string `json:"asr_base_url"`
-	LLMBaseURL       string `json:"llm_base_url"`
-	TextModel        string `json:"text_model"`
-	ASRAPIKey        string `json:"asr_api_key"`
-	LLMAPIKey        string `json:"llm_api_key"`
-	ASRModel         string `json:"asr_model"`
-	HotkeyRecord     string `json:"hotkey_record"`
-	HotkeyExit       string `json:"hotkey_exit"`
-	SystemPrompt     string `json:"system_prompt"`
-	MaxRecordSeconds int    `json:"max_record_seconds"`
-	MaxSelectedRunes int    `json:"max_selected_characters"`
-	SelectionCopyAttempts int `json:"selection_copy_attempts"`
-	SelectionCopyTimeoutMS int `json:"selection_copy_timeout_ms"`
+	ASRBaseURL             string `json:"asr_base_url"`
+	LLMBaseURL             string `json:"llm_base_url"`
+	TextModel              string `json:"text_model"`
+	ASRAPIKey              string `json:"asr_api_key"`
+	LLMAPIKey              string `json:"llm_api_key"`
+	ASRModel               string `json:"asr_model"`
+	HotkeyRecord           string `json:"hotkey_record"`
+	RecordMode             string `json:"record_mode"`
+	HotkeyExit             string `json:"hotkey_exit"`
+	SystemPrompt           string `json:"system_prompt"`
+	MaxRecordSeconds       int    `json:"max_record_seconds"`
+	MaxSelectedRunes       int    `json:"max_selected_characters"`
+	SelectionCopyAttempts  int    `json:"selection_copy_attempts"`
+	SelectionCopyTimeoutMS int    `json:"selection_copy_timeout_ms"`
 }
 
 func defaults() Config {
 	return Config{
-		ASRBaseURL:       "http://127.0.0.1:8081/v1",
-		LLMBaseURL:       "http://127.0.0.1:1234/v1",
-		TextModel:        "auto",
-		ASRModel:         "whisper-1",
-		HotkeyRecord:     "Ctrl+Alt+F9",
-		HotkeyExit:       "Ctrl+Alt+F10",
-		MaxRecordSeconds: 60,
-		MaxSelectedRunes: 12000,
-		SelectionCopyAttempts: 3,
+		ASRBaseURL:             "http://127.0.0.1:8081/v1",
+		LLMBaseURL:             "http://127.0.0.1:1234/v1",
+		TextModel:              "auto",
+		ASRModel:               "whisper-1",
+		HotkeyRecord:           "Ctrl+Alt+F9",
+		RecordMode:             "toggle",
+		HotkeyExit:             "Ctrl+Alt+F10",
+		MaxRecordSeconds:       60,
+		MaxSelectedRunes:       12000,
+		SelectionCopyAttempts:  3,
 		SelectionCopyTimeoutMS: 1800,
 	}
 }
@@ -83,6 +85,12 @@ func loadConfig() (Config, error) {
 	}
 	if cfg.HotkeyRecord == "" {
 		cfg.HotkeyRecord = "Ctrl+Alt+F9"
+	}
+	if cfg.RecordMode == "" {
+		cfg.RecordMode = "toggle"
+	}
+	if cfg.RecordMode != "toggle" && cfg.RecordMode != "hold" {
+		return cfg, fmt.Errorf("invalid record_mode %q: use toggle or hold", cfg.RecordMode)
 	}
 	if cfg.HotkeyExit == "" {
 		cfg.HotkeyExit = "Ctrl+Alt+F10"

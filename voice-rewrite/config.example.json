@@ -5,11 +5,12 @@
   "asr_model": "whisper-1",
   "asr_api_key": "",
   "llm_api_key": "",
-  "hotkey_record": "Pause",
+  "hotkey_record": "F9",
   "hotkey_exit": "Ctrl+Alt+F10",
   "system_prompt": "",
   "max_record_seconds": 60,
   "max_selected_characters": 12000,
   "selection_copy_attempts": 3,
-  "selection_copy_timeout_ms": 1800
+  "selection_copy_timeout_ms": 1800,
+  "record_mode": "hold"
 }
