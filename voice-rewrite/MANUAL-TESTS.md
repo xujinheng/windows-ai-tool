@@ -1,29 +1,12 @@
-# Windows 11 smoke-test checklist (requires a real Windows desktop)
+# Windows 11 acceptance checklist — Intent Popup v6
 
-Close all previous VoiceRewrite EXEs before testing. Keep your local `config.json` and do not upload it.
-
-**Fresh defaults:** `record_mode=hold`, `hotkey_record=Mouse5`, `selection_copy_attempts=2`, `selection_copy_timeout_ms=750`.
-
-1. Confirm the running version from the right-click tray -> View log: `build=2026-11-13-threaded-input-v3`.
-2. Open Notepad, select one sentence, hold the *second* mouse side key for two seconds and say a rewrite instruction. Observe red while held, yellow on release, blue while rewriting, and green after replacement.
-3. Repeat in a standard browser textarea and a rich-text editor. Verify the selected text remains in the same window, and the UI/tray remain responsive even when a target refuses Ctrl+C.
-4. Try without any selection. Expect orange status and a logged error, **not a modal popup**. Other mouse movement and clicking must remain responsive.
-5. Right-click tray -> Edit `config.json`, View log, Exit. Confirm the bound side button returns to normal browser forward/back navigation after Exit.
-6. Test switching foreground windows mid-recording: the tool should abort replacement. Test user changing the selection during ASR/LLM: the tool must not replace a different selection; it should leave the rewrite text on clipboard for manual paste.
-7. Test 10 repeated short recordings in Notepad. Check there is never a stuck red indicator and there is one start and finish log per event.
-8. Confirm audio service (`asr_base_url`) and text service (`llm_base_url`) are reachable. From PowerShell use `Invoke-RestMethod http://127.0.0.1:1234/v1/models` for LM Studio if configured on that address.
-9. Verify Windows Settings > Privacy & security > Microphone permits desktop apps if recordings are empty.
-
-View diagnostic log:
-
-```powershell
-Get-Content "$env:LOCALAPPDATA\VoiceRewrite\VoiceRewrite.log" -Encoding UTF8 -Tail 60
-```
-
-PowerShell listing of running EXEs:
-
-```powershell
-Get-CimInstance Win32_Process | Where-Object { $_.Name -like '*VoiceRewrite*' } | Select-Object ProcessId, ExecutablePath
-```
-
-Do not upload screenshots containing a full local path or raw configuration with private API keys.
+1. Exit all old VoiceRewrite processes. Ensure the latest startup log shows `build=2026-11-13-intent-popup-v6`.
+2. In Notepad, select some text; hold Mouse5 and say `请写成英文`; release. Confirm the translated text replaces selection, not a popup (if the focused control is reported as a native editable control).
+3. On a web page, select a technical term; say `这是什么意思`. Confirm a nonempty explanation popup appears near the pointer and the webpage remains unchanged.
+4. Close the popup with title-bar X; repeat and close with bottom Close button; repeat and choose Copy and Close; repeat and use tray Close AI Result Window.
+5. Select read-only webpage text; say `翻译成中文`. Confirm the translation is shown in a copyable popup, not pasted into the webpage.
+6. Test a browser textarea. It can be classified as unknown and show a preview; this is a deliberate safety limitation.
+7. Open and exit the tray menu, verify the Mouse5 button returns to its usual functionality after program exit.
+8. Check the log for `stage=selection`, `stage=asr`, `stage=llm`, `intent`, `route` and `popup` events. No selected or dictated user content is logged.
+9. Test ASR errors, tiny recordings, focus switching, and rapid double presses; verify no freezing and no empty popup.
+10. To exercise the native popup lifecycle with Go tests on an interactive Windows desktop, set `VOICE_REWRITE_NATIVE_POPUP_TEST=1` and run `go test -run TestNativePopupPaintAndClose -v`.

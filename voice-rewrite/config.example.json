@@ -12,5 +12,6 @@
   "max_selected_characters": 12000,
   "selection_copy_attempts": 2,
   "selection_copy_timeout_ms": 750,
-  "record_mode": "hold"
+  "record_mode": "hold",
+  "max_response_tokens": 1200
 }

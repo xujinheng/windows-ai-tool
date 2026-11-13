@@ -13,35 +13,36 @@ import (
 // Windows notification-area (system tray) indicator. The icon is painted in
 // memory; no icon files, third-party dependencies, or background services.
 const (
-	WM_TRAY_NOTIFY      = 0x8000 + 47 // Shell callback to our registered window procedure
-	WM_TRAY_EVENT       = 0x8000 + 58 // Queued notification forwarded by WndProc
-	WM_TRAY_UPDATE      = 0x8000 + 48
-	WM_TRAY_EXIT        = 0x8000 + 49
-	WM_TRAY_CONFIG      = 0x8000 + 54
-	WM_TRAY_LOG         = 0x8000 + 55
-	TRAY_RESET_TIMER_ID = 3002
-	WM_RBUTTONUP        = 0x0205
-	WM_CONTEXTMENU      = 0x007B
-	NIM_ADD             = 0
-	NIM_MODIFY          = 1
-	NIM_DELETE          = 2
-	NIM_SETVERSION      = 4
+	WM_TRAY_NOTIFY       = 0x8000 + 47 // Shell callback to our registered window procedure
+	WM_TRAY_EVENT        = 0x8000 + 58 // Queued notification forwarded by WndProc
+	WM_TRAY_UPDATE       = 0x8000 + 48
+	WM_TRAY_EXIT         = 0x8000 + 49
+	WM_TRAY_CONFIG       = 0x8000 + 54
+	WM_TRAY_LOG          = 0x8000 + 55
+	WM_TRAY_CLOSE_POPUP  = 0x8000 + 62
+	TRAY_RESET_TIMER_ID  = 3002
+	WM_RBUTTONUP         = 0x0205
+	WM_CONTEXTMENU       = 0x007B
+	NIM_ADD              = 0
+	NIM_MODIFY           = 1
+	NIM_DELETE           = 2
+	NIM_SETVERSION       = 4
 	NOTIFYICON_VERSION_4 = 4
-	NIF_MESSAGE         = 1
-	NIF_ICON            = 2
-	NIF_TIP             = 4
-	TPM_RETURNCMD       = 0x0100
-	TPM_RIGHTBUTTON     = 0x0002
-	MF_STRING           = 0
-	MF_SEPARATOR        = 0x0800
-	DIB_RGB_COLORS      = 0
-	BI_RGB              = 0
-	TRAY_ICON_ID        = 1
-	WS_POPUP            = 0x80000000
-	WS_EX_TOOLWINDOW    = 0x00000080
-	SW_SHOW             = 5
-	SW_HIDE             = 0
-	WM_NULL             = 0
+	NIF_MESSAGE          = 1
+	NIF_ICON             = 2
+	NIF_TIP              = 4
+	TPM_RETURNCMD        = 0x0100
+	TPM_RIGHTBUTTON      = 0x0002
+	MF_STRING            = 0
+	MF_SEPARATOR         = 0x0800
+	DIB_RGB_COLORS       = 0
+	BI_RGB               = 0
+	TRAY_ICON_ID         = 1
+	WS_POPUP             = 0x80000000
+	WS_EX_TOOLWINDOW     = 0x00000080
+	SW_SHOW              = 5
+	SW_HIDE              = 0
+	WM_NULL              = 0
 )
 
 type trayState int32
@@ -69,7 +70,7 @@ func trayInfo(s trayState) trayStateInfo {
 	case trayRewriting:
 		return trayStateInfo{"正在改写文字", 0x3987d9}
 	case traySuccess:
-		return trayStateInfo{"改写成功", 0x29a568}
+		return trayStateInfo{"处理完成", 0x29a568}
 	case trayError:
 		return trayStateInfo{"操作失败 · 查看错误提示", 0xed8438}
 	default:
@@ -284,30 +285,41 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	defer procDestroyMenu.Call(m)
 	configLabel, _ := syscall.UTF16PtrFromString("编辑 config.json")
 	logLabel, _ := syscall.UTF16PtrFromString("查看日志")
+	closeLabel, _ := syscall.UTF16PtrFromString("关闭 AI 结果窗口")
 	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
 	procAppendMenu.Call(m, MF_STRING, 2, uintptr(unsafe.Pointer(configLabel)))
 	procAppendMenu.Call(m, MF_STRING, 3, uintptr(unsafe.Pointer(logLabel)))
+	procAppendMenu.Call(m, MF_STRING, 4, uintptr(unsafe.Pointer(closeLabel)))
 	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
 	procAppendMenu.Call(m, MF_STRING, 1, uintptr(unsafe.Pointer(exitLabel)))
 	runtime.KeepAlive(configLabel)
 	runtime.KeepAlive(logLabel)
+	runtime.KeepAlive(closeLabel)
 	runtime.KeepAlive(exitLabel)
 	var p trayPoint
 	if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
 		return 0, errors.New("GetCursorPos failed")
 	}
-	// TrackPopupMenu needs a real foreground top-level owner window.
-	procSetWindowPos.Call(t.menuOwner, 0, int32ptr(p.X), int32ptr(p.Y), 1, 1, 0x0014)
+	// TrackPopupMenu requires a real foreground top-level owner. The primary
+	// tray callback window is hidden, so give the menu its own 1x1 toolwindow.
+	procSetWindowPos.Call(t.menuOwner, 0, int32ptr(p.X), int32ptr(p.Y), 1, 1, 0x0014 /* SWP_NOZORDER|SWP_NOACTIVATE */)
 	procShowWindow.Call(t.menuOwner, SW_SHOW)
-	procSetForegroundWindow.Call(t.menuOwner)
+	if ok, _, _ := procSetForegroundWindow.Call(t.menuOwner); ok == 0 {
+		// Still attempt TrackPopupMenu; Windows may enforce foreground restrictions.
+	}
 	selected, _, _ := procTrackPopupMenu.Call(m, TPM_RETURNCMD|TPM_RIGHTBUTTON, int32ptr(p.X), int32ptr(p.Y), 0, t.menuOwner, 0)
-	// Required workaround for repeated notification-area menus.
+	// Required workaround for repeated notification-icon popup menus.
 	procPostMessage.Call(t.menuOwner, WM_NULL, 0, 0)
 	procShowWindow.Call(t.menuOwner, SW_HIDE)
 	switch selected {
-	case 1: procPostMessage.Call(t.hwnd, WM_TRAY_EXIT, 0, 0)
-	case 2: procPostMessage.Call(t.hwnd, WM_TRAY_CONFIG, 0, 0)
-	case 3: procPostMessage.Call(t.hwnd, WM_TRAY_LOG, 0, 0)
+	case 1:
+		procPostMessage.Call(t.hwnd, WM_TRAY_EXIT, 0, 0)
+	case 2:
+		procPostMessage.Call(t.hwnd, WM_TRAY_CONFIG, 0, 0)
+	case 3:
+		procPostMessage.Call(t.hwnd, WM_TRAY_LOG, 0, 0)
+	case 4:
+		procPostMessage.Call(t.hwnd, WM_TRAY_CLOSE_POPUP, 0, 0)
 	}
 	return selected, nil
 }

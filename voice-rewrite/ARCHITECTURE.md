@@ -1,34 +1,20 @@
-# VoiceRewrite: input/clipboard architecture (threaded-input-v3)
+# VoiceRewrite v6: Windows threading, intent and popup architecture
 
-This is a Windows desktop automation prototype. The design intentionally separates:
+## Processing
 
-1. **Dedicated low-level mouse-hook OS thread** (`mouse_windows.go`). It owns the `WH_MOUSE_LL` hook and a private `GetMessageW` message pump, never runs clipboard or HTTP work, suppresses only the chosen XBUTTON, and posts `WM_SIDE_DOWN`/`WM_SIDE_UP` to the UI window. `WM_QUIT` is posted to the same thread to uninstall the hook.
-2. **UI/main message thread** (`windows.go`). It owns the tray icon, hotkey registrations, recording state transitions and small WinMM start/stop requests. It does not poll the clipboard, call ASR/LLM HTTP endpoints, or block on the recorder's completion channel during normal operation.
-3. **Background operations** (`windows.go`, `main.go`). On release, immediately mark busy and show the yellow tray state, then copy the selected text on a worker with a bounded retry budget. Audio readback, ASR, text-model rewrite and final revalidation/paste all run off the UI and hook threads.
+- Dedicated Windows `WH_MOUSE_LL` hook OS thread: forwards Mouse5 press/release events; it must not block on clipboard or network I/O.
+- UI thread: maintains the tray state and main `GetMessageW` loop. The app handles its own posted app messages, and forwards **every other window message** to `TranslateMessage` and `DispatchMessageW`; these are required to paint and close popup windows and deliver child `WM_COMMAND` notifications.
+- Worker goroutines: record PCM, capture selected text after Mouse5 release, transcribe via local Qwen3-ASR, use local LLM exactly once to classify intent and generate output, and optionally attempt safe replacement.
 
-## State machine
+## Routing
 
-```
-Idle -> Mouse5 down -> Recording (red)
-Recording -> Mouse5 up -> Processing (yellow) -> Rewriting (blue) -> Success (green) -> Idle
-                                  |                  |               |
-                                  +-- failure -------+---------------+--> Error (orange) -> Idle
-```
+One response: `{"intent":"edit|translate|answer|summarize|ambiguous","result":"..."}`. The model never controls whether text may be written. A deterministic instruction guard and a native editable-control check must BOTH authorize replacement. A translation command like `请写成英文` is a transformation: auto-replace when safe, popup otherwise. Requests for explanations/summaries always use the popup. Browser article and unknown editor control selection never gets auto-pasted into.
 
-The existing `record_mode=toggle` remains available, and even its initial clipboard capture is now offloaded from the UI thread. `Mouse5`/`hold` remains the default for fresh configuration files.
-
-## Performance and troubleshooting
-
-The log contains `build=2026-11-13-threaded-input-v3` and stage measurements (`stage=selection`, `stage=asr`, `stage=llm`, `stage=paste`, milliseconds). Audio and selected document contents are never logged by the app. HTTP errors may contain provider-supplied diagnostics; logs stay on the user's computer and are excluded from Git.
-
-The default selection copy budget is 2 attempts, each up to 750ms, plus a short settle/backoff. **If migrating from an older install, existing local `config.json` values are preserved:** edit `selection_copy_attempts` and `selection_copy_timeout_ms` manually to use the new defaults.
-
-Microsoft's guidance for `WH_MOUSE_LL` explicitly recommends a dedicated thread that quickly forwards events. Reference: https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelmouseproc
+The popup is a native nonmodal Win32 top-level window containing a UTF-16 read-only EDIT and two buttons (Copy and Close), with an explicit `WM_CLOSE` and `WM_COMMAND` handler. The central message pump dispatches its events. Mouse position is captured when dictation ends; results are rendered later without taking keyboard focus. If a popup has focus, Escape closes it. Tray menu can close it at any time.
 
 ## Known limitations
 
-- This version still uses clipboard-based `Ctrl+C`/`Ctrl+V` because broad, tested UI Automation selection support is not implemented yet. Some editors, protected windows, browser surfaces or elevated applications may not expose a usable selection. Failure is nonmodal; review logs from the tray menu.
-- Only **plain-text clipboard contents** can be restored. **Rich text, files, images and complex clipboard formats are not preserved** by this implementation. Restoration occurs only if clipboard sequence number indicates no intervening external changes. Avoid using this tool when preserving those formats is essential.
-- Windows 11 desktop/physical mouse/IME behavior cannot be fully validated by Linux cross-compilation. Check `MANUAL-TESTS.md` after downloading a build.
-- A device driver that remaps the chosen side button to another input might bypass `XBUTTON2` events. You can switch to `Mouse4` or a function key in `config.json`.
-- Although the hook is isolated, WinMM APIs and selected-app clipboard copy can still be delayed by OS or device drivers. Such delays should now affect **the operation** rather than freezing the desktop's mouse hook/tray UI.
+- No general-purpose UI Automation / IAccessible implementation; browser editable text may show preview instead of auto-replace. This avoids injecting Ctrl+V into a page read-only selection.
+- Clipboard restore is only plain text and is conditional on clipboard sequence staying unchanged. Image/rich-text clipboard preservation is not yet implemented.
+- The native popup lifecycle test is opt-in because it requires an interactive Windows desktop. Cross-compilation does **not** establish native GUI correctness.
+- Pasted speech and selected text remain local to the configured servers; never log content; log `intent`, `route`, timings and status instead.

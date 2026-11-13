@@ -178,7 +178,14 @@ func TestMouseButtonMapping(t *testing.T) {
 }
 
 func TestTrayMenuRequested(t *testing.T) {
- for _, e := range []struct{event uint32; want bool}{{0x0205,true},{0x007b,true},{0x0204,false},{0x0201,false},{0,false}} {
-  if got:=trayMenuRequested(e.event); got!=e.want {t.Fatalf("event=0x%x got=%t want=%t",e.event,got,e.want)}
- }
+	for _, e := range []struct {
+		event uint32
+		want  bool
+	}{
+		{0x0205, true}, {0x007b, true}, {0x0204, false}, {0x0201, false}, {0, false},
+	} {
+		if got := trayMenuRequested(e.event); got != e.want {
+			t.Fatalf("event=0x%x got=%t want=%t", e.event, got, e.want)
+		}
+	}
 }
