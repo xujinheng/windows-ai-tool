@@ -4,6 +4,9 @@ on:
     paths:
       - 'voice-rewrite/result_direct2d_windows.go'
       - 'voice-rewrite/popup_windows.go'
+      - 'voice-rewrite/popup_dismiss_windows.go'
+      - 'voice-rewrite/popup_layout.go'
+      - 'voice-rewrite/popup_layout_test.go'
       - 'voice-rewrite/answer_visual_preview_windows.go'
       - 'voice-rewrite/windows.go'
       - '.github/workflows/direct2d-result.yml'
@@ -45,6 +48,9 @@ jobs:
             [DllImport("user32.dll")] public static extern int GetWindowTextLengthW(IntPtr hwnd);
             [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hwnd,uint msg,IntPtr wp,IntPtr lp);
             [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hwnd,int index);
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr GetProp(IntPtr hwnd,string name);
+            [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
+            [DllImport("user32.dll")] public static extern void mouse_event(uint flags,uint dx,uint dy,uint data,UIntPtr extra);
           }
           '@
           $folder='direct2d-result-evidence'
@@ -106,25 +112,45 @@ jobs:
               $rect=New-Object RWResult+RECT
               if(-not [RWResult]::GetWindowRect($hwnd,[ref]$rect)){throw "window geometry unavailable"}
               $w=$rect.Right-$rect.Left;$h=$rect.Bottom-$rect.Top
-              if($w -lt 400 -or $h -lt 350){throw "$($case.name): undersized window $w x $h"}
+              if($w -lt 440 -or $w -gt 520 -or $h -lt 245 -or $h -gt 530){throw "$($case.name): unexpected compact window $w x $h"}
+              if($case.long -eq '0' -and $h -gt 345){throw "$($case.name): old oversized header/layout returned ($h px)"}
+              $ready=[RWResult]::GetProp($hwnd,'VoiceRewrite.Direct2D.FrameReady')
+              if($ready -eq [IntPtr]::Zero){throw "Direct2D paint did not complete"}
               $bmp=[System.Drawing.Bitmap]::new($w,$h)
               $g=[System.Drawing.Graphics]::FromImage($bmp)
               try{
                 $g.CopyFromScreen($rect.Left,$rect.Top,0,0,[System.Drawing.Size]::new($w,$h))
-                # This lilac mark is painted by Direct2D, not the Win32
-                # owner-draw button fallback; assert an actual D2D frame.
-                $brand=$bmp.GetPixel(42,34)
-                if($case.theme -eq 'dark'){
-                  if([math]::Abs([int]$brand.R-186) -gt 5 -or [math]::Abs([int]$brand.B-255) -gt 5){throw "Direct2D dark paint missing: $brand"}
-                } else {
-                  if([math]::Abs([int]$brand.R-114) -gt 5 -or [math]::Abs([int]$brand.B-207) -gt 5){throw "Direct2D light paint missing: $brand"}
-                }
+                # Branding is deliberately absent. Confirm the surface is
+                # visibly distinct from its background and not a blank bitmap.
+                $outer=$bmp.GetPixel(5,75)
+                $panel=$bmp.GetPixel(15,75)
+                if($outer.ToArgb() -eq $panel.ToArgb()) {throw "reading surface not rendered"}
                 $file=Join-Path $folder ($case.name+'.png')
                 $bmp.Save($file,[System.Drawing.Imaging.ImageFormat]::Png)
               }finally{$g.Dispose();$bmp.Dispose()}
               $p.Refresh()
               $diag+=[pscustomobject]@{name=$case.name;theme=$case.theme;allowApply=$case.apply;longText=$case.long;width=$w;height=$h;workingSetMB=[math]::Round($p.WorkingSet64/1MB,2);privateMB=[math]::Round($p.PrivateMemorySize64/1MB,2)}
               Write-Host "CAPTURED $($case.name): $w x $h; $([math]::Round($p.WorkingSet64/1MB,2)) MB working set"
+              # Clicking response text must preserve the card and selection.
+              [RWResult]::SetCursorPos($rect.Left+75,$rect.Top+92) | Out-Null
+              [RWResult]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+              [RWResult]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+              Start-Sleep -Milliseconds 250
+              if([RWResult]::FindWindow('VoiceRewrite.ResultCard','VoiceRewrite') -eq [IntPtr]::Zero) {throw "clicking response text dismissed the card"}
+              # Empty header and clicks outside the window must both dismiss.
+              if($case.name -eq 'rewrite-light' -or $case.name -eq 'answer-dark'){
+                $cx=$rect.Left+180; $cy=$rect.Top+26
+                if($case.name -eq 'answer-dark'){$cx=$rect.Right+12; $cy=$rect.Top+110}
+                [RWResult]::SetCursorPos($cx,$cy) | Out-Null
+                [RWResult]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+                [RWResult]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+                $dismissed=$false
+                for($k=0;$k -lt 20;$k++){
+                  if([RWResult]::FindWindow('VoiceRewrite.ResultCard','VoiceRewrite') -eq [IntPtr]::Zero){$dismissed=$true;break}
+                  Start-Sleep -Milliseconds 100
+                }
+                if(-not $dismissed){throw "$($case.name): click-away did not close the card"}
+              }
             }finally{
               $p.Refresh()
               if(-not $p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}
