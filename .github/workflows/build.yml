@@ -14,6 +14,28 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # One-time repair of the already published release description.
+  repair-v0_1_0-notes:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[repair-release-notes]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace v0.1.0 release body with curated notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes=release-notes/v0.1.0.md
+          test -s "$notes"
+          release="repos/$GITHUB_REPOSITORY/releases/tags/v0.1.0"
+          id=$(gh api "$release" --jq .id)
+          gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$id" -f body="$(cat "$notes")" >/dev/null
+          gh api "$release" --jq .body > /tmp/release-body.md
+          diff -u "$notes" /tmp/release-body.md
   test-core:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -183,6 +205,26 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Read curated notes from main (not from the tag's historical build
+      # snapshot). A release without dedicated notes must fail, never fall back
+      # to GitHub's automatic PR/commit history.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: release-metadata
+          sparse-checkout: release-notes
+      - name: Require user-facing release notes
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          notes="release-metadata/release-notes/$RELEASE_TAG.md"
+          test -s "$notes" || { echo "Missing curated release notes: $notes" >&2; exit 1; }
+          if grep -Eiq 'Full Changelog|New Contributors|Built from commit:|Refreshed with selection-copy|^## What.s Changed|^[-*] ci:|^[-*] CI:' "$notes"; then
+            echo "Release notes contain auto-generated or internal development history" >&2
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           pattern: VoiceRewrite-*
@@ -193,7 +235,8 @@ jobs:
         with:
           prerelease: ${{ github.ref_name != 'v0.1.0' }}
           name: VoiceRewrite ${{ github.ref_name }}
-          generate_release_notes: true
+          generate_release_notes: false
+          body_path: release-metadata/release-notes/${{ github.ref_name }}.md
           overwrite_files: true
           # EXE and checksums remain available as CI artifacts, but not Release assets.
           # Both public packages already contain the program and license.
