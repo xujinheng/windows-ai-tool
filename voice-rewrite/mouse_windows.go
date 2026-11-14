@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sync"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -59,22 +59,22 @@ const sideHoldThreshold = 250 * time.Millisecond
 const sideReplayExtraInfo = uintptr(0x56525842)
 
 const (
-	mouseInputType = 0
-	mouseXDownFlag = 0x0080
-	mouseXUpFlag   = 0x0100
+	mouseInputType    = 0
+	mouseXDownFlag    = 0x0080
+	mouseXUpFlag      = 0x0100
 	mouseInjectedFlag = 0x0001
 )
 
 // The MOUSEINPUT union occupies 32 bytes in a 64-bit Win32 INPUT (40 bytes).
 type sideMouseInput struct {
-	Type uint32
-	_    uint32
-	DX   int32
-	DY   int32
-	Data uint32
-	Flags uint32
-	Time uint32
-	_    uint32
+	Type      uint32
+	_         uint32
+	DX        int32
+	DY        int32
+	Data      uint32
+	Flags     uint32
+	Time      uint32
+	_         uint32
 	ExtraInfo uintptr
 }
 
