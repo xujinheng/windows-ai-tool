@@ -1,3 +1,4 @@
+# Second pass: normalize rounded field and focus-state implementation.
 name: Format Raycast-style settings PR
 on:
   push:
