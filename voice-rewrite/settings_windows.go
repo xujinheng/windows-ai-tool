@@ -114,7 +114,7 @@ func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
 
 // 96-DPI logical coordinate scrolling avoids inaccessible buttons on small
 // work areas and 125%–200% display scaling.
-const uxContentWidth, uxContentHeight int32 = 694, 542
+const uxContentWidth, uxContentHeight int32 = 676, 520
 
 type uxScrollInfo struct {
 	Size, Mask    uint32
@@ -701,17 +701,17 @@ func showNativeSettings(app *appState) error {
 	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 364, 254, 297, 31, 0, false)
 	p.probeStatus[1] = makeOne("STATIC", "尚未检测", stat, 364, 294, 298, 52, 0, false)
 
-	makeOne("STATIC", "快捷键与输入设备", stat, 30, 376, 290, 24, 0, true)
-	makeOne("STATIC", "听写快捷键", stat, 30, 418, 110, 22, 0, false)
-	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 411, 158, 31, uxShortcutInput, false)
-	makeOne("STATIC", "麦克风", stat, 318, 418, 85, 22, 0, false)
-	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 407, 410, 254, 190, uxMicrophoneInput, false)
+	makeOne("STATIC", "快捷键与输入设备", stat, 30, 373, 290, 24, 0, true)
+	makeOne("STATIC", "听写快捷键", stat, 30, 412, 110, 22, 0, false)
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 405, 158, 31, uxShortcutInput, false)
+	makeOne("STATIC", "麦克风", stat, 318, 412, 85, 22, 0, false)
+	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 407, 404, 254, 190, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
 	resultStyleNativeEdit(p.microphone, p.palette.dark)
-	makeOne("BUTTON", "保存设置", btn, 16, 479, 144, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级配置", btn, 172, 479, 113, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 580, 479, 96, 34, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "", stat, 18, 519, 630, 21, 0, false)
+	makeOne("BUTTON", "保存设置", btn, 16, 461, 144, 34, uxSaveButton, false)
+	makeOne("BUTTON", "高级配置", btn, 172, 461, 113, 34, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 580, 461, 96, 34, uxCloseButton, false)
+	p.hint = makeOne("STATIC", "", stat, 18, 498, 630, 21, 0, false)
 	setFont(p.hint, p.mutedFont)
 	setFont(p.probeStatus[0], p.mutedFont)
 	setFont(p.probeStatus[1], p.mutedFont)
