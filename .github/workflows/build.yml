@@ -14,6 +14,32 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # One-time refresh of v0.1.0 to include the selected-text stability fix.
+  refresh-v0_1_0:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[refresh-v0.1.0]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Replace existing version tag and dispatch tagged build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          old=$(git ls-remote --tags origin refs/tags/v0.1.0 | cut -f1)
+          if [ "$old" != '05ea82e6a9f991a3872b22423385f1897a8ad5af' ]; then
+            echo "Refusing to move a tag changed by another actor: $old" >&2
+            exit 1
+          fi
+          git tag --force v0.1.0 "$GITHUB_SHA"
+          git push --force origin refs/tags/v0.1.0
+          gh workflow run build.yml --ref v0.1.0
   test-core:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -186,5 +212,24 @@ jobs:
           prerelease: ${{ github.ref_name != 'v0.1.0' }}
           name: VoiceRewrite ${{ github.ref_name }}
           generate_release_notes: true
+          overwrite_files: true
           files: release/*
           fail_on_unmatched_files: true
+      - name: Record v0.1.0 rebuild in release notes
+        if: github.ref == 'refs/tags/v0.1.0'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          current=$(gh release view v0.1.0 --json body --jq .body)
+          marker='Refreshed with selection-copy reliability fix (PR #14)'
+          if [[ "$current" != *"$marker"* ]]; then
+            {
+              printf '## Updated Windows binaries\n\n'
+              printf '%s\n' "$marker"
+              printf 'Built from commit: `%s`. Existing v0.1.0 assets were replaced.\n\n' "$GITHUB_SHA"
+              printf '%s\n' "$current"
+            } > /tmp/v0.1.0-notes.md
+            gh release edit v0.1.0 --notes-file /tmp/v0.1.0-notes.md
+          fi
