@@ -127,8 +127,10 @@ func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, error) {
 		return "", err
 	}
 	deadline := time.Now().Add(timeout)
+	changed := false
 	for time.Now().Before(deadline) {
 		if clipboardSeq() != old {
+			changed = true
 			s, ok, e := getClipboardText(hwnd)
 			if e == nil && ok && strings.TrimSpace(s) != "" {
 				return s, nil
@@ -136,7 +138,11 @@ func clipboardCopy(hwnd uintptr, timeout time.Duration) (string, error) {
 		}
 		time.Sleep(35 * time.Millisecond)
 	}
-	return "", errors.New("未获取到选中文字。请先在原窗口选中文字再按快捷键；某些受保护或管理员窗口无法自动复制")
+	if !changed {
+		// Do not use the clipboard's previous content as a supposed selection.
+		return "", errors.New("Ctrl+C 已发送，但剪贴板没有更新（目标编辑器可能未处理快捷键或复制响应较慢）")
+	}
+	return "", errors.New("剪贴板已更新，但没有可读取的选中文字（请确认已选中文字，且目标窗口允许复制）")
 }
 func isSameForegroundWindow(target uintptr) bool {
 	if target == 0 {
@@ -149,14 +155,45 @@ func isSameForegroundWindow(target uintptr) bool {
 
 // Copy only while the original editor is foreground. Some applications update the
 // clipboard asynchronously, so retry without crossing application boundaries.
+// A mouse side-button may be released while Ctrl/Alt/Shift is still physically
+// held. SendInput does not clear that state; an injected Ctrl+C could then be
+// interpreted as a different shortcut. Normal mouse-only use returns at once.
+func waitCopyModifiersReleased(timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		down := false
+		for _, key := range [...]uintptr{VK_CONTROL, VK_MENU, VK_SHIFT} {
+			state, _, _ := procGetAsyncKeyState.Call(key)
+			if state&0x8000 != 0 {
+				down = true
+				break
+			}
+		}
+		if !down {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 func copySelectionWithRetry(hwnd, target uintptr, cfg Config) (string, error) {
 	time.Sleep(35 * time.Millisecond) // Let mouse key-up and selection settle.
+	if !waitCopyModifiersReleased(900 * time.Millisecond) {
+		return "", errors.New("Ctrl/Alt/Shift 仍被按住，已停止模拟复制；请松开修饰键后再试")
+	}
 	var lastErr error
 	for i := 0; i < cfg.SelectionCopyAttempts; i++ {
 		if !isSameForegroundWindow(target) {
 			return "", errors.New("编辑窗口已切换，已停止自动复制，避免读取其他窗口的文字")
 		}
-		text, err := clipboardCopy(hwnd, time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond)
+		// Two-attempt default: retry an ignored Ctrl+C sooner, reserving
+		// the remaining budget for a slow clipboard response. No extra
+		// delay on successful copies and no longer overall timeout.
+		timeout := selectionCopyAttemptTimeout(time.Duration(cfg.SelectionCopyTimeoutMS)*time.Millisecond, i, cfg.SelectionCopyAttempts)
+		text, err := clipboardCopy(hwnd, timeout)
 		if !isSameForegroundWindow(target) {
 			return "", errors.New("复制期间编辑窗口发生切换，已停止自动复制")
 		}
