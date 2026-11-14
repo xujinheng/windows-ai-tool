@@ -155,23 +155,31 @@ func uxScrollClamp(n, limit int32) int32 {
 func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32) {
 	x, y, w, h = c.x, c.y, c.w, c.h
 	narrow := viewW < 640
+	compact := viewH < 460
 	if c.id >= uxTabSpeech && c.id <= uxTabInput {
 		width := (viewW - 64 - 16) / 3
 		if width < 90 { width = 90 }
 		x = 32 + (int32(c.id-uxTabSpeech))*(width+8)
+		if compact { return x, 66, width, 38 }
 		return x, 115, width, 40
 	}
+	footerY := viewH-64
+	if compact { footerY=viewH-54 }
 	if c.id == uxSaveButton {
-		return viewW - 188, viewH - 64, 156, 36
+		return viewW - 188, footerY, 156, 36
 	}
 	if c.id == uxCloseButton {
-		return viewW - 296, viewH - 64, 94, 36
+		return viewW - 296, footerY, 94, 36
 	}
 	if c.id == uxAdvancedButton {
-		return 32, viewH - 64, 130, 36
+		return 32, footerY, 130, 36
 	}
 	if c.tab < 0 {
 		if c.y >= 600 { return 34, viewH - 22, viewW - 68, 18 }
+		if compact && c.y < 100 {
+			if c.x==78 {y=13}
+			if c.x==80 {y=51}
+		}
 		if c.x >= 510 { return viewW - 220, y, 184, h }
 		if c.x == 80 || c.x == 78 { w = viewW - x - 38 }
 		return
@@ -179,8 +187,10 @@ func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32)
 	switch c.role {
 	case uxRolePageTitle:
 		x, y, w = 46, 186, viewW - 92
+		if compact {x,y,w=42,115,viewW-84}
 	case uxRolePageDescription:
 		x, y, w = 46, 222, viewW - 92
+		if compact {x,y,w=42,152,viewW-84}
 	case uxRoleLabel:
 		if narrow {
 			x, y, w = 42, 270+int32(c.row)*88, viewW - 84
@@ -205,7 +215,21 @@ func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32)
 		x, y, w = 48, 502, viewW-96
 		if narrow { x,y,w = 42, 562, viewW-84 }
 	}
-	return x, y-scrollY, w, h
+	if compact {
+		switch c.role {
+		case uxRoleLabel:
+			x, y, w = 42, 197+int32(c.row)*82, viewW-84
+		case uxRoleField:
+			x, y, w, h = 42, 222+int32(c.row)*82, viewW-84, 35
+			if c.row==0 && c.tab!=2 {w-=110}
+		case uxRoleProbe:
+			x,y,w,h=viewW-144,222,102,35
+		case uxRoleStatus:
+			x,y,w=42,476,viewW-84
+		}
+	}
+	if c.role != uxRolePageTitle && c.role != uxRolePageDescription { y-=scrollY }
+	return
 }
 func (p *uxSettings) layout() {
 	if p == nil || p.window == 0 { return }
@@ -215,9 +239,12 @@ func (p *uxSettings) layout() {
 	viewH := int32(float64(r.Bottom-r.Top)/p.scale)
 	if viewW < 1 { viewW=1 }
 	if viewH < 1 { viewH=1 }
+	compact := viewH<460
 	footerTop := viewH - 82
 	bottom := int32(550)
+	bodyTop := int32(176)
 	if viewW < 640 { bottom=604 }
+	if compact { footerTop=viewH-66;bottom=514;bodyTop=179 }
 	maxScroll := bottom-footerTop
 	if maxScroll < 0 { maxScroll=0 }
 	p.scrollX=0
@@ -226,11 +253,11 @@ func (p *uxSettings) layout() {
 	// accessibility fallback on vertically constrained high-DPI work areas.
 	if maxScroll > 0 {
 		info := uxScrollInfo{Size:uint32(unsafe.Sizeof(uxScrollInfo{})),Mask:uxSIFRange|uxSIFPage|uxSIFPos,
-			Min:0,Max:bottom-176,Page:uint32(footerTop-176),Pos:p.scrollY}
-		if footerTop<=176 { info.Page=1 }
+			Min:0,Max:bottom-bodyTop,Page:uint32(footerTop-bodyTop),Pos:p.scrollY}
+		if footerTop<=bodyTop { info.Page=1 }
 		procSetScrollInfoUX.Call(p.window,uxSBVert,uintptr(unsafe.Pointer(&info)),1)
 	}
-	procShowScrollBarUX.Call(p.window,uxSBVert, boolToUintptr(maxScroll>0))
+	if maxScroll>0 {procShowScrollBarUX.Call(p.window,uxSBVert,1)} else {procShowScrollBarUX.Call(p.window,uxSBVert,0)}
 	px := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale+0.5)) }
 	for _, c := range p.controls {
 		x,y,w,h:=preferenceRect(c,viewW,viewH,p.scrollY)
@@ -238,7 +265,10 @@ func (p *uxSettings) layout() {
 		if h<1 {h=1}
 		procMoveWindow.Call(c.hwnd,px(x),px(y),px(w),px(h),1)
 		visible := c.tab<0 || c.tab==p.activeTab
-		if c.tab>=0 && (y<172 || y+h>footerTop) {visible=false}
+		if c.tab>=0 {
+			if c.role!=uxRolePageTitle && c.role!=uxRolePageDescription && (y<bodyTop || y+h>footerTop) {visible=false}
+		}
+		if compact && c.tab<0 && (c.y==60 || c.x>=510 || c.y>=600) {visible=false}
 		if visible { procShowWindow.Call(c.hwnd,SW_SHOW) } else {procShowWindow.Call(c.hwnd,0)}
 	}
 	procInvalidateRectSettings.Call(p.window,0,1)
@@ -250,9 +280,12 @@ func (p *uxSettings) scroll(axis, request uintptr) {
 	viewH := int32(float64(rect.Bottom-rect.Top)/p.scale)
 	bottom := int32(550)
 	if viewW<640 {bottom=604}
-	max := bottom-(viewH-82)
+	footerTop:=viewH-82
+	if viewH<460 {bottom=514;footerTop=viewH-66}
+	max := bottom-footerTop
 	if max<0 {max=0}
 	view := viewH-258
+	if viewH<460 {view=viewH-245}
 	if view<36 {view=36}
 	pos := &p.scrollY
 	if axis == uxSBHorz { return }
