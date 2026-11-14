@@ -552,7 +552,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				label = "测试连接"
             case uxCaptureRewrite, uxCaptureDictation:
                 label = "录入按键"
-                if p.capturingShortcut==item.CtlID {label="等待按键…"}
+                if p.capturingShortcut==uintptr(item.CtlID) {label="等待按键…"}
 			}
 			if label != "" && uiDrawActionButton(item, p.palette, p.font, label, primary) {
 				return 1
