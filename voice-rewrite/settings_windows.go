@@ -525,9 +525,13 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				} else {
 					p.focusRow = -1
 					for idx, edit := range p.inputs {
-						if edit == lParam { p.focusRow = idx%3 }
+						if edit == lParam {
+							p.focusRow = idx % 3
+						}
 					}
-					if p.shortcut == lParam { p.focusRow = 0 }
+					if p.shortcut == lParam {
+						p.focusRow = 0
+					}
 				}
 				refreshNativeWindow(hwnd)
 			}
