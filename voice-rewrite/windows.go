@@ -144,6 +144,13 @@ type waveHdr struct {
 	Reserved      uintptr
 }
 
+type sideCapture struct {
+	button       uint16
+	targetWindow uintptr
+	recorder     *audioRecorder
+	err          error
+}
+
 type togglePrepareResult struct {
 	rec        *audioRecorder
 	sel        selectedText
@@ -441,6 +448,17 @@ func runApp() {
 		l.Printf("mouse hook installed: rewrite=%d dictation=%d", selectedMouseButton, dictationButton)
 	}
 	var active *audioRecorder
+	var pendingSide *sideCapture
+	// Short clicks never create a task or send their captured audio to ASR.
+	discardPendingSide := func() {
+		if pendingSide != nil && pendingSide.recorder != nil {
+			rec := pendingSide.recorder
+			rec.Stop()
+			go func() { <-rec.result }()
+		}
+		pendingSide = nil
+	}
+	defer discardPendingSide()
 	var selected selectedText
 	toggleResult := make(chan togglePrepareResult, 1)
 	var holdTargetWindow uintptr
@@ -483,28 +501,10 @@ func runApp() {
 		}
 	}
 
-	// One capture engine, two explicitly chosen workflows. Never infer dictation
-	// from Ctrl+C: VS Code may copy an entire line without any selection.
-	startHold := func(dictation bool, button uint16) {
-		if app.paused.Load() || app.busy.Load() || active != nil {
-			beep(320, 90)
-			return
-		}
-		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
-			// Never dictate into VoiceRewrite's own settings form.
-			return
-		}
-		win, _, _ := procGetForegroundWindow.Call()
-		if win == 0 {
-			app.fail(errors.New("没有可用的目标窗口"))
-			return
-		}
-		rec, e := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
-		if e != nil {
-			app.fail(e)
-			return
-		}
-		holdTargetWindow = win
+	// A microphone stream may already be capturing the first 250ms before
+	// a side-button hold becomes a voice operation.
+	activateHold := func(rec *audioRecorder, dictation bool, button uint16, target uintptr) {
+		holdTargetWindow = target
 		holdButton = button
 		holdIsDictation = dictation
 		holdGeneration = app.epoch.start()
@@ -512,7 +512,7 @@ func runApp() {
 		app.setStatus(trayRecording)
 		holdSession++
 		holdWatch = make(chan struct{})
-		if button != 0 { // mouse button release delivered by low level hook
+		if button != 0 {
 			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
 		} else {
 			vk := recordVK
@@ -521,14 +521,72 @@ func runApp() {
 			}
 			go watchHoldRelease(hwnd, vk, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
 		}
-		// Identical Handy-style pill for both flows; label/phase is mode-specific.
 		statusMode := "改写"
 		if dictation {
 			statusMode = "听写"
 		}
 		showHandyStatus(rec, statusMode, statusRecording, holdGeneration)
 		beep(900, 60)
-		l.Printf("recording started, mode=hold flow=%s button=%d", map[bool]string{true: "dictation", false: "rewrite"}[dictation], button)
+		l.Printf("recording active, flow=%s button=%d", map[bool]string{true: "dictation", false: "rewrite"}[dictation], button)
+	}
+
+	startHold := func(dictation bool, button uint16) {
+		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil {
+			beep(320, 90)
+			return
+		}
+		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
+			return
+		}
+		win, _, _ := procGetForegroundWindow.Call()
+		if win == 0 {
+			app.fail(errors.New("没有可用的目标窗口"))
+			return
+		}
+		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
+		if err != nil {
+			app.fail(err)
+			return
+		}
+		activateHold(rec, dictation, button, win)
+	}
+
+	armSide := func(button uint16) {
+		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil {
+			return
+		}
+		if sideButtonFlow(button, selectedMouseButton, dictationButton) == "ignore" {
+			return
+		}
+		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
+			return
+		}
+		win, _, _ := procGetForegroundWindow.Call()
+		if win == 0 {
+			return
+		}
+		// Capture without displaying an indicator or calling an API. If the
+		// gesture is a short click, discard the PCM immediately.
+		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
+		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
+	}
+
+	confirmSide := func(button uint16) {
+		if pendingSide == nil || pendingSide.button != button {
+			return
+		}
+		p := pendingSide
+		if app.paused.Load() || app.busy.Load() || active != nil ||
+			p.targetWindow == 0 || !isSameForegroundWindow(p.targetWindow) {
+			discardPendingSide()
+			return
+		}
+		pendingSide = nil
+		if p.err != nil {
+			app.fail(p.err)
+			return
+		}
+		activateHold(p.recorder, sideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation", button, p.targetWindow)
 	}
 
 	for {
@@ -709,6 +767,7 @@ func runApp() {
 			newPaused := !app.paused.Load()
 			app.paused.Store(newPaused)
 			if newPaused {
+				discardPendingSide()
 				app.setStatus(trayPaused)
 			} else {
 				app.setStatus(trayIdle)
@@ -760,6 +819,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_EXIT || (msg.Message == WM_HOTKEY && msg.WParam == HOTKEY_EXIT) {
+			discardPendingSide()
 			closeHandyStatus()
 			if active != nil {
 				stopHoldWatch()
@@ -789,6 +849,16 @@ func runApp() {
 			}
 			continue
 		}
+		if msg.Message == WM_SIDE_ARM {
+			armSide(uint16(msg.WParam))
+			continue
+		}
+		if msg.Message == WM_SIDE_CANCEL {
+			if pendingSide != nil && pendingSide.button == uint16(msg.WParam) {
+				discardPendingSide()
+			}
+			continue
+		}
 		if msg.Message == WM_SIDE_UP {
 			if cfg.RecordMode == "hold" && active != nil && uint16(msg.WParam) == holdButton {
 				l.Printf("mouse button %d released; completing recording", holdButton)
@@ -797,13 +867,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SIDE_DOWN {
-			button := uint16(msg.WParam)
-			switch sideButtonFlow(button, selectedMouseButton, dictationButton) {
-			case "dictation":
-				startHold(true, button)
-			case "rewrite":
-				startHold(false, button)
-			}
+			confirmSide(uint16(msg.WParam))
 			continue
 		}
 		if msg.Message != WM_HOTKEY {

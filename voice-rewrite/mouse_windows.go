@@ -24,6 +24,8 @@ const (
 	WM_XBUTTONDBLCLK = 0x020D
 	WM_SIDE_DOWN     = 0x8000 + 52
 	WM_SIDE_UP       = 0x8000 + 53
+	WM_SIDE_ARM      = 0x8000 + 54
+	WM_SIDE_CANCEL   = 0x8000 + 55
 	WM_QUIT          = 0x0012
 )
 
@@ -151,6 +153,13 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 					return callNextMouseHook(hook, code, message, data)
 				}
 				token, _ := buttons[button].press()
+				// Start a local audio buffer at physical button-down. The hold
+				// timer only decides whether that buffer is used.
+				if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_ARM, uintptr(button), 0); ok == 0 {
+					buttons[button].release()
+					mu.Unlock()
+					return callNextMouseHook(hook, code, message, data)
+				}
 				timers[button] = time.AfterFunc(sideHoldThreshold, func() {
 					mu.Lock()
 					defer mu.Unlock()
@@ -178,6 +187,9 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 			if active {
 				procPostMessage.Call(hwnd, WM_SIDE_UP, uintptr(button), 0)
 			} else {
+				// A short click must stop its provisional recording before
+				// the app can process it as a voice command.
+				procPostMessage.Call(hwnd, WM_SIDE_CANCEL, uintptr(button), 0)
 				select {
 				case replay <- button:
 				default:

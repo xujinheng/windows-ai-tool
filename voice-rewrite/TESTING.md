@@ -16,7 +16,8 @@ Use disposable text and a Windows 11 desktop with ASR and LLM services configure
 
 - [ ] Fresh launch: configure both API endpoints, microphone and shortcut; save and reopen Settings.
 - [ ] Short-click Mouse4/Mouse5 in Chrome and Edge: Back/Forward works once, including rapid clicks; no recording starts.
-- [ ] Hold Mouse4/Mouse5 longer than 250 ms: recording starts, releasing finishes it, and browser navigation does not occur.
+- [ ] Hold Mouse4/Mouse5 longer than 250 ms: speaking immediately on pressing the button includes the first words; releasing finishes the recording and browser navigation does not occur.
+- [ ] Short clicks discard provisional audio: no transcription request, saved history entry or recording indicator appears.
 - [ ] Release just before or after 250 ms; test simultaneous presses, pause/resume and exit while held.
 - [ ] Mouse4: dictate into Notepad, VS Code and a browser text field; release to insert.
 - [ ] Mouse5: select text and request a rewrite or translation; confirm only the intended selection changes.

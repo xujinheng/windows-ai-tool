@@ -23,7 +23,7 @@ The ASR connection test submits a generated silent WAV to the transcription endp
 | Result card | Copy output or apply a replacement when available |
 | Tray menu | Open Settings, pause hotkeys, view recent results, check for updates, exit |
 
-A short Mouse4/Mouse5 click performs its normal browser Back/Forward action. The recording indicator and tone appear when a hold is recognized.
+A short Mouse4/Mouse5 click performs its normal browser Back/Forward action. Audio is buffered locally from button-down and discarded on short clicks. For long holds, recording includes speech from the initial press; the indicator and tone appear after 250 ms.
 
 Editing a selection requires the original editor and selection to remain valid. If insertion cannot be completed safely, the text is shown in a copyable result card.
 

@@ -12,6 +12,8 @@ VoiceRewrite sends data to the ASR and LLM endpoints configured in Settings. If 
 | Clipboard snapshot | Restore clipboard data during insertion | Memory only |
 | Diagnostic logs | Troubleshooting | `%LOCALAPPDATA%\VoiceRewrite` |
 
+Mouse4/Mouse5 presses may briefly open the microphone while the app determines whether the button is held. Short-click audio is discarded in memory without being sent to a server or saved as a result.
+
 The tray includes a **Clear session history** command. Exiting VoiceRewrite also clears the in-memory results. Technical logs rotate at 4 MiB with three backups; audio and selection content are not intentionally logged.
 
 The ASR connection test sends generated silent audio to the configured endpoint. Update checking contacts GitHub only when requested from the tray.
