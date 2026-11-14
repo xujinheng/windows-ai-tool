@@ -418,7 +418,9 @@ func runApp() {
 	}
 	// The tray icon is the UI. Do not steal focus with an instructional MessageBox.
 	// Install the hook on its own locked OS thread; the UI remains independent.
-	if usingMouse || dictationMouse {
+	{
+		// Even keyboard-only bindings need the hook while Settings captures
+        // Mouse4/Mouse5. Unassigned buttons still pass through untouched.
 		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton, &app.paused)
 		if hookErr != nil {
 			winErr(hookErr.Error())
@@ -851,7 +853,21 @@ func runApp() {
 			}
 			continue
 		}
-		if msg.Message == WM_SIDE_ARM {
+		if msg.Message == WM_SETTINGS_CAPTURE_MOUSE {
+            if p:=uxActiveSettings; p!=nil && p.capturingShortcut==msg.LParam {
+                if msg.WParam==1 {p.acceptShortcut("Mouse4")} else if msg.WParam==2 {p.acceptShortcut("Mouse5")}
+            }
+            continue
+        }
+        if msg.Message == WM_HOTKEY && uxActiveSettings!=nil && uxActiveSettings.capturingShortcut!=0 {
+            // RegisterHotKey consumes existing global bindings. Capture these
+            // as user input rather than firing the existing command/exit.
+            vk:=uint32((msg.LParam>>16)&0xffff)
+            mods:=uint32(msg.LParam&0x0007)
+            uxActiveSettings.acceptShortcutKey(vk,mods)
+            continue
+        }
+        if msg.Message == WM_SIDE_ARM {
 			armSide(uint16(msg.WParam))
 			continue
 		}

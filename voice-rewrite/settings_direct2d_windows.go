@@ -11,7 +11,7 @@ var settingsHeadings = [3]string{"语音识别", "AI 写作", "快捷键与设�
 var settingsSubtitles = [3]string{
 	"连接语音识别服务，将录音转换为文字。",
 	"配置用于改写、翻译与问答的文本模型。",
-	"选择听写快捷键和录音输入设备。",
+	"录入语音指令和听写快捷键，并选择麦克风。",
 }
 var settingsSectionNames = [3]string{"连接配置", "模型配置", "输入偏好"}
 
@@ -64,14 +64,16 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 		}
 	} else {
 		rectX, rectY := float32(345)-float32(scrollX), float32(169)-float32(scrollY)
-		d.round(rectX, rectY, 226, 42, 8, 2)
-		outline := 6
-		if focusRow == 0 {
-			outline = 7
-		}
-		d.outline(rectX, rectY, 226, 42, 8, outline)
-		d.fill(224-float32(scrollX), 216-float32(scrollY), w-253, 1, 6)
-		d.fill(224-float32(scrollX), 290-float32(scrollY), w-253, 1, 6)
+		for i, y:=range []float32{169,239} {
+            rectY=y-float32(scrollY)
+            d.round(rectX,rectY,236,42,8,2)
+            outline:=6
+            if focusRow==i {outline=7}
+            d.outline(rectX,rectY,236,42,8,outline)
+        }
+        d.fill(224-float32(scrollX),216-float32(scrollY),w-253,1,6)
+        d.fill(224-float32(scrollX),286-float32(scrollY),w-253,1,6)
+        d.fill(224-float32(scrollX),356-float32(scrollY),w-253,1,6)
 	}
 	d.fill(194, h-77, w-194, 1, 6)
 	hr := resultCOM(d.target, 49, 0, 0)
@@ -92,12 +94,12 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	line := rect32{sc(193), 0, sc(194), rc.Bottom}
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), p.editBrush)
 	for i, y := range []int32{169, 239, 309} {
-		if p.page == 2 && i > 0 {
+		if p.page == 2 && i > 1 {
 			break
 		}
 		w := int32(447)
 		if p.page == 2 {
-			w = 226
+			w = 236
 		}
 		x := int32(345)
 		outline := p.palette.color(p.palette.border)
