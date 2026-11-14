@@ -284,6 +284,10 @@ func singleInstanceGuard() (func(), error) {
 }
 
 func runApp() {
+	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") == "recording" {
+		runRecordingVisualPreview()
+		return
+	}
 	runtime.LockOSThread() // RegisterHotKey posts to the registering thread's message queue.
 	defer runtime.UnlockOSThread()
 	releaseInstance, singleErr := singleInstanceGuard()

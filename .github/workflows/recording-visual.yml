@@ -1,0 +1,81 @@
+name: VoiceRewrite recording overlay screenshot
+on:
+  push:
+    paths:
+      - 'voice-rewrite/visual_preview_windows.go'
+      - '.github/workflows/recording-visual.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  screenshot:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Compile real Windows GUI
+        working-directory: voice-rewrite
+        run: go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
+      - name: Capture real layered recording overlay
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path 'recording-evidence' | Out-Null
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class OverlayNative {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+            public static extern IntPtr FindWindow(string cls, string title);
+            [DllImport("user32.dll")]
+            public static extern bool GetWindowRect(IntPtr hwnd, out RECT r);
+            [DllImport("user32.dll")]
+            public static extern bool IsWindowVisible(IntPtr hwnd);
+          }
+          '@
+          $env:VOICEREWRITE_VISUAL_PREVIEW = 'recording'
+          $exe = Join-Path (Get-Location) 'voice-rewrite/VoiceRewrite.exe'
+          $proc = Start-Process -FilePath $exe -PassThru
+          try {
+            $hwnd = [IntPtr]::Zero
+            for ($i=0; $i -lt 30; $i++) {
+              Start-Sleep -Milliseconds 500
+              $hwnd = [OverlayNative]::FindWindow('VoiceRewrite.HandySmoothStatus.v14', 'VoiceRewrite status')
+              if ($hwnd -ne [IntPtr]::Zero) { break }
+              $proc.Refresh()
+              if ($proc.HasExited) { throw "EXE exited with $($proc.ExitCode)" }
+            }
+            if ($hwnd -eq [IntPtr]::Zero) { throw 'Recording overlay HWND not found' }
+            $r = New-Object OverlayNative+RECT
+            if (-not [OverlayNative]::GetWindowRect($hwnd,[ref]$r)) { throw 'GetWindowRect failed' }
+            $w = $r.Right - $r.Left; $h = $r.Bottom - $r.Top
+            if ($w -lt 100 -or $h -lt 20) { throw "Invalid overlay dimensions: $w x $h" }
+            Start-Sleep -Milliseconds 600
+            $bmp = [System.Drawing.Bitmap]::new($w,$h)
+            $gfx = [System.Drawing.Graphics]::FromImage($bmp)
+            try {
+              $gfx.CopyFromScreen($r.Left,$r.Top,0,0,[System.Drawing.Size]::new($w,$h))
+              $bmp.Save((Join-Path (Get-Location) 'recording-evidence/recording-overlay-real.png'),[System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+              $gfx.Dispose()
+              $bmp.Dispose()
+            }
+            [pscustomobject]@{process=$proc.Id; hwnd=$hwnd.ToInt64(); visible=[OverlayNative]::IsWindowVisible($hwnd); x=$r.Left; y=$r.Top; width=$w; height=$h; interactive=[Environment]::UserInteractive; screen=[System.Windows.Forms.Screen]::PrimaryScreen.Bounds.ToString()} | ConvertTo-Json | Set-Content -Encoding utf8 'recording-evidence/diagnostics.json'
+            Write-Host "Captured REAL recording overlay: $w x $h"
+          } finally {
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceRewrite-recording-overlay-real-PNG
+          path: recording-evidence/
+          if-no-files-found: warn
