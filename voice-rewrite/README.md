@@ -27,7 +27,7 @@ VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configur
 - ASR: OpenAI-compatible `POST /audio/transcriptions`; handles `{"text":"..."}`, JSON strings and text/plain, strips Qwen3-ASR language markers.
 - LLM: OpenAI-compatible `POST /chat/completions`. ASR and LLM may use different remote/local servers.
 - Selected text is untrusted model input, not a source of instructions.
-- Clipboard/SendInput insertion is **best effort**; sending Ctrl+V does not prove that a third-party application accepted it. A conservative multi-format HGLOBAL snapshot restores most text, HTML, RTF, and file-list data when clipboard ownership has not changed; uncopyable GDI/owner formats are never overwritten. Dictation falls back to Unicode SendInput when preservation cannot be guaranteed. This is **not** complete Windows OLE clipboard fidelity.
+- Clipboard/SendInput insertion is **best effort**; sending Ctrl+V does not prove that a third-party application accepted it. A conservative multi-format HGLOBAL snapshot restores accessible text, HTML, RTF, and file-list data when clipboard ownership has not changed; uncopyable GDI/owner formats are never overwritten. Dictation falls back to Unicode SendInput when preservation cannot be guaranteed. This is **not** complete Windows OLE clipboard fidelity.
 - `PRODUCT-DESIGN.md` describes the product interaction contract; `ARCHITECTURE-V24.md` explains module boundaries, and `EXPERIENCE-V24.md` records the latest release.
 
 ## Build
@@ -47,4 +47,4 @@ See the repository root for the restored **Qwen3-ASR OneClick** launcher. The pr
 
 On every commit GitHub Actions builds a portable ZIP and an **unsigned per-user Inno Setup installer** with Start-menu shortcut and uninstaller. It preserves the private config and DPAPI secrets under the user profile when uninstalled. An installer is not equivalent to a signed or Microsoft Store-approved application; Windows SmartScreen may warn until the owner arranges code signing.
 
-See `../installer/README.md` and `EXPERIENCE-V24.md` for release boundaries. Tag-triggered GitHub releases are **pre-releases**, not automatically declared stable.
+See `../installer/README.md` and `EXPERIENCE-V24.md` for release boundaries. Tag-triggered GitHub releases are **pre-releases**, not automatically declared stable. Native password-style Win32 input controls are excluded from global dictation and selection operations; browser/Electron password controls still need separate native automation auditing. Technical logs rotate at 4 MiB with three backups; microphone content and selection text are not intentionally logged.

@@ -149,6 +149,9 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	if !valid() || !isSameForegroundWindow(target) {
 		return errors.New("写入前窗口已变化，已取消听写")
 	}
+	if nativePasswordFieldFocused(target) {
+		return errors.New("密码输入框不接受自动听写，请使用普通输入方式")
+	}
 	backup, err := snapshotClipboard(hwnd)
 	if err != nil {
 		// High-quality clipboard support must never destroy a bitmap, virtual

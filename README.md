@@ -1,37 +1,37 @@
-# VoiceRewrite v22 — Native Windows experience overhaul
+# VoiceRewrite — native Windows voice writing
 
-Windows 11 x64 native Go desktop voice dictation and AI rewrite tool.
+VoiceRewrite is a Windows 11 x64 desktop voice dictation and AI rewrite tool,
+implemented in Go and Win32. It connects to separately configured OpenAI-compatible
+**speech-to-text (ASR)** and **text-generation (LLM)** APIs. It is not a model manager.
 
-VoiceRewrite v22 extends the native Windows UI with configurable F-key dictation, keyboard-accessible settings, session-only result recovery, model-ID-aware connection diagnostics, and safer configuration/logging. See [the v22 release notes](voice-rewrite/EXPERIENCE-V22.md) and [product design contract](voice-rewrite/PRODUCT-DESIGN.md).
+## What it does
 
-Read [the detailed README](voice-rewrite/README.md) for usage, API configuration, privacy and limitations.
+- **Hold Mouse4** (or configure F1–F24) and dictate. Release to transcribe and attempt text insertion at the original caret.
+- **Select text, hold Mouse5** and speak an edit, translation, or question. Explicit edits may replace the selection after guarded validation; questions open a copyable result card.
+- Pause or resume hotkey interception, inspect last error, restore the most recent result in this session, and configure both services through the native tray settings.
 
-## Local ASR with restored OneClick
+## Install and run
 
-The original [Qwen3-ASR OneClick](oneclick/README.md) source (previously deleted from main) has been restored unmodified from Git history. The Windows build now produces `Qwen3-ASR-OneClick-Windows-x64.exe`, uploads it as a CI artifact. The originally restored EXE remains in [dist/](dist/), while newer compiled versions are obtained from the CI Artifact without automated commits to main.
+Download an artifact from [GitHub Actions](https://github.com/xujinheng/windows-ai-tool/actions) after a successful build:
 
-OneClick is a small launcher + proxy, **not** an all-in-one model/runtime installer. Supply a compatible `llama-server.exe`, CUDA DLLs and matching Qwen3-ASR model/MMProj GGUF locally. Do not upload model weights, credentials, or user-specific config.
+- `VoiceRewrite-installer-windows-x64`: per-user Inno Setup installer, Start-menu shortcut, optional desktop shortcut, and uninstall.
+- `VoiceRewrite-portable-windows-x64`: portable ZIP + SHA-256 checksum.
+- `Qwen3-ASR-OneClick-Windows-x64`: independent ASR launcher.
 
-**Port compatibility:** Original OneClick defaults to proxy `127.0.0.1:8081`, backend `127.0.0.1:8080`. VoiceRewrite v22 expects ASR at `127.0.0.1:8080/v1`. To keep VoiceRewrite unchanged, copy [config.voicerewrite-v19.example.json](oneclick/config.voicerewrite-v19.example.json) next to the OneClick executable as `config.json` and edit GGUF and llama-server paths. That preset uses a proxy at 8080 and backend at 8082. Alternatively keep original OneClick ports and configure VoiceRewrite's ASR URL as `http://127.0.0.1:8081/v1`.
+**The installer is unsigned.** Windows SmartScreen may warn. The owner must arrange verified publisher signing and interactive Windows testing before claiming production-stable distribution. There is no automatic update client.
 
-Qwen3.5 text generation may continue using LM Studio or a separate compatible llama-server on port 1234; the optional [two-server script](scripts/local-models/README.md) is not required for OneClick.
+First run opens ASR and LLM settings. Default examples are `http://127.0.0.1:8080/v1` (ASR) and `http://127.0.0.1:1234/v1` (LLM); these URLs do **not** start servers automatically. See [usage and limitations](voice-rewrite/README.md).
 
-## Windows portable build
+### Qwen3-ASR OneClick
 
-Each successful main-branch Windows build uploads a `VoiceRewrite-portable-windows-x64` Artifact containing `VoiceRewrite-windows-x64.zip` and its `SHA256SUMS.txt`. The ZIP includes `VoiceRewrite.exe`, an example config and the user guide. Extract to a normal directory before launch; user configuration is written to the Windows user profile rather than the extracted directory. The separate OneClick build is available as a different CI Artifact. The restored historical EXE is also in `dist/Qwen3-ASR-OneClick-Windows-x64.exe`.
+The restored original [OneClick source](oneclick/) builds separately and can launch a compatible `llama-server.exe` with ASR GGUF and mmproj. The OneClick original API is `8081`; if keeping VoiceRewrite's ASR default `8080`, use the [v19-compatible preset](oneclick/config.voicerewrite-v19.example.json), placing the OneClick proxy at `8080` and llama.cpp at `8082`. OneClick does not bundle any models, CUDA libraries, or llama.cpp binary.
 
-## Development
+## Privacy and safety
 
-```powershell
-cd voice-rewrite
-go test ./...
-go vet -unsafeptr=false ./...
-go build -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .
+VoiceRewrite sends audio and selected text only to the configured API services, which may be remote. DPAPI encrypts API Keys locally. Clipboard backups remain in memory and are restored only while the app still owns the clipboard sequence. GDI, delayed-rendered and private OLE clipboard objects cannot be guaranteed to survive automatic selection actions, which are refused when they cannot be backed up. Native password-style edit controls are blocked; browser password detection is not complete. Text insertion in third-party editors remains best effort. Read [PRIVACY.md](PRIVACY.md) and [SECURITY.md](SECURITY.md).
 
-cd ../oneclick
-go test ./...
-go vet ./...
-go build -trimpath -ldflags="-s -w" -o Qwen3-ASR-OneClick-Windows-x64.exe .
-```
+## Source, contribution and release
 
-No model weights or llama.cpp runtime binaries are redistributed by this repository. This version has not been tested on the owner's interactive Windows desktop as part of recovery. There is no project-wide LICENSE: choose and add a license before advertising redistribution terms.
+The native Go application is in [`voice-rewrite/`](voice-rewrite/); the independent launcher is in [`oneclick/`](oneclick/). See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CHANGELOG.md`](CHANGELOG.md), and [`installer/`](installer/). CI checks Go formatting, Linux race tests, Windows tests, vet and cross-builds, and generates portable ZIP and installer artifacts. Git tags beginning with `v` generate **preview releases**, not automatically stable releases.
+
+**Repository license is not decided.** Public availability of this source does not grant a redistribution license; the owner must choose one before presenting it as licensed open-source software.

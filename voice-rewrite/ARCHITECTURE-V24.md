@@ -28,3 +28,7 @@ VoiceRewrite stays a single native Windows executable. It is strictly an ASR/LLM
 ## Testing
 
 Run `gofmt -l .` (must print no files), `go test ./...`, `go test -race ./...`, `go vet -unsafeptr=false ./...`, and Windows x64 cross-compile. The unsafeptr exception is limited to OS-owned Win32 callback and memory pointers. Physical Windows input, dark-theme contrast, DPI and multimodal provider behavior remain real-device checks.
+
+## Additional privacy fences
+
+Native EDIT/RichEdit controls marked as password inputs are blocked from dictation and selection capture. Browser/Electron password inputs are not assumed to be detectable through raw Win32 HWND styles; this remains a security limitation. Technical logs rotate on startup and avoid logging microphone samples, clipboard backup data, or API secrets.

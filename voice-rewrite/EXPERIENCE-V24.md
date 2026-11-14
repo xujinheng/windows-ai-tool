@@ -7,6 +7,8 @@
 - Clipboard sequence ownership fences: never restore the old content after a different process/user writes to clipboard. Original formats stay in memory only and are never logged or persisted.
 - Selection replacement no longer copies AI results to the clipboard when the target selection/focus changes. It shows a copyable result card.
 - Settings and result windows respond to system light/dark theme changes live (no application restart).
+- Native Windows EDIT/RichEdit password fields refuse global dictation and selection-to-model operations. This does not detect Chromium/Electron password fields.
+- Technical log rotation: at most one 4 MiB active log plus three backups, rotated on startup.
 - Windows per-user Inno Setup installer with uninstall and optional desktop shortcut, portable ZIP and SHA-256. CI runs Linux race tests and Windows checks. Preview releases only on version tags.
 
 ## Not yet guaranteed

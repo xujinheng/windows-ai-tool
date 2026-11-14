@@ -297,7 +297,9 @@ func runApp() {
 		logDir = os.TempDir()
 	}
 	_ = os.MkdirAll(logDir, 0700)
-	f, e := os.OpenFile(filepath.Join(logDir, "VoiceRewrite.log"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	logPath := filepath.Join(logDir, "VoiceRewrite.log")
+	_ = rotateLogBeforeOpen(logPath, logFileMaxBytes, logBackupCount)
+	f, e := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if e != nil {
 		f = os.Stderr
 	} else {

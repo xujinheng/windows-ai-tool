@@ -1,22 +1,37 @@
 # Changelog
 
-## v22 — Native Windows experience
-- Configure a single F1–F24 key for push-to-talk dictation alongside the existing mouse-side-button flow. Keyboard shortcut changes require restart.
-- Add Tab/Shift+Tab navigation and Esc-to-close in Settings.
-- Recover the most recent dictated/generated result from the system tray without persisting history.
-- Diagnose configured model ID from OpenAI-compatible `/v1/models` results, invalidate probes after edits, and show more actionable feedback.
-- Protect API keys through Windows DPAPI, sanitize endpoint logging, and preserve complete result-card text.
-- Package a portable Windows ZIP with SHA-256 verification alongside the existing EXE artifact.\n- Keep CI read-only toward source branches: no bot commits of rebuilt binaries, which previously caused concurrent-push failures.
+## v24 — Clipboard fidelity, native theme refresh, packaging and privacy
 
-## v21 — Everyday-use reliability
-- Pause/resume tray interception and restore mouse side buttons when paused.
-- Preserve dictation output in a copyable card if focus changes or insertion fails.
-- Normalize Go source line endings to LF on Windows CI.
+- Multi-format in-memory clipboard HGLOBAL snapshots, guarded restoration, and Unicode input fallback for dictation when backup is unsafe.
+- Selection results remain in a copyable card instead of overwriting the clipboard after target focus/selection changes.
+- Live light/dark refresh in settings and answer card; native Windows password-style edit fields excluded from global recording and rewriting.
+- Technical logs rotate at 4 MiB and retain three backups.
+- Per-user Inno Setup installer with uninstall, checksums, GitHub version-tag preview releases, and Linux race-testing job.
+- Installer is unsigned; native desktop and full OLE/UI Automation fidelity remain open work.
 
-## v20 — UX foundation
-- Separate connection status, resizable settings window, copyable untruncated results, guarded rewrite routing and meaningful errors.
+## v23 — Core architecture
+
+- Split Windows UI, recording, selection, clipboard, ASR, LLM, configuration and task execution into focused Go files.
+- Propagate cancellation to network requests, chunk long recordings at quieter audio windows, and block cross-host HTTP redirects.
+- Unified initial Windows light/dark palettes and improved remote API error reporting.
+
+## v22 — Native Windows everyday use
+
+- Configurable F1–F24 hold-to-dictate, keyboard-accessible settings and in-session result recovery.
+- Model-ID-aware connection diagnostics, DPAPI credentials, and complete result card text.
+- Portable ZIP with SHA-256 and CI no longer auto-commits generated binaries.
+
+## v21 — Reliability
+
+- Pause/resume global mouse-button interception from the tray.
+- Copyable fallback card if dictation cannot safely insert; normalize Go source line endings.
+
+## v20 — UX baseline
+
+- Resizable settings window, separated connection status, safer rewrite authorization and actionable errors.
 
 ## v19 — Client-only architecture
-- Keep ASR and LLM as separate configurable HTTP API services. The client does not manage model processes.
 
-**Scope:** Version notes describe source-level behavior. GUI accessibility, DPI layout and cross-app insertion require real Windows interactive testing.
+- ASR and LLM are independently configured HTTP API endpoints; models run outside the client.
+
+Version notes describe source-level work; completed builds do not replace real Windows desktop usability testing.

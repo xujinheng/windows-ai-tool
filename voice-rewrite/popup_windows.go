@@ -158,6 +158,26 @@ func windowClassName(hwnd uintptr) string {
 	}
 	return strings.ToLower(syscall.UTF16ToString(chars[:n]))
 }
+
+// Never write global dictation or send selected text from a native password
+// control to a remote model. This is intentionally a narrow Win32 check, not
+// a false claim that Chromium/Electron password fields can be identified.
+func nativePasswordFieldFocused(target uintptr) bool {
+	if target == 0 || !isSameForegroundWindow(target) {
+		return false
+	}
+	tid, _, _ := procGetWindowThreadProcessId.Call(target, 0)
+	if tid == 0 {
+		return false
+	}
+	info := guiThreadInfo{Size: uint32(unsafe.Sizeof(guiThreadInfo{}))}
+	if ok, _, _ := procGetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&info))); ok == 0 || info.Focus == 0 {
+		return false
+	}
+	style, _, _ := procGetWindowLongPtr.Call(info.Focus, GWL_STYLE)
+	return nativePasswordControl(windowClassName(info.Focus), style)
+}
+
 func isSafelyEditableControl(target uintptr) bool {
 	focusClass := foregroundFocusedClass(target)
 	if focusClass == "" {
