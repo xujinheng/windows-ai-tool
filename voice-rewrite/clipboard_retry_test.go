@@ -17,7 +17,7 @@ func TestSelectionCopyRetryKeepsBudget(t *testing.T) {
 
 func TestSelectionCopyRetryPreservesCustomBudgets(t *testing.T) {
 	for _, tc := range []struct {
-		base time.Duration
+		base     time.Duration
 		attempts int
 	}{
 		{500 * time.Millisecond, 2}, {1800 * time.Millisecond, 2},
