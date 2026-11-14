@@ -29,6 +29,14 @@ var (
 	resultDWCreate  = resultDWDLL.NewProc("DWriteCreateFactory")
 )
 
+// A one-bit HWND diagnostic replaces the old brand-color pixel assertion in
+// Windows CI: it is set only after Direct2D EndDraw succeeds.
+var (
+	resultReadyProperty, _    = syscall.UTF16PtrFromString("VoiceRewrite.Direct2D.FrameReady")
+	resultSetReadyProperty    = user32.NewProc("SetPropW")
+	resultRemoveReadyProperty = user32.NewProc("RemovePropW")
+)
+
 type resultD2DColor struct{ R, G, B, A float32 }
 type resultD2DRect struct{ Left, Top, Right, Bottom float32 }
 type resultD2DRound struct {
@@ -227,18 +235,12 @@ func (d *resultRenderer) draw() bool {
 	resultCOM(d.target, 48) // BeginDraw
 	bg := resultColor(d.colors[0])
 	resultCOM(d.target, 47, uintptr(unsafe.Pointer(&bg))) // Clear
-	// A quiet utility header, not a dashboard. Brand is the sole accent.
-	d.round(27, 24, 34, 34, 11, 7)
-	d.text("V", 38, 30, 20, 25, 3, 2)
-	d.text("VoiceRewrite", 75, 24, w-170, 27, 1, 4)
-	d.text("智能写作 · 本地结果", 75, 49, w-170, 19, 0, 5)
-	// Text-first hierarchy: action title followed by preserved source status.
-	d.text(d.title, 30, 91, w-60, 41, 2, 4)
-	// Reading surface and one thin divider replace multiple stacked frames.
-	d.round(23, 164, w-46, h-253, 16, 2)
-	d.outline(23, 164, w-46, h-253, 16, 6)
-	d.fill(28, h-70, w-56, 1, 6)
-	d.text("可选择正文并复制  ·  Esc 关闭", 31, h-52, w-290, 22, 0, 5)
+	// A single compact title; the response, not branding or decoration,
+	// occupies nearly the entire card. Copy/Apply stay native HWNDs.
+	d.text(d.title, 18, 13, w-82, 29, 3, 4)
+	d.round(12, 48, w-24, h-104, 12, 2)
+	d.outline(12, 48, w-24, h-104, 12, 6)
+	d.fill(16, h-56, w-32, 1, 6)
 	hr := resultCOM(d.target, 49, 0, 0) // EndDraw
 	if uint32(hr) == 0x8899000c {       // D2DERR_RECREATE_TARGET
 		d.disposeTarget()

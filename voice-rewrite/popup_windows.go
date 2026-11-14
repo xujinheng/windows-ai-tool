@@ -352,9 +352,11 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if ok, _, _ := user32.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok != 0 {
 				x := int32(int16(uint16(lParam & 0xffff)))
 				y := int32(int16(uint16((lParam >> 16) & 0xffff)))
-				if y >= bounds.Top && y < bounds.Top+int32(74*activeAnswer.scale) && x < bounds.Right-int32(76*activeAnswer.scale) {
-					return resultHTCaption
-				}
+				_ = x
+				_ = y
+				_ = bounds
+				// This is a dismissible utility card, not a draggable dashboard.
+				// A click on its empty header should be treated as an ordinary click.
 				return resultHTClient
 			}
 		}
@@ -375,20 +377,23 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			hdc, _, _ := procBeginPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			if hdc != 0 {
 				painted := activeAnswer.renderer != nil && activeAnswer.renderer.draw()
+				if painted {
+					resultSetReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)), 1)
+				}
 				if !painted {
 					var rc rect32
 					procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 					palette := activeAnswer.palette
 					sc := func(v int32) int32 { return int32(float64(v)*activeAnswer.scale + 0.5) }
-					uiRoundSurface(hdc, rect32{sc(23), sc(164), rc.Right - sc(23), rc.Bottom - sc(89)}, sc(16), palette.color(palette.surface), palette.color(palette.border))
-					ptr := uxPtr("VoiceRewrite  ·  " + activeAnswer.bodyTitle())
+					uiRoundSurface(hdc, rect32{sc(12), sc(48), rc.Right - sc(12), rc.Bottom - sc(56)}, sc(12), palette.color(palette.surface), palette.color(palette.border))
+					ptr := uxPtr(activeAnswer.bodyTitle())
 					old := uintptr(0)
 					if len(activeAnswer.fonts) > 0 {
 						old, _, _ = procSelectObject.Call(hdc, activeAnswer.fonts[0])
 					}
 					procSetBkMode.Call(hdc, TRANSPARENT)
 					procSetTextColor.Call(hdc, palette.color(palette.text))
-					label := rect32{sc(28), sc(78), rc.Right - sc(28), sc(116)}
+					label := rect32{sc(18), sc(12), rc.Right - sc(62), sc(36)}
 					procDrawText.Call(hdc, uintptr(unsafe.Pointer(ptr)), ^uintptr(0), uintptr(unsafe.Pointer(&label)), 0)
 					if old != 0 {
 						procSelectObject.Call(hdc, old)
@@ -396,6 +401,14 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			}
+			return 0
+		}
+	case popupLButtonDown, popupRButtonDown, popupMButtonDown:
+		if activeAnswer != nil && activeAnswer.window == hwnd {
+			// Fallback for clicks on the parent surface when the global
+			// click-away hook is unavailable; native controls receive their
+			// own mouse messages, so selection and buttons are unaffected.
+			procDestroyWindow.Call(hwnd)
 			return 0
 		}
 	case WM_ERASEBKGND:
@@ -457,6 +470,8 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case WM_NCDESTROY:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
+			removePopupClickAwayHook()
+			resultRemoveReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)))
 			activeAnswer.canceled.Store(true)
 			if activeAnswer.renderer != nil {
 				activeAnswer.renderer.close()
@@ -599,13 +614,9 @@ func showAnswerPopup(msg popupMessage) error {
 		closeActiveAnswer()
 		return err
 	}
-	summary := "安全预览 · 原文未修改"
-	if msg.selection == nil {
-		summary = "原输入位置不可用 · 结果仍可复制"
-	} else if !msg.allowApply {
-		summary = "围绕选中文字生成 · 原文未修改"
-	}
-	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, px(31), px(133), cw-px(62), px(22), hwnd, 0)
+	// No permanent status copy: the body is the product. A slim inline
+	// status appears only after an actual Copy/Apply action.
+	note, err := makeChild("STATIC", "", WS_CHILD|WS_VISIBLE, px(132), px(16), cw-px(190), px(20), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -613,7 +624,7 @@ func showAnswerPopup(msg popupMessage) error {
 	popup.note = note
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | uxWSTabStop | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, px(35), px(178), cw-px(70), ch-px(284), hwnd, 0)
+	editor, err := makeChild("EDIT", "", bodyStyle, px(22), px(59), cw-px(44), ch-px(119), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -629,22 +640,22 @@ func showAnswerPopup(msg popupMessage) error {
 		return errors.New("结果正文未写入文本控件")
 	}
 	// The header Close action stays outside the draggable caption hit area.
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(64), px(26), px(34), px(32), hwnd, BUTTON_CLOSE); err != nil {
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(51), px(11), px(31), px(29), hwnd, BUTTON_CLOSE); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	bottom := ch - px(64)
+	bottom := ch - px(48)
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(274), bottom, px(126), px(38), hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(243), bottom, px(116), px(33), hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(136), bottom, px(106), px(38), hwnd, BUTTON_COPY); err != nil {
+	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(119), bottom, px(98), px(33), hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	popup.fonts = []uintptr{popupFont(-px(24), 650), popupFont(-px(17), 400), popupFont(-px(15), 600), popupFont(-px(14), 400)}
+	popup.fonts = []uintptr{popupFont(-px(18), 650), popupFont(-px(16), 400), popupFont(-px(14), 600), popupFont(-px(12), 400)}
 	setFont(title, popup.fonts[0])
 	setFont(editor, popup.fonts[1])
 	setFont(note, popup.fonts[3])
@@ -658,5 +669,8 @@ func showAnswerPopup(msg popupMessage) error {
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_BORDER_COLOR, uintptr(unsafe.Pointer(&borderColor)), unsafe.Sizeof(borderColor))
 	procShowWindow.Call(hwnd, SW_SHOWNOACTIVATE)
 	procSetWindowPos.Call(hwnd, HWND_TOPMOST, uintptr(x), uintptr(y), uintptr(width), uintptr(height), SWP_NOACTIVATE)
+	if hookErr := installPopupClickAwayHook(); hookErr != nil && msg.app != nil && msg.app.logger != nil {
+		msg.app.logger.Printf("result click-away hook unavailable: %v", hookErr)
+	}
 	return nil
 }
