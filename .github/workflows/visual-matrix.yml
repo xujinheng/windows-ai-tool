@@ -66,6 +66,8 @@ jobs:
           $cases=@(
             @{id='settings-light';kind='settings';theme='light';scale='1'},
             @{id='settings-dark';kind='settings';theme='dark';scale='1'},
+            @{id='settings-ai-dark';kind='settings';theme='dark';scale='1';page=1},
+            @{id='settings-input-dark';kind='settings';theme='dark';scale='1';page=2},
             @{id='settings-125';kind='settings';theme='light';scale='1.25'},
             @{id='settings-150';kind='settings';theme='dark';scale='1.5'},
             @{id='settings-200';kind='settings';theme='light';scale='2'},
@@ -113,12 +115,23 @@ jobs:
                 if($d2dReady -eq [IntPtr]::Zero){throw "$($case.id): Direct2D settings renderer did not paint"}
                 $asr=[MatrixWin]::GetDlgItem($hwnd,9104)
                 $llm=[MatrixWin]::GetDlgItem($hwnd,9105)
-                if($asr -eq [IntPtr]::Zero -or $llm -eq [IntPtr]::Zero){throw "Missing real API probe actions"}
-                $asrRect=New-Object MatrixWin+RECT
-                $llmRect=New-Object MatrixWin+RECT
-                [void][MatrixWin]::GetWindowRect($asr,[ref]$asrRect)
-                [void][MatrixWin]::GetWindowRect($llm,[ref]$llmRect)
-                if($asrRect.Top -ne $llmRect.Top -or $asrRect.Right -ge $llmRect.Left){throw "Settings ASR/AI columns are not side by side"}
+                $microphone=[MatrixWin]::GetDlgItem($hwnd,9107)
+                $speechNav=[MatrixWin]::GetDlgItem($hwnd,9120)
+                $aiNav=[MatrixWin]::GetDlgItem($hwnd,9121)
+                $inputNav=[MatrixWin]::GetDlgItem($hwnd,9122)
+                if($speechNav -eq [IntPtr]::Zero -or $aiNav -eq [IntPtr]::Zero -or $inputNav -eq [IntPtr]::Zero) {throw "Missing real sidebar navigation buttons"}
+                if($asr -eq [IntPtr]::Zero -or $llm -eq [IntPtr]::Zero -or $microphone -eq [IntPtr]::Zero) {throw "Native ASR/AI/device inputs missing"}
+                # Preserve the native state and confirm hiding old pages while
+                # navigating. The user can move between service categories.
+                $page=0
+                if($case.ContainsKey('page')){$page=[int]$case.page}
+                $pageButton=@($speechNav,$aiNav,$inputNav)[$page]
+                [void][MatrixWin]::SendMessage($hwnd,0x0111,[IntPtr](9120+$page),$pageButton)
+                Start-Sleep -Milliseconds 130
+                $visible=@([MatrixWin]::IsWindowVisible($asr),[MatrixWin]::IsWindowVisible($llm),[MatrixWin]::IsWindowVisible($microphone))
+                for($idx=0;$idx -lt 3;$idx++){
+                  if($visible[$idx] -ne ($idx -eq $page)){throw "Sidebar selection $page has incorrect native page visibility: $($visible -join ',')"}
+                }
               }
               $rect=New-Object MatrixWin+RECT
               if(-not [MatrixWin]::GetWindowRect($hwnd,[ref]$rect)){throw "No window rect"}
@@ -170,7 +183,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $folder = 'visual-matrix'
-          $expected = @('settings-light-top','settings-dark-top','settings-125-top','settings-150-top','settings-200-top','settings-200-bottom','answer-light-top','answer-dark-long-top','recording-200-top')
+          $expected = @('settings-light-top','settings-dark-top','settings-ai-dark-top','settings-input-dark-top','settings-125-top','settings-150-top','settings-200-top','settings-200-bottom','answer-light-top','answer-dark-long-top','recording-200-top')
           foreach ($name in $expected) {
             $path = Join-Path $folder ($name + '.png')
             if (!(Test-Path -LiteralPath $path)) { throw "Missing actual capture: $name" }
@@ -181,7 +194,7 @@ jobs:
             $second = (Get-FileHash (Join-Path $folder ($pair[1] + '.png')) -Algorithm SHA256).Hash
             if ($first -eq $second) { throw "Visual states rendered identically: $($pair -join ' vs ')" }
           }
-          Write-Host 'Nine real Win32 screen captures validated; dark theme and scroll positions differ.'
+          Write-Host 'Eleven real Win32 captures: dark/light, sidebar sections, Direct2D, scrolling and high DPI validated.'
       - name: Publish verified screenshots to README (main branch only)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh
