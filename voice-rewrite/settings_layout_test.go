@@ -3,15 +3,15 @@ package main
 import "testing"
 
 func TestResponsiveSettingsRect(t *testing.T) {
-	input := uxLayoutSpec{x: 130, y: 157, w: 385, h: 30, stretch: true}
-	right := uxLayoutSpec{x: 527, y: 157, w: 96, h: 30, right: true}
-	for _, width := range []int32{694, 774, 1034} {
+	input := uxLayoutSpec{x: 350, y: 173, w: 325, h: 34, stretch: true}
+	right := uxLayoutSpec{x: 687, y: 173, w: 92, h: 34, right: true}
+	for _, width := range []int32{816, 896, 1056} {
 		x, y, w, h := layoutSettingsRect(input, width)
-		if x != 130 || y != 157 || h != 30 || w != 385+(width-694) {
+		if x != 350 || y != 173 || h != 34 || w != 325+(width-816) {
 			t.Fatalf("edit at %d: %d %d %d %d", width, x, y, w, h)
 		}
 		bx, _, bw, _ := layoutSettingsRect(right, width)
-		if bx != 527+(width-694) || bw != 96 || x+w+12 != bx {
+		if bx != 687+(width-816) || bw != 92 || x+w+12 != bx {
 			t.Fatalf("misaligned at %d", width)
 		}
 	}
