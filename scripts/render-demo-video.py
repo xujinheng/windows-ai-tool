@@ -27,7 +27,7 @@ FONT_LATIN=['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf','C:/Windows/Fonts/
 def font(size):
     for f in FONT_CJK+FONT_LATIN:
         if os.path.isfile(f): return ImageFont.truetype(f,size)
-    return ImageFont.load_default()
+    raise RuntimeError('No Chinese-capable font found. Install fonts-noto-cjk before rendering.')
 F={s:font(s) for s in [13,15,17,19,20,21,22,24,25,28,30,33,38,48,58]}
 
 def rr(d,rect,r,fill,outline=None,width=1):
