@@ -14,39 +14,6 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  # One-time verification and release note refresh, removed after success.
-  finalize-v0_1_0:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[finalize-v0.1.0]')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write
-    steps:
-      - name: Verify refreshed tag/assets and update notes
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          actual=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v0.1.0" --jq .object.sha)
-          test "$actual" = '4133461a7332725fc0e1af89adf04a7bebcc9c0d'
-          release="repos/$GITHUB_REPOSITORY/releases/tags/v0.1.0"
-          asset_names=$(gh api "$release" --jq '[.assets[].name] | sort | join(",")')
-          expected='INSTALLER-SHA256SUMS.txt,SHA256SUMS.txt,VoiceRewrite-Setup-0.1.0-x64.exe,VoiceRewrite-windows-x64.zip,VoiceRewrite.exe'
-          test "$asset_names" = "$expected"
-          old=$(gh api "$release" --jq .body)
-          marker='Refreshed with selection-copy reliability fix (PR #14)'
-          if [[ "$old" != *"$marker"* ]]; then
-            {
-              printf '## Updated Windows binaries\n\n'
-              printf '%s\n' "$marker"
-              printf 'Built from commit: %s. Existing v0.1.0 assets were replaced.\n\n' "$actual"
-              printf '%s\n' "$old"
-            } >/tmp/v0.1.0-notes.md
-            release_id=$(gh api "$release" --jq .id)
-            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" -f body="$(cat /tmp/v0.1.0-notes.md)" >/dev/null
-          fi
-          gh api "$release" --jq .body | grep -Fq "$marker"
   test-core:
     runs-on: ubuntu-latest
     timeout-minutes: 15
