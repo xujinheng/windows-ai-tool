@@ -313,12 +313,26 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 				palette := activeAnswer.palette
 				sc := func(v int32) int32 { return int32(float64(v)*activeAnswer.scale + 0.5) }
-				uiRoundSurface(hdc, rect32{sc(20), sc(120), rc.Right - sc(20), rc.Bottom - sc(59)}, sc(16), palette.color(palette.surface), palette.color(palette.border))
-				accent, _, _ := procCreateSolidBrush.Call(palette.color(palette.primary))
-				if accent != 0 {
-					rail := rect32{sc(24), sc(55), sc(29), sc(79)}
-					procFillRect.Call(hdc, uintptr(unsafe.Pointer(&rail)), accent)
-					procDeleteObject.Call(accent)
+				// Calm, single-layer reading surface: only navigation and actions
+				// get emphasis, leaving the answer itself visually dominant.
+				uiRoundSurface(hdc,rect32{sc(22),sc(152),rc.Right-sc(22),rc.Bottom-sc(72)},
+					sc(16),palette.color(palette.surface),palette.color(palette.surface))
+				uiRoundSurface(hdc,rect32{sc(28),sc(24),sc(58),sc(54)},sc(10),
+					palette.color(palette.primary),palette.color(palette.primary))
+				procSetBkMode.Call(hdc,TRANSPARENT)
+				procSetTextColor.Call(hdc,palette.color(palette.primaryText))
+				if len(activeAnswer.fonts)>2 {
+					old,_,_:=procSelectObject.Call(hdc,activeAnswer.fonts[2])
+					glyph:=uxPtr("V")
+					glyphRect:=rect32{sc(28),sc(24),sc(58),sc(54)}
+					procDrawText.Call(hdc,uintptr(unsafe.Pointer(glyph)),^uintptr(0),uintptr(unsafe.Pointer(&glyphRect)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+					procSelectObject.Call(hdc,old)
+				}
+				lineBrush,_,_:=procCreateSolidBrush.Call(palette.color(palette.border))
+				if lineBrush!=0 {
+					line:=rect32{sc(24),rc.Bottom-sc(66),rc.Right-sc(24),rc.Bottom-sc(65)}
+					procFillRect.Call(hdc,uintptr(unsafe.Pointer(&line)),lineBrush)
+					procDeleteObject.Call(lineBrush)
 				}
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			}
@@ -502,13 +516,13 @@ func showAnswerPopup(msg popupMessage) error {
 	procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 	cw, ch := bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
 	px := func(v int32) int32 { return int32(float64(v)*scale + 0.5) }
-	eyebrow, err := makeChild("STATIC", "VoiceRewrite  /  智能结果", WS_CHILD|WS_VISIBLE, px(36), px(22), cw-px(72), px(22), hwnd, 0)
+	eyebrow, err := makeChild("STATIC", "VoiceRewrite   ·   智能写作", WS_CHILD|WS_VISIBLE, px(72), px(29), cw-px(102), px(22), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
 	popup.eyebrow = eyebrow
-	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, px(38), px(48), cw-px(72), px(34), hwnd, 0)
+	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, px(34), px(76), cw-px(68), px(34), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -519,7 +533,7 @@ func showAnswerPopup(msg popupMessage) error {
 	} else if !msg.allowApply {
 		summary = "围绕选中文字生成  ·  原文未修改"
 	}
-	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, px(38), px(85), cw-px(76), px(23), hwnd, 0)
+	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, px(34), px(116), cw-px(68), px(23), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -527,7 +541,7 @@ func showAnswerPopup(msg popupMessage) error {
 	popup.note = note
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, px(32), px(132), cw-px(64), ch-px(200), hwnd, 0)
+	editor, err := makeChild("EDIT", "", bodyStyle, px(34), px(164), cw-px(68), ch-px(251), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -543,8 +557,8 @@ func showAnswerPopup(msg popupMessage) error {
 		closeActiveAnswer()
 		return errors.New("卡片正文控件未收到模型结果")
 	}
-	bottom := ch - px(46)
-	footerNote, err := makeChild("STATIC", "正文可选中复制", WS_CHILD|WS_VISIBLE, px(32), bottom+px(7), px(190), px(20), hwnd, 0)
+	bottom := ch - px(51)
+	footerNote, err := makeChild("STATIC", "选中正文即可复制", WS_CHILD|WS_VISIBLE, px(32), bottom+px(7), px(190), px(20), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -564,7 +578,7 @@ func showAnswerPopup(msg popupMessage) error {
 		closeActiveAnswer()
 		return err
 	}
-	popup.fonts = []uintptr{popupFont(-px(24), 650), popupFont(-px(18), 400), popupFont(-px(16), 600), popupFont(-px(14), 400)}
+	popup.fonts = []uintptr{popupFont(-px(26), 650), popupFont(-px(17), 400), popupFont(-px(15), 600), popupFont(-px(13), 400)}
 	setFont(title, popup.fonts[0])
 	setFont(editor, popup.fonts[1])
 	setFont(note, popup.fonts[3])
