@@ -281,13 +281,20 @@ func (p *answerPopup) bodyTitle() string {
 
 // Windows native dark scrollbars are requested only when the OS supports
 // them; unsupported platforms keep the standard accessible EDIT scrollbar.
-var resultSetWindowTheme=syscall.NewLazyDLL("uxtheme.dll").NewProc("SetWindowTheme")
-func resultStyleNativeEdit(hwnd uintptr,dark bool){
-	if hwnd==0{return}
-	name:="Explorer"
-	if dark{name="DarkMode_Explorer"}
-	ptr,err:=syscall.UTF16PtrFromString(name)
-	if err==nil{resultSetWindowTheme.Call(hwnd,uintptr(unsafe.Pointer(ptr)),0)}
+var resultSetWindowTheme = syscall.NewLazyDLL("uxtheme.dll").NewProc("SetWindowTheme")
+
+func resultStyleNativeEdit(hwnd uintptr, dark bool) {
+	if hwnd == 0 {
+		return
+	}
+	name := "Explorer"
+	if dark {
+		name = "DarkMode_Explorer"
+	}
+	ptr, err := syscall.UTF16PtrFromString(name)
+	if err == nil {
+		resultSetWindowTheme.Call(hwnd, uintptr(unsafe.Pointer(ptr)), 0)
+	}
 }
 
 func resultCardPalette() uiPalette {
@@ -317,7 +324,7 @@ func (p *answerPopup) refreshTheme() {
 	p.bgBrush = refreshPaletteBrush(p.bgBrush, palette, palette.background)
 	p.editBrush = refreshPaletteBrush(p.editBrush, palette, palette.surface)
 	p.palette = palette
-	resultStyleNativeEdit(p.edit,palette.dark)
+	resultStyleNativeEdit(p.edit, palette.dark)
 	if p.renderer != nil {
 		p.renderer.updateColors(palette.dark)
 	}
@@ -375,13 +382,17 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					sc := func(v int32) int32 { return int32(float64(v)*activeAnswer.scale + 0.5) }
 					uiRoundSurface(hdc, rect32{sc(23), sc(164), rc.Right - sc(23), rc.Bottom - sc(89)}, sc(16), palette.color(palette.surface), palette.color(palette.border))
 					ptr := uxPtr("VoiceRewrite  ·  " + activeAnswer.bodyTitle())
-					old:=uintptr(0)
-					if len(activeAnswer.fonts)>0{old,_,_=procSelectObject.Call(hdc,activeAnswer.fonts[0])}
+					old := uintptr(0)
+					if len(activeAnswer.fonts) > 0 {
+						old, _, _ = procSelectObject.Call(hdc, activeAnswer.fonts[0])
+					}
 					procSetBkMode.Call(hdc, TRANSPARENT)
 					procSetTextColor.Call(hdc, palette.color(palette.text))
 					label := rect32{sc(28), sc(78), rc.Right - sc(28), sc(116)}
 					procDrawText.Call(hdc, uintptr(unsafe.Pointer(ptr)), ^uintptr(0), uintptr(unsafe.Pointer(&label)), 0)
-					if old!=0{procSelectObject.Call(hdc,old)}
+					if old != 0 {
+						procSelectObject.Call(hdc, old)
+					}
 				}
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			}
@@ -397,9 +408,9 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_CTLCOLORSTATIC:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			procSetBkMode.Call(wParam, TRANSPARENT)
-			if lParam==activeAnswer.edit {
-				procSetTextColor.Call(wParam,activeAnswer.palette.color(activeAnswer.palette.text))
-				procSetBkColor.Call(wParam,activeAnswer.palette.color(activeAnswer.palette.surface))
+			if lParam == activeAnswer.edit {
+				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
+				procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.surface))
 				return activeAnswer.editBrush
 			}
 			if activeAnswer.note == lParam {
@@ -608,7 +619,7 @@ func showAnswerPopup(msg popupMessage) error {
 		return err
 	}
 	popup.edit = editor
-	resultStyleNativeEdit(editor,popup.palette.dark)
+	resultStyleNativeEdit(editor, popup.palette.dark)
 	procSendMessage.Call(editor, 0x00D3, 3, uintptr(uint32(px(12))|(uint32(px(12))<<16)))
 	// Preserve the full result instead of truncating beyond the 32K default.
 	procSendMessage.Call(editor, EM_LIMITTEXT, uintptr(len(utf16.Encode([]rune(editorText)))+1), 0)

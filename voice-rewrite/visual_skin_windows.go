@@ -43,11 +43,13 @@ func uiDrawActionButton(item *drawItemStruct, palette uiPalette, font uintptr, l
 	// Owner-drawn Win32 buttons keep their previous corner pixels unless
 	// the parent color is painted before the rounded fill. This also fixes
 	// bright squares around controls in dark-mode Direct2D result windows.
-	back:=palette.background
-	if item.CtlID==uxProbeASRButton || item.CtlID==uxProbeLLMButton {back=palette.surface}
-	background,_,_:=procCreateSolidBrush.Call(palette.color(back))
-	if background!=0 {
-		procFillRect.Call(item.Hdc,uintptr(unsafe.Pointer(&item.Rect)),background)
+	back := palette.background
+	if item.CtlID == uxProbeASRButton || item.CtlID == uxProbeLLMButton {
+		back = palette.surface
+	}
+	background, _, _ := procCreateSolidBrush.Call(palette.color(back))
+	if background != 0 {
+		procFillRect.Call(item.Hdc, uintptr(unsafe.Pointer(&item.Rect)), background)
 		procDeleteObject.Call(background)
 	}
 	if primary && item.ItemState&ODS_SELECTED != 0 {
