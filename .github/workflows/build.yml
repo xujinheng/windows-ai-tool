@@ -19,7 +19,9 @@ jobs:
         run: go test ./...
       - name: Vet
         working-directory: voice-rewrite
-        run: go vet ./...
+        # Windows callbacks and GlobalLock return native pointers as uintptr.
+        # These are intentional Win32 FFI conversions; keep every other vet check.
+        run: go vet -unsafeptr=false ./...
       - name: Build x64 GUI
         working-directory: voice-rewrite
         env:
