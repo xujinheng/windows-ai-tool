@@ -15,6 +15,9 @@ go build -trimpath -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .
 Use disposable text and a Windows 11 desktop with ASR and LLM services configured.
 
 - [ ] Fresh launch: configure both API endpoints, microphone and shortcut; save and reopen Settings.
+- [ ] Short-click Mouse4/Mouse5 in Chrome and Edge: Back/Forward works once, including rapid clicks; no recording starts.
+- [ ] Hold Mouse4/Mouse5 longer than 250 ms: recording starts, releasing finishes it, and browser navigation does not occur.
+- [ ] Release just before or after 250 ms; test simultaneous presses, pause/resume and exit while held.
 - [ ] Mouse4: dictate into Notepad, VS Code and a browser text field; release to insert.
 - [ ] Mouse5: select text and request a rewrite or translation; confirm only the intended selection changes.
 - [ ] Mouse5: select read-only text and ask a question; confirm the answer card opens without modifying the source.

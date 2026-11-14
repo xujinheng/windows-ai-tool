@@ -5,6 +5,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
+	"sync"
 	"runtime"
 	"sync/atomic"
 	"syscall"
@@ -51,6 +53,50 @@ type mouseHookReady struct {
 	err      error
 }
 
+// Short presses are replayed as XBUTTON clicks; a held side button starts
+// VoiceRewrite after this threshold.
+const sideHoldThreshold = 250 * time.Millisecond
+const sideReplayExtraInfo = uintptr(0x56525842)
+
+const (
+	mouseInputType = 0
+	mouseXDownFlag = 0x0080
+	mouseXUpFlag   = 0x0100
+	mouseInjectedFlag = 0x0001
+)
+
+// The MOUSEINPUT union occupies 32 bytes in a 64-bit Win32 INPUT (40 bytes).
+type sideMouseInput struct {
+	Type uint32
+	_    uint32
+	DX   int32
+	DY   int32
+	Data uint32
+	Flags uint32
+	Time uint32
+	_    uint32
+	ExtraInfo uintptr
+}
+
+func replaySideClick(button uint16) error {
+	if button != 1 && button != 2 {
+		return fmt.Errorf("invalid X button: %d", button)
+	}
+	inputs := [2]sideMouseInput{
+		{Type: mouseInputType, Data: uint32(button), Flags: mouseXDownFlag, ExtraInfo: sideReplayExtraInfo},
+		{Type: mouseInputType, Data: uint32(button), Flags: mouseXUpFlag, ExtraInfo: sideReplayExtraInfo},
+	}
+	if unsafe.Sizeof(inputs[0]) != 40 {
+		return fmt.Errorf("unexpected Win32 INPUT size: %d", unsafe.Sizeof(inputs[0]))
+	}
+	n, _, err := procSendInput.Call(2, uintptr(unsafe.Pointer(&inputs[0])), unsafe.Sizeof(inputs[0]))
+	runtime.KeepAlive(inputs)
+	if n != 2 {
+		return fmt.Errorf("SendInput XBUTTON %d: %v (%d/2)", button, err, n)
+	}
+	return nil
+}
+
 func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, paused *atomic.Bool) (*sideMouseHook, error) {
 	if hwnd == 0 || (rewriteButton == 0 && dictationButton == 0) || (rewriteButton != 0 && rewriteButton == dictationButton) {
 		return nil, errors.New("鼠标侧键钩子参数无效")
@@ -62,58 +108,94 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 		defer runtime.UnlockOSThread()
 		defer close(done)
 		tid, _, _ := procGetCurrentThreadID.Call()
-		var pressed [3]bool
-		hook := uintptr(0)
-		callback := syscall.NewCallback(func(code, message, data uintptr) uintptr {
-			// A paused background assistant must not swallow normal Back/Forward
-			// mouse navigation events in the user's browser or other apps.
-			if paused != nil && paused.Load() {
-				return callNextMouseHook(hook, code, message, data)
-			}
-			if int32(code) >= 0 && data != 0 {
-				event := uint32(message)
-				if event == WM_XBUTTONDOWN || event == WM_XBUTTONUP || event == WM_XBUTTONDBLCLK {
-					info := (*lowLevelMouseData)(unsafe.Pointer(data))
-					button := uint16(info.MouseData >> 16)
-					if sideButtonFlow(button, rewriteButton, dictationButton) != "ignore" {
-						notification := uintptr(0)
-						switch event {
-						case WM_XBUTTONDOWN:
-							if !pressed[button] {
-								notification = WM_SIDE_DOWN
-							}
-						case WM_XBUTTONUP:
-							if pressed[button] {
-								notification = WM_SIDE_UP
-							}
-						}
-						if notification != 0 {
-							if ok, _, _ := procPostMessage.Call(hwnd, notification, uintptr(button), 0); ok == 0 {
-								// Never block this callback or swallow an undeliverable click.
-								return callNextMouseHook(hook, code, message, data)
-							}
-						}
-						if event == WM_XBUTTONDOWN {
-							pressed[button] = true
-						}
-						if event == WM_XBUTTONUP {
-							pressed[button] = false
-						}
-						// Suppress the browser's back/forward action only for this button.
-						return 1
-					}
+		var mu sync.Mutex
+		var buttons [3]sideButtonState
+		var timers [3]*time.Timer
+		closed := false
+		replay := make(chan uint16, 32)
+		var replayDone sync.WaitGroup
+		replayDone.Add(1)
+		go func() {
+			defer replayDone.Done()
+			for button := range replay {
+				if err := replaySideClick(button); err != nil {
+					log.Printf("side-button navigation click: %v", err)
 				}
 			}
-			return callNextMouseHook(hook, code, message, data)
+		}()
+		hook := uintptr(0)
+		callback := syscall.NewCallback(func(code, message, data uintptr) uintptr {
+			if int32(code) < 0 || data == 0 {
+				return callNextMouseHook(hook, code, message, data)
+			}
+			event := uint32(message)
+			if event != WM_XBUTTONDOWN && event != WM_XBUTTONUP && event != WM_XBUTTONDBLCLK {
+				return callNextMouseHook(hook, code, message, data)
+			}
+			info := (*lowLevelMouseData)(unsafe.Pointer(data))
+			if info.Flags&mouseInjectedFlag != 0 && info.ExtraInfo == sideReplayExtraInfo {
+				return callNextMouseHook(hook, code, message, data)
+			}
+			button := uint16(info.MouseData >> 16)
+			if button != rewriteButton && button != dictationButton {
+				return callNextMouseHook(hook, code, message, data)
+			}
+			mu.Lock()
+			if event == WM_XBUTTONDOWN || event == WM_XBUTTONDBLCLK {
+				if buttons[button].down {
+					mu.Unlock()
+					return 1
+				}
+				if closed || (paused != nil && paused.Load()) {
+					mu.Unlock()
+					return callNextMouseHook(hook, code, message, data)
+				}
+				token, _ := buttons[button].press()
+				timers[button] = time.AfterFunc(sideHoldThreshold, func() {
+					mu.Lock()
+					defer mu.Unlock()
+					if closed || (paused != nil && paused.Load()) || !buttons[button].canActivate(token) {
+						return
+					}
+					if ok, _, _ := procPostMessage.Call(hwnd, WM_SIDE_DOWN, uintptr(button), 0); ok != 0 {
+						buttons[button].activate(token)
+					}
+				})
+				mu.Unlock()
+				return 1
+			}
+			// A matching press was intercepted. Either finish the recording
+			// or replay the navigation click, never both.
+			wasHeld, active := buttons[button].release()
+			if !wasHeld {
+				mu.Unlock()
+				return callNextMouseHook(hook, code, message, data)
+			}
+			if timers[button] != nil {
+				timers[button].Stop()
+				timers[button] = nil
+			}
+			if active {
+				procPostMessage.Call(hwnd, WM_SIDE_UP, uintptr(button), 0)
+			} else {
+				select {
+				case replay <- button:
+				default:
+					log.Printf("side-button navigation queue full for XBUTTON%d", button)
+				}
+			}
+			mu.Unlock()
+			return 1
 		})
 		var lastErr error
 		hook, _, lastErr = procSetWindowsHookEx.Call(WH_MOUSE_LL, callback, 0, 0)
 		if hook == 0 {
+			close(replay)
+			replayDone.Wait()
 			ready <- mouseHookReady{err: fmt.Errorf("注册鼠标侧键失败: %w", lastErr)}
 			return
 		}
 		ready <- mouseHookReady{threadID: tid}
-		// This is ONLY the hook's message loop; no user I/O, UI work or COM.
 		for {
 			var msg winMSG
 			rc, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
@@ -122,6 +204,16 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 			}
 		}
 		procUnhookWindowsHookEx.Call(hook)
+		mu.Lock()
+		closed = true
+		for i := range timers {
+			if timers[i] != nil {
+				timers[i].Stop()
+			}
+		}
+		mu.Unlock()
+		close(replay)
+		replayDone.Wait()
 		runtime.KeepAlive(callback)
 	}()
 	result := <-ready
