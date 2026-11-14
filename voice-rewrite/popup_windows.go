@@ -542,7 +542,7 @@ func showAnswerPopup(msg popupMessage) error {
 		return errors.New("卡片正文控件未收到模型结果")
 	}
 	bottom := ch - px(46)
-	footerNote, err := makeChild("STATIC", "可选中正文  ·  支持 Ctrl+C", WS_CHILD|WS_VISIBLE, px(32), bottom+px(7), px(270), px(20), hwnd, 0)
+	footerNote, err := makeChild("STATIC", "正文可选中复制", WS_CHILD|WS_VISIBLE, px(32), bottom+px(7), px(190), px(20), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
