@@ -66,25 +66,25 @@ var (
 )
 
 type uxSettings struct {
-	window          uintptr
-	app             *appState
-	inputs          [6]uintptr
-	shortcut        uintptr
-	microphone      uintptr
-	microphoneIDs   []int
-	hint            uintptr
+	window                                  uintptr
+	app                                     *appState
+	inputs                                  [6]uintptr
+	shortcut                                uintptr
+	microphone                              uintptr
+	microphoneIDs                           []int
+	hint                                    uintptr
 	font, titleFont, sectionFont, mutedFont uintptr
-	background      uintptr
-	cardBrush       uintptr
-	editBrush       uintptr
-	palette         uiPalette
-	cardStatics     map[uintptr]bool
-	probeMu         sync.Mutex
-	probeResult     [2]string
-	probeStatus     [2]uintptr
-	probeSerial     [2]uint64
-	controls        []uxControl
-	scale           float64
+	background                              uintptr
+	cardBrush                               uintptr
+	editBrush                               uintptr
+	palette                                 uiPalette
+	cardStatics                             map[uintptr]bool
+	probeMu                                 sync.Mutex
+	probeResult                             [2]string
+	probeStatus                             [2]uintptr
+	probeSerial                             [2]uint64
+	controls                                []uxControl
+	scale                                   float64
 }
 
 // Every child control is reflowed after a resize. No hard-coded physical
@@ -206,9 +206,15 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if p.font != 0 {
 				procDeleteObject.Call(p.font)
 			}
-			if p.titleFont != 0 { procDeleteObject.Call(p.titleFont) }
-			if p.sectionFont != 0 { procDeleteObject.Call(p.sectionFont) }
-			if p.mutedFont != 0 { procDeleteObject.Call(p.mutedFont) }
+			if p.titleFont != 0 {
+				procDeleteObject.Call(p.titleFont)
+			}
+			if p.sectionFont != 0 {
+				procDeleteObject.Call(p.sectionFont)
+			}
+			if p.mutedFont != 0 {
+				procDeleteObject.Call(p.mutedFont)
+			}
 			if p.background != 0 {
 				procDeleteObject.Call(p.background)
 			}
@@ -236,20 +242,20 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				var rc rect32
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 				for _, card := range []struct{ top, bottom int32 }{{94, 280}, {284, 467}, {472, 598}} {
-					uiRoundSurface(hdc, rect32{sc(19), sc(card.top), rc.Right-sc(19), sc(card.bottom)}, sc(18), p.palette.color(p.palette.surface), p.palette.color(p.palette.border))
+					uiRoundSurface(hdc, rect32{sc(19), sc(card.top), rc.Right - sc(19), sc(card.bottom)}, sc(18), p.palette.color(p.palette.surface), p.palette.color(p.palette.border))
 				}
-				uiRoundSurface(hdc, rect32{sc(29),sc(24),sc(65),sc(60)},sc(14),p.palette.color(p.palette.primary),p.palette.color(p.palette.primary))
+				uiRoundSurface(hdc, rect32{sc(29), sc(24), sc(65), sc(60)}, sc(14), p.palette.color(p.palette.primary), p.palette.color(p.palette.primary))
 				uxSetBkMode.Call(hdc, TRANSPARENT)
 				uxSetTextColor.Call(hdc, p.palette.color(p.palette.primaryText))
 				oldFont, _, _ := uxSelectObject.Call(hdc, p.sectionFont)
 				monogram := uxPtr("V")
-				brandRect := rect32{sc(29),sc(24),sc(65),sc(60)}
-				procDrawText.Call(hdc,uintptr(unsafe.Pointer(monogram)),^uintptr(0),uintptr(unsafe.Pointer(&brandRect)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+				brandRect := rect32{sc(29), sc(24), sc(65), sc(60)}
+				procDrawText.Call(hdc, uintptr(unsafe.Pointer(monogram)), ^uintptr(0), uintptr(unsafe.Pointer(&brandRect)), DT_CENTER|DT_VCENTER|DT_SINGLELINE)
 				uxSelectObject.Call(hdc, oldFont)
 				accentBrush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.primary))
 				if accentBrush != 0 {
 					for _, top := range []int32{110, 300, 488} {
-						stripe := rect32{sc(32), sc(top), sc(36), sc(top+20)}
+						stripe := rect32{sc(32), sc(top), sc(36), sc(top + 20)}
 						procFillRect.Call(hdc, uintptr(unsafe.Pointer(&stripe)), accentBrush)
 					}
 					procDeleteObject.Call(accentBrush)
@@ -264,12 +270,18 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			label := ""
 			primary := false
 			switch item.CtlID {
-			case uxSaveButton: label, primary = "保存并应用", true
-			case uxCloseButton: label = "关闭"
-			case uxAdvancedButton: label = "高级设置"
-			case uxProbeASRButton, uxProbeLLMButton: label = "测试连接"
+			case uxSaveButton:
+				label, primary = "保存并应用", true
+			case uxCloseButton:
+				label = "关闭"
+			case uxAdvancedButton:
+				label = "高级设置"
+			case uxProbeASRButton, uxProbeLLMButton:
+				label = "测试连接"
 			}
-			if label != "" && uiDrawActionButton(item,p.palette,p.font,label,primary) { return 1 }
+			if label != "" && uiDrawActionButton(item, p.palette, p.font, label, primary) {
+				return 1
+			}
 		}
 	case uxWMColorStatic:
 		if p != nil && p.window == hwnd && p.background != 0 {
@@ -516,14 +528,14 @@ func showNativeSettings(app *appState) error {
 	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxWSBorder | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxBSOwnerDraw)
 	heading := makeOne("STATIC", "VoiceRewrite", stat, 78, 19, 365, 35, 0, false)
-	setFont(heading,p.titleFont)
+	setFont(heading, p.titleFont)
 	subtitle := makeOne("STATIC", "语音转文字  ·  智能改写  ·  本地优先", stat, 80, 60, 540, 22, 0, false)
-	setFont(subtitle,p.mutedFont)
+	setFont(subtitle, p.mutedFont)
 	badge := makeOne("STATIC", "PRIVATE  /  LOCAL", stat, 519, 33, 160, 22, 0, false)
-	setFont(badge,p.mutedFont)
+	setFont(badge, p.mutedFont)
 	makeOne("STATIC", "01   语音识别", stat, 44, 104, 300, 30, 0, true)
 	micro := makeOne("STATIC", "SPEECH TO TEXT", stat, 480, 110, 145, 22, 0, false)
-	setFont(micro,p.mutedFont)
+	setFont(micro, p.mutedFont)
 	makeOne("STATIC", "API 地址", stat, 34, 141, 100, 20, 0, false)
 	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 130, 135, 385, 30, 0, false)
 	makeOne("BUTTON", "检测", btn, 527, 135, 96, 30, uxProbeASRButton, false)
@@ -535,7 +547,7 @@ func showNativeSettings(app *appState) error {
 
 	makeOne("STATIC", "02   AI 文本处理", stat, 44, 294, 330, 30, 0, true)
 	modelBadge := makeOne("STATIC", "LANGUAGE MODEL", stat, 484, 298, 152, 22, 0, false)
-	setFont(modelBadge,p.mutedFont)
+	setFont(modelBadge, p.mutedFont)
 	makeOne("STATIC", "API 地址", stat, 34, 331, 100, 20, 0, false)
 	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 130, 325, 385, 30, 0, false)
 	makeOne("BUTTON", "检测", btn, 527, 325, 96, 30, uxProbeLLMButton, false)
@@ -547,7 +559,7 @@ func showNativeSettings(app *appState) error {
 
 	makeOne("STATIC", "03   输入与快捷键", stat, 44, 482, 330, 30, 0, true)
 	deviceBadge := makeOne("STATIC", "INPUT & DEVICE", stat, 484, 486, 152, 22, 0, false)
-	setFont(deviceBadge,p.mutedFont)
+	setFont(deviceBadge, p.mutedFont)
 	makeOne("STATIC", "听写快捷键", stat, 34, 527, 108, 22, 0, false)
 	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 521, 493, 30, uxShortcutInput, false)
 	makeOne("STATIC", "麦克风", stat, 34, 562, 90, 22, 0, false)
@@ -557,9 +569,9 @@ func showNativeSettings(app *appState) error {
 	makeOne("BUTTON", "高级设置", btn, 212, 611, 126, 38, uxAdvancedButton, false)
 	makeOne("BUTTON", "关闭", btn, 550, 611, 104, 38, uxCloseButton, false)
 	p.hint = makeOne("STATIC", "本地优先  ·  API Key 已加密  ·  按住 "+app.cfg.DictationHotkey+" 开始听写", stat, 33, 658, 620, 22, 0, false)
-	setFont(p.hint,p.mutedFont)
-	setFont(p.probeStatus[0],p.mutedFont)
-	setFont(p.probeStatus[1],p.mutedFont)
+	setFont(p.hint, p.mutedFont)
+	setFont(p.probeStatus[0], p.mutedFont)
+	setFont(p.probeStatus[1], p.mutedFont)
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)

@@ -41,7 +41,7 @@ type handyStatus struct {
 	changed       time.Time
 	tick          uint32
 	smoothedLevel float64
-	closeHovered bool
+	closeHovered  bool
 	x, y          int32
 	scale         float64
 }
@@ -159,9 +159,18 @@ func handyStatusWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			s := activeHandyStatus
 			x := int(int16(lParam & 0xffff))
 			hover := handyCancelHit(int(math.Floor(float64(x)/s.scale)), handyStatusWidth(s.phase))
-			if hover != s.closeHovered { s.closeHovered = hover; drawHandyStatus(s) }
+			if hover != s.closeHovered {
+				s.closeHovered = hover
+				drawHandyStatus(s)
+			}
 			if hover {
-				var tme = struct{Size, Flags uint32; Hwnd, HoverTime uintptr}{Size: uint32(unsafe.Sizeof(struct{Size,Flags uint32; Hwnd,HoverTime uintptr}{})), Flags: 2, Hwnd: hwnd}
+				var tme = struct {
+					Size, Flags     uint32
+					Hwnd, HoverTime uintptr
+				}{Size: uint32(unsafe.Sizeof(struct {
+					Size, Flags     uint32
+					Hwnd, HoverTime uintptr
+				}{})), Flags: 2, Hwnd: hwnd}
 				user32.NewProc("TrackMouseEvent").Call(uintptr(unsafe.Pointer(&tme)))
 			}
 		}
@@ -490,7 +499,9 @@ func drawHandyStatus(s *handyStatus) {
 		}
 		p.text(handyStatusLabel(s.phase, s.mode), handyWorkingTextX, 10, logicalWidth-handyWorkingTextX-handyWorkingTextRightGap, 30, 13, 500, 0xFFECE8F0)
 	}
-	if s.closeHovered { p.fill(0xFF343A49, logicalWidth-34, 11, 28, 28, true) }
+	if s.closeHovered {
+		p.fill(0xFF343A49, logicalWidth-34, 11, 28, 28, true)
+	}
 	// Crisp anti-aliased vector X; no separate text glyph competing with the timer.
 	p.closeGlyph(logicalWidth-handyCancelGlyphInset, handyIconCenterY)
 	target := handyPoint{s.x, s.y}

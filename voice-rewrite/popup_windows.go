@@ -298,19 +298,19 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_PAINT:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			var ps handyPaintStruct
-			hdc, _, _ := procBeginPaintHandy.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
+			hdc, _, _ := procBeginPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			if hdc != 0 {
 				var rc rect32
-				procGetClientRect.Call(hwnd,uintptr(unsafe.Pointer(&rc)))
+				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 				palette := activeAnswer.palette
-				uiRoundSurface(hdc,rect32{20,99,rc.Right-20,rc.Bottom-59},16,palette.color(palette.surface),palette.color(palette.border))
+				uiRoundSurface(hdc, rect32{20, 99, rc.Right - 20, rc.Bottom - 59}, 16, palette.color(palette.surface), palette.color(palette.border))
 				accent, _, _ := procCreateSolidBrush.Call(palette.color(palette.primary))
 				if accent != 0 {
-					rail := rect32{22,27,27,50}
-					procFillRect.Call(hdc,uintptr(unsafe.Pointer(&rail)),accent)
+					rail := rect32{22, 27, 27, 50}
+					procFillRect.Call(hdc, uintptr(unsafe.Pointer(&rail)), accent)
 					procDeleteObject.Call(accent)
 				}
-				procEndPaintHandy.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
+				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			}
 			return 0
 		}
@@ -388,18 +388,28 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 }
 
 func drawCardButton(item *drawItemStruct) bool {
-	if item == nil || activeAnswer == nil { return false }
+	if item == nil || activeAnswer == nil {
+		return false
+	}
 	label := ""
 	primary := false
 	switch item.CtlID {
-	case BUTTON_COPY: label = "复制结果"; primary = !activeAnswer.allowApply
-	case BUTTON_APPLY: label = "应用到原文"; primary = true
-	case BUTTON_CLOSE: label = "关闭"
-	default: return false
+	case BUTTON_COPY:
+		label = "复制结果"
+		primary = !activeAnswer.allowApply
+	case BUTTON_APPLY:
+		label = "应用到原文"
+		primary = true
+	case BUTTON_CLOSE:
+		label = "关闭"
+	default:
+		return false
 	}
 	var font uintptr
-	if len(activeAnswer.fonts)>2 { font = activeAnswer.fonts[2] }
-	return uiDrawActionButton(item, activeAnswer.palette,font,label,primary)
+	if len(activeAnswer.fonts) > 2 {
+		font = activeAnswer.fonts[2]
+	}
+	return uiDrawActionButton(item, activeAnswer.palette, font, label, primary)
 }
 
 var answerWndProcCallback = syscall.NewCallback(popupWndProc)

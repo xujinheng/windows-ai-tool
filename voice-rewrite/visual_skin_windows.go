@@ -12,8 +12,12 @@ func uiRoundSurface(hdc uintptr, r rect32, radius int32, fill, outline uintptr) 
 	b, _, _ := procCreateSolidBrush.Call(fill)
 	pen, _, _ := procCreatePen.Call(0, 1, outline)
 	if b == 0 || pen == 0 {
-		if b != 0 { procDeleteObject.Call(b) }
-		if pen != 0 { procDeleteObject.Call(pen) }
+		if b != 0 {
+			procDeleteObject.Call(b)
+		}
+		if pen != 0 {
+			procDeleteObject.Call(pen)
+		}
 		return
 	}
 	oldB, _, _ := procSelectObject.Call(hdc, b)
@@ -27,7 +31,9 @@ func uiRoundSurface(hdc uintptr, r rect32, radius int32, fill, outline uintptr) 
 
 // Owner-draw keeps keyboard focus, tab navigation, access keys and real HWNDs.
 func uiDrawActionButton(item *drawItemStruct, palette uiPalette, font uintptr, label string, primary bool) bool {
-	if item == nil { return false }
+	if item == nil {
+		return false
+	}
 	fill, outline, ink := palette.secondary, palette.border, palette.text
 	if primary {
 		fill, outline, ink = palette.primary, palette.primary, palette.primaryText
@@ -35,7 +41,11 @@ func uiDrawActionButton(item *drawItemStruct, palette uiPalette, font uintptr, l
 		fill = palette.secondaryPressed
 	}
 	if primary && item.ItemState&ODS_SELECTED != 0 {
-		if palette.dark { fill = 0xC44D81 } else { fill = 0x93365C }
+		if palette.dark {
+			fill = 0xC44D81
+		} else {
+			fill = 0x93365C
+		}
 		outline = fill
 	}
 	uiRoundSurface(item.Hdc, item.Rect, 12, palette.color(fill), palette.color(outline))
