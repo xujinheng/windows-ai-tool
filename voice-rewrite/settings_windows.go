@@ -299,6 +299,7 @@ func (p *uxSettings) refreshTheme() {
 	for _, edit := range p.inputs {
 		resultStyleNativeEdit(edit, palette.dark)
 	}
+	resultStyleNativeEdit(p.microphone, palette.dark)
 	applyWindowPalette(p.window, palette)
 	refreshNativeWindow(p.window)
 	for _, c := range p.controls {
@@ -688,7 +689,7 @@ func showNativeSettings(app *appState) error {
 	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 30, 191, 291, 31, 0, false)
 	makeOne("STATIC", "API Key", stat, 30, 232, 120, 20, 0, false)
 	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 30, 254, 291, 31, 0, false)
-	p.probeStatus[0] = makeOne("STATIC", "尚未检测", stat, 30, 303, 284, 21, 0, false)
+	p.probeStatus[0] = makeOne("STATIC", "尚未检测", stat, 30, 294, 286, 52, 0, false)
 
 	makeOne("STATIC", "AI 文本处理", stat, 364, 68, 175, 26, 0, true)
 	makeOne("BUTTON", "测试连接", btn, 572, 68, 89, 29, uxProbeLLMButton, false)
@@ -698,7 +699,7 @@ func showNativeSettings(app *appState) error {
 	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 364, 191, 297, 31, 0, false)
 	makeOne("STATIC", "API Key", stat, 364, 232, 120, 20, 0, false)
 	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 364, 254, 297, 31, 0, false)
-	p.probeStatus[1] = makeOne("STATIC", "尚未检测", stat, 364, 303, 294, 21, 0, false)
+	p.probeStatus[1] = makeOne("STATIC", "尚未检测", stat, 364, 294, 298, 52, 0, false)
 
 	makeOne("STATIC", "快捷键与输入设备", stat, 30, 376, 290, 24, 0, true)
 	makeOne("STATIC", "听写快捷键", stat, 30, 418, 110, 22, 0, false)
@@ -706,6 +707,7 @@ func showNativeSettings(app *appState) error {
 	makeOne("STATIC", "麦克风", stat, 318, 418, 85, 22, 0, false)
 	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 407, 410, 254, 190, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
+	resultStyleNativeEdit(p.microphone, p.palette.dark)
 	makeOne("BUTTON", "保存设置", btn, 16, 479, 144, 34, uxSaveButton, false)
 	makeOne("BUTTON", "高级配置", btn, 172, 479, 113, 34, uxAdvancedButton, false)
 	makeOne("BUTTON", "关闭", btn, 580, 479, 96, 34, uxCloseButton, false)
