@@ -544,7 +544,7 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	popup.edit = editor
 	// Short multiline responses must be scrollable rather than silently clipped.
-	procSendMessage.Call(editor, 0x00D3, 3, uintptr(10|(10<<16)))
+	procSendMessage.Call(editor, 0x00D3, 3, uintptr(10 | (10 << 16)))
 	// Multiline EDIT controls default to a 32K character limit. Raise it
 	// before setting the text, otherwise the UI silently drops the tail.
 	procSendMessage.Call(editor, EM_LIMITTEXT, uintptr(len(utf16.Encode([]rune(editorText)))+1), 0)
