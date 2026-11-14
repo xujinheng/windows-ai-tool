@@ -67,7 +67,8 @@ jobs:
               $hwnd=[IntPtr]::Zero
               for($i=0;$i -lt 45;$i++){
                 Start-Sleep -Milliseconds 200
-                $hwnd=[RWResult]::FindWindow('VoiceRewrite.ResultCard.v20','VoiceRewrite')
+                # Keep this class in sync with the actual registered result window in popup_windows.go.
+                $hwnd=[RWResult]::FindWindow('VoiceRewrite.ResultCard','VoiceRewrite')
                 if($hwnd -ne [IntPtr]::Zero){break}
                 $p.Refresh()
                 if($p.HasExited){throw "$($case.name): process exited $($p.ExitCode)"}
