@@ -241,7 +241,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				sc := func(v int32) int32 { return int32(float64(v)*p.scale + 0.5) }
 				var rc rect32
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
-				for _, card := range []struct{ top, bottom int32 }{{94, 280}, {284, 467}, {472, 598}} {
+				for _, card := range []struct{ top, bottom int32 }{{94, 280}, {284, 481}, {485, 605}} {
 					uiRoundSurface(hdc, rect32{sc(19), sc(card.top), rc.Right - sc(19), sc(card.bottom)}, sc(18), p.palette.color(p.palette.surface), p.palette.color(p.palette.border))
 				}
 				uiRoundSurface(hdc, rect32{sc(29), sc(24), sc(65), sc(60)}, sc(14), p.palette.color(p.palette.primary), p.palette.color(p.palette.primary))
@@ -254,7 +254,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				uxSelectObject.Call(hdc, oldFont)
 				accentBrush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.primary))
 				if accentBrush != 0 {
-					for _, top := range []int32{110, 300, 488} {
+					for _, top := range []int32{110, 300, 496} {
 						stripe := rect32{sc(32), sc(top), sc(36), sc(top + 20)}
 						procFillRect.Call(hdc, uintptr(unsafe.Pointer(&stripe)), accentBrush)
 					}
@@ -557,8 +557,8 @@ func showNativeSettings(app *appState) error {
 	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 130, 407, 493, 30, 0, false)
 	p.probeStatus[1] = makeOne("STATIC", "● 尚未检测 · 用于改写 / 翻译 / 问答", stat, 34, 451, 594, 24, 0, false)
 
-	makeOne("STATIC", "03   输入与快捷键", stat, 44, 482, 330, 30, 0, true)
-	deviceBadge := makeOne("STATIC", "INPUT & DEVICE", stat, 484, 486, 152, 22, 0, false)
+	makeOne("STATIC", "03   输入与快捷键", stat, 44, 491, 330, 26, 0, true)
+	deviceBadge := makeOne("STATIC", "INPUT & DEVICE", stat, 484, 494, 152, 22, 0, false)
 	setFont(deviceBadge, p.mutedFont)
 	makeOne("STATIC", "听写快捷键", stat, 34, 527, 108, 22, 0, false)
 	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 521, 493, 30, uxShortcutInput, false)
