@@ -3,6 +3,7 @@
 package main
 
 import (
+	"os"
 	"syscall"
 	"unsafe"
 )
@@ -15,10 +16,20 @@ type uiPalette struct {
 }
 
 func systemPalette() uiPalette {
-	if windowsPrefersDark() {
-		return uiPalette{true, 0x17191E, 0x24272D, 0x30343C, 0xF5F6FA, 0xB6BFCD, 0x414753, 0x9F7AEA, 0xFFFFFF, 0x323741, 0x434A56}
-	}
-	return uiPalette{false, 0xF6F7F9, 0xFFFFFF, 0xFFFFFF, 0x263142, 0x697586, 0xDDE1E8, 0xB84B78, 0xFFFFFF, 0xF0F2F5, 0xE2E6EB}
+    if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW")!="" {
+        switch os.Getenv("VOICEREWRITE_VISUAL_THEME") {
+        case "dark":return darkUIPalette()
+        case "light":return lightUIPalette()
+        }
+    }
+    if windowsPrefersDark(){return darkUIPalette()}
+    return lightUIPalette()
+}
+func darkUIPalette() uiPalette {
+    return uiPalette{true,0x17191E,0x24272D,0x30343C,0xF5F6FA,0xB6BFCD,0x414753,0xDF6F9C,0xFFFFFF,0x323741,0x434A56}
+}
+func lightUIPalette() uiPalette {
+    return uiPalette{false,0xF6F7F9,0xFFFFFF,0xFFFFFF,0x263142,0x697586,0xDDE1E8,0xB84B78,0xFFFFFF,0xF0F2F5,0xE2E6EB}
 }
 
 func (p uiPalette) color(rgb uint32) uintptr {
