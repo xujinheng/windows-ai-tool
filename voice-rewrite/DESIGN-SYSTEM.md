@@ -1,4 +1,4 @@
-# VoiceRewrite · Visual language v1
+# VoiceRewrite · macOS-inspired visual language v2
 
 VoiceRewrite is a **quiet writing companion**, not a developer API demo. The product
 experience should support **speak → review → apply or copy** without distraction.
@@ -38,11 +38,15 @@ helper 13–14 logical px. Work on an 8px rhythm with 10–18px rounded surfaces
 
 ## Interaction
 
-- **Settings:** small brand area, three explicit configuration groups, clear
-  connection feedback, Save as primary action, Advanced and Close secondary.
-- **Result card:** brand eyebrow → prominent result type → honest safety state →
-  selectable, scrollable body → compact footer actions. The complete result is
-  always available for copying. Writing to another application continues to
+- **Settings:** a compact, centered three-tab preference switcher: **语音输入**,
+  **AI 写作**, and **快捷键**. Show one logical category at a time instead of
+  stacking every server field. Keep the Save action pinned to the footer.
+  At narrow/high-DPI sizes, field labels stack over controls and only the
+  content pane scrolls vertically. No horizontal scrollbar is required.
+- **Result card:** a small branded mark → prominent result title → honest
+  safety status → border-light, selectable and scrollable reading pane → thin
+  divider and compact footer actions. The complete result is always available
+  for copying. Writing to another application continues to
   require explicit user intent and existing selection/focus guards.
 - **Recording pill:** stay compact; prioritize waveform/timer and state transitions,
   not additional buttons, labels or settings.
@@ -55,6 +59,15 @@ Chrome, Chinese IME, Tab/Shift+Tab, focus switching, screen readers and external
 ASR/LLM endpoints. CI screenshots are visual evidence, not proof of real-world
 accessibility or cross-app editing reliability.
 
-**Known limitation:** the existing settings layout still uses horizontal
-scrolling under narrow/high-DPI work areas; redesigning this into a genuinely
-responsive one-column form remains separate work.
+**Platform approach:** this is Windows software inspired by Apple’s visual
+hierarchy, spacing, progressive disclosure, and restrained surfaces—not a
+Mac title-bar clone or a simulated Liquid Glass layer. Real Win32 controls,
+IME, and native window behaviors remain intact.
+
+Reference patterns: [Apple HIG Layout](https://developer.apple.com/design/human-interface-guidelines/layout),
+[Designing for macOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos),
+and [Materials](https://developer.apple.com/design/human-interface-guidelines/materials).
+
+**Known limitations:** real Windows accessibility, custom scrollbar appearance,
+focus/IME behavior and DPI/monitor transitions still need interactive testing.
+Automated screen captures are visual regression evidence, not production sign-off.
