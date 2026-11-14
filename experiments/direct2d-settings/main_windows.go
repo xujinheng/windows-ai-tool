@@ -582,7 +582,7 @@ func run() error {
 	}
 	s.hwnd = hwnd
 	active = s
-	s.updating = true // suppress native EN_CHANGE during control initialization
+	s.updating = true // suppress native EN_CHANGE until controls are initialized
 	if err := s.initialize(); err != nil {
 		procDestroy.Call(hwnd)
 		return err
