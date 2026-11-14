@@ -8,6 +8,11 @@ on:
       - 'scripts/render-demo-video.py'
       - '.github/workflows/demo-video.yml'
   workflow_dispatch:
+  # Screenshot commits use GITHUB_TOKEN and [skip ci], so a plain push
+  # trigger will NOT fire. Build the demo when the visual matrix completes.
+  workflow_run:
+    workflows: ['VoiceRewrite visual matrix (real Windows pixels)']
+    types: [completed]
 
 permissions:
   contents: write
@@ -18,6 +23,7 @@ concurrency:
 
 jobs:
   render:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
