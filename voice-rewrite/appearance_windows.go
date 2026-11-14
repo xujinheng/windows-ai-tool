@@ -65,6 +65,20 @@ func applyWindowPalette(hwnd uintptr, p uiPalette) {
 
 // refreshPaletteBrush allocates the new brush first, so a transient GDI
 // allocation failure never leaves a live window without its old brush.
+// Prefer the Windows native dark-scrollbar theme for EDIT and COMBOBOX.
+// This is a best-effort enhancement; unsupported Windows builds keep their
+// normal accessible scrollbars and native input behavior.
+var uxSetWindowTheme = syscall.NewLazyDLL("uxtheme.dll").NewProc("SetWindowTheme")
+
+func applyNativeControlTheme(hwnd uintptr, dark bool) {
+	if hwnd==0 {return}
+	name:="Explorer"
+	if dark {name="DarkMode_Explorer"}
+	app,err:=syscall.UTF16PtrFromString(name)
+	if err!=nil {return}
+	uxSetWindowTheme.Call(hwnd,uintptr(unsafe.Pointer(app)),0)
+}
+
 func refreshPaletteBrush(old uintptr, palette uiPalette, rgb uint32) uintptr {
 	fresh, _, _ := procCreateSolidBrush.Call(palette.color(rgb))
 	if fresh == 0 {
