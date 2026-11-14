@@ -5,6 +5,8 @@ on:
       - 'voice-rewrite/appearance_windows.go'
       - 'voice-rewrite/visual_skin_windows.go'
       - 'voice-rewrite/settings_layout.go'
+      - 'voice-rewrite/settings_direct2d_windows.go'
+      - 'voice-rewrite/result_direct2d_windows.go'
       - 'voice-rewrite/popup_layout.go'
       - 'voice-rewrite/desktop_geometry.go'
       - 'voice-rewrite/desktop_monitor_windows.go'
@@ -18,6 +20,11 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+
+concurrency:
+  group: screenshot-ui-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   screenshots:
     runs-on: windows-latest
@@ -27,12 +34,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      # Build CI handles unit tests; screenshots validate the compiled real Win32 UI.
       - name: Build actual Go / Win32 EXE
         working-directory: voice-rewrite
         shell: pwsh
         run: |
-          go test ./...
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Capture Windows UI states
