@@ -30,17 +30,21 @@ func runRecordingVisualPreview() {
 }
 
 // Real settings controls and paints, no microphone/model calls or config writes.
-func runSettingsVisualPreview(){
-    runtime.LockOSThread()
-    defer runtime.UnlockOSThread()
-    app:=&appState{cfg:defaults()}
-    if err:=showNativeSettings(app);err!=nil{return}
-    defer closeNativeSettings()
-    for{
-        var msg winMSG
-        rv,_,_:=procGetMessage.Call(uintptr(unsafe.Pointer(&msg)),0,0,0)
-        if int32(rv)<=0{return}
-        procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
-        procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
-    }
+func runSettingsVisualPreview() {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	app := &appState{cfg: defaults()}
+	if err := showNativeSettings(app); err != nil {
+		return
+	}
+	defer closeNativeSettings()
+	for {
+		var msg winMSG
+		rv, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
+		if int32(rv) <= 0 {
+			return
+		}
+		procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
+		procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
+	}
 }

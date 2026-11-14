@@ -5,7 +5,7 @@ package main
 import (
 	"fmt"
 	"math"
-    "os"
+	"os"
 	"runtime"
 	"sync"
 	"syscall"
@@ -44,7 +44,7 @@ type handyStatus struct {
 	smoothedLevel float64
 	closeHovered  bool
 	x, y          int32
-    monitor uintptr
+	monitor       uintptr
 	scale         float64
 }
 
@@ -529,40 +529,47 @@ func handyAwareWindowThread() func() {
 	return func() { procSetThreadDpiContextHandy.Call(old) }
 }
 func handyMonitorScale() float64 {
-    return handyScaleForMonitor(uxMonitorForPoint(currentCursorPoint()))
+	return handyScaleForMonitor(uxMonitorForPoint(currentCursorPoint()))
 }
 func handyScaleForMonitor(mon uintptr) float64 {
-    // Deterministic DPI variants apply to explicit screenshots only.
-    if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW")!="" {
-        switch os.Getenv("VOICEREWRITE_VISUAL_SCALE"){
-        case "1.25":return 1.25
-        case "1.5":return 1.5
-        case "2":return 2
-        }
-    }
-    if mon==0{return 1}
-    var dpiX,dpiY uint32
-    status,_,_:=procGetDpiForMonitorHandy.Call(mon,0,uintptr(unsafe.Pointer(&dpiX)),uintptr(unsafe.Pointer(&dpiY)))
-    if status!=0||dpiX<96||dpiX>384{return 1}
-    return float64(dpiX)/96
+	// Deterministic DPI variants apply to explicit screenshots only.
+	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") != "" {
+		switch os.Getenv("VOICEREWRITE_VISUAL_SCALE") {
+		case "1.25":
+			return 1.25
+		case "1.5":
+			return 1.5
+		case "2":
+			return 2
+		}
+	}
+	if mon == 0 {
+		return 1
+	}
+	var dpiX, dpiY uint32
+	status, _, _ := procGetDpiForMonitorHandy.Call(mon, 0, uintptr(unsafe.Pointer(&dpiX)), uintptr(unsafe.Pointer(&dpiY)))
+	if status != 0 || dpiX < 96 || dpiX > 384 {
+		return 1
+	}
+	return float64(dpiX) / 96
 }
 
-func handyScreenPosition(w,h int)(int32,int32){
-    return handyScreenPositionForMonitor(uxMonitorForPoint(currentCursorPoint()),w,h)
+func handyScreenPosition(w, h int) (int32, int32) {
+	return handyScreenPositionForMonitor(uxMonitorForPoint(currentCursorPoint()), w, h)
 }
-func handyScreenPositionForMonitor(mon uintptr,w,h int)(int32,int32) {
-    if mon!=0 {
-        info:=handyMonitorInfo{Size:uint32(unsafe.Sizeof(handyMonitorInfo{}))}
-        if ok,_,_:=procGetMonitorInfoHandy.Call(mon,uintptr(unsafe.Pointer(&info)));ok!=0{
-            work:=desktopWorkArea{info.Work.Left,info.Work.Top,info.Work.Right,info.Work.Bottom}
-            x:=work.left+(work.right-work.left-int32(w))/2
-            y:=work.bottom-int32(h)-5
-            return desktopClampPosition(x,y,int32(w),int32(h),work)
-        }
-    }
-    x,_,_:=procGetSystemMetrics.Call(0)
-    y,_,_:=procGetSystemMetrics.Call(1)
-    return (int32(x)-int32(w))/2,int32(y)-int32(h)-5
+func handyScreenPositionForMonitor(mon uintptr, w, h int) (int32, int32) {
+	if mon != 0 {
+		info := handyMonitorInfo{Size: uint32(unsafe.Sizeof(handyMonitorInfo{}))}
+		if ok, _, _ := procGetMonitorInfoHandy.Call(mon, uintptr(unsafe.Pointer(&info))); ok != 0 {
+			work := desktopWorkArea{info.Work.Left, info.Work.Top, info.Work.Right, info.Work.Bottom}
+			x := work.left + (work.right-work.left-int32(w))/2
+			y := work.bottom - int32(h) - 5
+			return desktopClampPosition(x, y, int32(w), int32(h), work)
+		}
+	}
+	x, _, _ := procGetSystemMetrics.Call(0)
+	y, _, _ := procGetSystemMetrics.Call(1)
+	return (int32(x) - int32(w)) / 2, int32(y) - int32(h) - 5
 }
 func showHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint64) {
 	restore := handyAwareWindowThread()
@@ -576,17 +583,17 @@ func showHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint6
 	if atom == 0 && regErr != syscall.Errno(1410) {
 		return
 	}
-	monitor:=uxMonitorForPoint(currentCursorPoint())
-    scale:=handyScaleForMonitor(monitor)
-    width,height:=handyPhysicalSize(handyStatusWidth(phase),handyStatusHeight,scale)
-    x,y:=handyScreenPositionForMonitor(monitor,width,height)
+	monitor := uxMonitorForPoint(currentCursorPoint())
+	scale := handyScaleForMonitor(monitor)
+	width, height := handyPhysicalSize(handyStatusWidth(phase), handyStatusHeight, scale)
+	x, y := handyScreenPositionForMonitor(monitor, width, height)
 	hwnd, _, _ := procCreateWindow.Call(WS_EX_TOPMOST|WS_EX_TOOLWINDOW|WS_EX_NOACTIVATE|WS_EX_LAYERED, uintptr(unsafe.Pointer(classname)), uintptr(unsafe.Pointer(title)), WS_POPUP, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, instance, 0)
 	runtime.KeepAlive(classname)
 	runtime.KeepAlive(title)
 	if hwnd == 0 {
 		return
 	}
-	activeHandyStatus = &handyStatus{window: hwnd, mode: mode, mic: rec, phase: phase, owner: owner, started: time.Now(), changed: time.Now(), x:x,y:y,monitor:monitor,scale:scale}
+	activeHandyStatus = &handyStatus{window: hwnd, mode: mode, mic: rec, phase: phase, owner: owner, started: time.Now(), changed: time.Now(), x: x, y: y, monitor: monitor, scale: scale}
 	drawHandyStatus(activeHandyStatus)
 	procShowWindow.Call(hwnd, SW_SHOWNOACTIVATE)
 	procSetTimer.Call(hwnd, handyPulseTimer, 70, 0)
@@ -602,7 +609,7 @@ func updateHandyStatus(phase uintptr) {
 	s.changed = time.Now()
 	s.scale = handyScaleForMonitor(s.monitor)
 	width, height := handyPhysicalSize(handyStatusWidth(phase), handyStatusHeight, s.scale)
-	s.x,s.y=handyScreenPositionForMonitor(s.monitor,width,height)
+	s.x, s.y = handyScreenPositionForMonitor(s.monitor, width, height)
 	// v12 updated only DIB dimensions: the real HWND kept its recording
 	// dimensions, cropping working/success states into a straight right edge.
 	// SWP_NOACTIVATE|SWP_NOZORDER preserves editor focus and topmost state.

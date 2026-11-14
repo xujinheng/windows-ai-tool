@@ -284,10 +284,10 @@ func singleInstanceGuard() (func(), error) {
 }
 
 func runApp() {
-    if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW")=="settings"{
-        runSettingsVisualPreview()
-        return
-    }
+	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") == "settings" {
+		runSettingsVisualPreview()
+		return
+	}
 	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") == "answer" {
 		runAnswerVisualPreview()
 		return

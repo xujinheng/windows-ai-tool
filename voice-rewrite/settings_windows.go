@@ -18,15 +18,15 @@ import (
 const (
 	uxWMCommand       = 0x0111
 	uxWMSize          = 0x0005
-    uxWMVScroll=0x0115
-    uxWMHScroll=0x0114
-    uxWMMouseWheel=0x020A
-    uxSIFRange=1
-    uxSIFPage=2
-    uxSIFPos=4
-    uxSIFTrackPos=16
-    uxSBHorz=0
-    uxSBVert=1
+	uxWMVScroll       = 0x0115
+	uxWMHScroll       = 0x0114
+	uxWMMouseWheel    = 0x020A
+	uxSIFRange        = 1
+	uxSIFPage         = 2
+	uxSIFPos          = 4
+	uxSIFTrackPos     = 16
+	uxSBHorz          = 0
+	uxSBVert          = 1
 	uxWMGetMinMaxInfo = 0x0024
 	uxWSThickFrame    = 0x00040000
 	uxWMSettingChange = 0x001A
@@ -94,7 +94,7 @@ type uxSettings struct {
 	probeSerial                             [2]uint64
 	controls                                []uxControl
 	scale                                   float64
-    scrollX,scrollY int32
+	scrollX, scrollY                        int32
 }
 
 // Every child control is reflowed after a resize. No hard-coded physical
@@ -109,74 +109,113 @@ type uxControl struct {
 func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
 	return layoutSettingsRect(uxLayoutSpec{x: c.x, y: c.y, w: c.w, h: c.h, stretch: c.stretch, right: c.right}, clientWidth)
 }
+
 // 96-DPI logical coordinate scrolling avoids inaccessible buttons on small
 // work areas and 125%–200% display scaling.
-const uxContentWidth,uxContentHeight int32=694,689
+const uxContentWidth, uxContentHeight int32 = 694, 689
+
 type uxScrollInfo struct {
-    Size,Mask uint32
-    Min,Max int32
-    Page uint32
-    Pos,TrackPos int32
+	Size, Mask    uint32
+	Min, Max      int32
+	Page          uint32
+	Pos, TrackPos int32
 }
-func uxScrollClamp(n,limit int32) int32 {
-    if n<0{return 0};if n>limit{return limit};return n
+
+func uxScrollClamp(n, limit int32) int32 {
+	if n < 0 {
+		return 0
+	}
+	if n > limit {
+		return limit
+	}
+	return n
 }
 func (p *uxSettings) layout() {
-    if p==nil||p.window==0{return}
-    var rect rect32
-    procGetClientRect.Call(p.window,uintptr(unsafe.Pointer(&rect)))
-    viewW,viewH:=int32(float64(rect.Right-rect.Left)/p.scale),int32(float64(rect.Bottom-rect.Top)/p.scale)
-    if viewW<1{viewW=1};if viewH<1{viewH=1}
-    maxX,maxY:=uxContentWidth-viewW,uxContentHeight-viewH
-    if maxX<0{maxX=0};if maxY<0{maxY=0}
-    p.scrollX=uxScrollClamp(p.scrollX,maxX)
-    p.scrollY=uxScrollClamp(p.scrollY,maxY)
-    for _,spec:=range []struct{axis uintptr;content,page,pos int32}{
-        {uxSBHorz,uxContentWidth,viewW,p.scrollX},
-        {uxSBVert,uxContentHeight,viewH,p.scrollY},
-    } {
-        info:=uxScrollInfo{Size:uint32(unsafe.Sizeof(uxScrollInfo{})),Mask:uxSIFRange|uxSIFPage|uxSIFPos,
-            Min:0,Max:spec.content-1,Page:uint32(spec.page),Pos:spec.pos}
-        procSetScrollInfoUX.Call(p.window,spec.axis,uintptr(unsafe.Pointer(&info)),1)
-    }
-    contentW:=viewW
-    if contentW<uxContentWidth{contentW=uxContentWidth}
-    sc:=func(v int32)uintptr{return uintptr(int32(float64(v)*p.scale+0.5))}
-    for _,ctrl:=range p.controls {
-        x,y,w,h:=uxLayoutRect(ctrl,contentW)
-        procMoveWindow.Call(ctrl.hwnd,sc(x-p.scrollX),sc(y-p.scrollY),sc(w),sc(h),1)
-    }
-    procInvalidateRectSettings.Call(p.window,0,1)
+	if p == nil || p.window == 0 {
+		return
+	}
+	var rect rect32
+	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&rect)))
+	viewW, viewH := int32(float64(rect.Right-rect.Left)/p.scale), int32(float64(rect.Bottom-rect.Top)/p.scale)
+	if viewW < 1 {
+		viewW = 1
+	}
+	if viewH < 1 {
+		viewH = 1
+	}
+	maxX, maxY := uxContentWidth-viewW, uxContentHeight-viewH
+	if maxX < 0 {
+		maxX = 0
+	}
+	if maxY < 0 {
+		maxY = 0
+	}
+	p.scrollX = uxScrollClamp(p.scrollX, maxX)
+	p.scrollY = uxScrollClamp(p.scrollY, maxY)
+	for _, spec := range []struct {
+		axis               uintptr
+		content, page, pos int32
+	}{
+		{uxSBHorz, uxContentWidth, viewW, p.scrollX},
+		{uxSBVert, uxContentHeight, viewH, p.scrollY},
+	} {
+		info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFRange | uxSIFPage | uxSIFPos,
+			Min: 0, Max: spec.content - 1, Page: uint32(spec.page), Pos: spec.pos}
+		procSetScrollInfoUX.Call(p.window, spec.axis, uintptr(unsafe.Pointer(&info)), 1)
+	}
+	contentW := viewW
+	if contentW < uxContentWidth {
+		contentW = uxContentWidth
+	}
+	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
+	for _, ctrl := range p.controls {
+		x, y, w, h := uxLayoutRect(ctrl, contentW)
+		procMoveWindow.Call(ctrl.hwnd, sc(x-p.scrollX), sc(y-p.scrollY), sc(w), sc(h), 1)
+	}
+	procInvalidateRectSettings.Call(p.window, 0, 1)
 }
-func (p *uxSettings) scroll(axis,request uintptr) {
-    var rect rect32
-    procGetClientRect.Call(p.window,uintptr(unsafe.Pointer(&rect)))
-    view:=int32(float64(rect.Bottom-rect.Top)/p.scale)
-    content:=uxContentHeight
-    pos:=&p.scrollY
-    if axis==uxSBHorz{view=int32(float64(rect.Right-rect.Left)/p.scale);content=uxContentWidth;pos=&p.scrollX}
-    max:=content-view;if max<0{max=0}
-    var delta int32
-    switch request&0xffff{
-    case 0:delta=-24
-    case 1:delta=24
-    case 2:delta=-view+48
-    case 3:delta=view-48
-    case 6:*pos=0
-    case 7:*pos=max
-    case 4,5:
-        info:=uxScrollInfo{Size:uint32(unsafe.Sizeof(uxScrollInfo{})),Mask:uxSIFTrackPos}
-        procGetScrollInfoUX.Call(p.window,axis,uintptr(unsafe.Pointer(&info)))
-        *pos=info.TrackPos
-    }
-    *pos=uxScrollClamp(*pos+delta,max)
-    p.layout()
+func (p *uxSettings) scroll(axis, request uintptr) {
+	var rect rect32
+	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&rect)))
+	view := int32(float64(rect.Bottom-rect.Top) / p.scale)
+	content := uxContentHeight
+	pos := &p.scrollY
+	if axis == uxSBHorz {
+		view = int32(float64(rect.Right-rect.Left) / p.scale)
+		content = uxContentWidth
+		pos = &p.scrollX
+	}
+	max := content - view
+	if max < 0 {
+		max = 0
+	}
+	var delta int32
+	switch request & 0xffff {
+	case 0:
+		delta = -24
+	case 1:
+		delta = 24
+	case 2:
+		delta = -view + 48
+	case 3:
+		delta = view - 48
+	case 6:
+		*pos = 0
+	case 7:
+		*pos = max
+	case 4, 5:
+		info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFTrackPos}
+		procGetScrollInfoUX.Call(p.window, axis, uintptr(unsafe.Pointer(&info)))
+		*pos = info.TrackPos
+	}
+	*pos = uxScrollClamp(*pos+delta, max)
+	p.layout()
 }
 
 var (
 	procMoveWindow             = user32.NewProc("MoveWindow")
-    procSetScrollInfoUX=user32.NewProc("SetScrollInfo")
-    procGetScrollInfoUX=user32.NewProc("GetScrollInfo")
+	procSetScrollInfoUX        = user32.NewProc("SetScrollInfo")
+	procGetScrollInfoUX        = user32.NewProc("GetScrollInfo")
 	procInvalidateRectSettings = user32.NewProc("InvalidateRect")
 )
 
@@ -247,21 +286,23 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			p.refreshTheme()
 		}
 		return 0
-	case uxWMVScroll,uxWMHScroll:
-        if p!=nil && p.window==hwnd{
-            axis:=uintptr(uxSBVert)
-            if uint32(msg)==uxWMHScroll{axis=uxSBHorz}
-            p.scroll(axis,wParam)
-        }
-        return 0
-    case uxWMMouseWheel:
-        if p!=nil && p.window==hwnd{
-            delta:=int32(int16((wParam>>16)&0xffff))
-            p.scrollY-=delta/120*72
-            p.layout()
-        }
-        return 0
-    case uxWMSize:
+	case uxWMVScroll, uxWMHScroll:
+		if p != nil && p.window == hwnd {
+			axis := uintptr(uxSBVert)
+			if uint32(msg) == uxWMHScroll {
+				axis = uxSBHorz
+			}
+			p.scroll(axis, wParam)
+		}
+		return 0
+	case uxWMMouseWheel:
+		if p != nil && p.window == hwnd {
+			delta := int32(int16((wParam >> 16) & 0xffff))
+			p.scrollY -= delta / 120 * 72
+			p.layout()
+		}
+		return 0
+	case uxWMSize:
 		if p != nil && p.window == hwnd {
 			p.layout()
 		}
@@ -269,11 +310,15 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMGetMinMaxInfo:
 		if p != nil && lParam != 0 {
 			bounds := (*uxMinMaxInfo)(unsafe.Pointer(lParam))
-			work:=uxWorkAreaAtCursor()
-            minW,minH:=int32(480*p.scale),int32(440*p.scale)
-            if minW>work.right-work.left-12{minW=work.right-work.left-12}
-            if minH>work.bottom-work.top-12{minH=work.bottom-work.top-12}
-            bounds.MinSize=trayPoint{X:minW,Y:minH}
+			work := uxWorkAreaAtCursor()
+			minW, minH := int32(480*p.scale), int32(440*p.scale)
+			if minW > work.right-work.left-12 {
+				minW = work.right - work.left - 12
+			}
+			if minH > work.bottom-work.top-12 {
+				minH = work.bottom - work.top - 12
+			}
+			bounds.MinSize = trayPoint{X: minW, Y: minH}
 		}
 		return 0
 	case uxWMClose:
@@ -321,11 +366,13 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				var rc rect32
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 				for _, card := range []struct{ top, bottom int32 }{{94, 280}, {284, 481}, {485, 605}} {
-					right:=int32(float64(rc.Right)/p.scale)
-                    if right<uxContentWidth{right=uxContentWidth}
-                    uiRoundSurface(hdc,rect32{sc(19-p.scrollX),sc(card.top-p.scrollY),sc(right-19-p.scrollX),sc(card.bottom-p.scrollY)},sc(18),p.palette.color(p.palette.surface),p.palette.color(p.palette.border))
+					right := int32(float64(rc.Right) / p.scale)
+					if right < uxContentWidth {
+						right = uxContentWidth
+					}
+					uiRoundSurface(hdc, rect32{sc(19 - p.scrollX), sc(card.top - p.scrollY), sc(right - 19 - p.scrollX), sc(card.bottom - p.scrollY)}, sc(18), p.palette.color(p.palette.surface), p.palette.color(p.palette.border))
 				}
-				uiRoundSurface(hdc, rect32{sc(29-p.scrollX),sc(24-p.scrollY),sc(65-p.scrollX),sc(60-p.scrollY)}, sc(14), p.palette.color(p.palette.primary), p.palette.color(p.palette.primary))
+				uiRoundSurface(hdc, rect32{sc(29 - p.scrollX), sc(24 - p.scrollY), sc(65 - p.scrollX), sc(60 - p.scrollY)}, sc(14), p.palette.color(p.palette.primary), p.palette.color(p.palette.primary))
 				uxSetBkMode.Call(hdc, TRANSPARENT)
 				uxSetTextColor.Call(hdc, p.palette.color(p.palette.primaryText))
 				oldFont, _, _ := uxSelectObject.Call(hdc, p.sectionFont)
@@ -336,7 +383,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				accentBrush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.primary))
 				if accentBrush != 0 {
 					for _, top := range []int32{110, 300, 496} {
-						stripe:=rect32{sc(32-p.scrollX),sc(top-p.scrollY),sc(36-p.scrollX),sc(top+20-p.scrollY)}
+						stripe := rect32{sc(32 - p.scrollX), sc(top - p.scrollY), sc(36 - p.scrollX), sc(top + 20 - p.scrollY)}
 						procFillRect.Call(hdc, uintptr(unsafe.Pointer(&stripe)), accentBrush)
 					}
 					procDeleteObject.Call(accentBrush)
@@ -541,7 +588,7 @@ func uxCenteredWindow(w, h int32) (int32, int32) {
 	return (int32(width) - w) / 2, (int32(height) - h) / 2
 }
 
-func uxWorkAreaAtCursor() desktopWorkArea{return uxWorkAreaForPoint(currentCursorPoint())}
+func uxWorkAreaAtCursor() desktopWorkArea { return uxWorkAreaForPoint(currentCursorPoint()) }
 
 func showNativeSettings(app *appState) error {
 	restoreDPI := handyAwareWindowThread()
@@ -565,11 +612,11 @@ func showNativeSettings(app *appState) error {
 		scale = 1
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
-	work:=uxWorkAreaAtCursor()
-    winW,winH:=desktopFitSize(int32(sc(714)),int32(sc(720)),work,12)
-    x,y:=uxCenteredWindow(winW,winH)
-    h,_,createErr:=procCreateWindow.Call(0,uintptr(unsafe.Pointer(className)),uintptr(unsafe.Pointer(title)),
-        uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000,uintptr(x),uintptr(y),uintptr(winW),uintptr(winH),0,0,module,0)
+	work := uxWorkAreaAtCursor()
+	winW, winH := desktopFitSize(int32(sc(714)), int32(sc(720)), work, 12)
+	x, y := uxCenteredWindow(winW, winH)
+	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
+		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
