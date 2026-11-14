@@ -6,6 +6,16 @@
 
 ## See the app · 界面预览
 
+### 30-second video · 30 秒看懂怎么用
+
+[![VoiceRewrite: Mouse4 voice typing, Mouse5 selected-text rewriting or explanation](docs/demo/voicerewrite-preview.gif)](docs/demo/voicerewrite-demo.mp4)
+
+**[▶ Watch full 30-second HD demo (MP4)](docs/demo/voicerewrite-demo.mp4)** · [Download video](docs/demo/voicerewrite-demo.mp4)
+
+**下侧键 Mouse4**：按住说话、松开输入。**上侧键 Mouse5**：选中文字，按住说出改写要求或提问；改写可替换原文，问题在结果卡片中回答。
+
+*Illustrated interaction walkthrough: sample editor text, spoken commands and model responses are scripted. The recording pill uses pixels from the running native Windows EXE; this video is not a microphone-to-model end-to-end test. [Video generation source](scripts/render-demo-video.py).*
+
 ![VoiceRewrite real Windows interface: settings, AI result and recording overlay](docs/ui/overview.png)
 
 *Real screenshots captured from the running Windows EXE in GitHub Actions. The recording overlay is shown in preview mode without microphone audio. [How screenshots are kept up to date](voice-rewrite/VISUAL-TESTING.md).*
