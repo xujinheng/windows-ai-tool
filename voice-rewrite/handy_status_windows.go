@@ -38,6 +38,7 @@ type handyStatus struct {
 	mode          string
 	owner         uint64
 	mic           *audioRecorder
+	pending       bool // side-button preview, before the 250ms hold decision
 	started       time.Time
 	changed       time.Time
 	tick          uint32
@@ -508,7 +509,7 @@ func drawHandyStatus(s *handyStatus) {
 	target := handyPoint{s.x, s.y}
 	size := handySize{int32(width), int32(height)}
 	source := handyPoint{}
-	blend := handyBlend{Op: 0, Flags: 0, Alpha: handyOpacity(s.started, s.changed, time.Now(), s.phase), Format: 1}
+	blend := handyBlend{Op: 0, Flags: 0, Alpha: handyStatusOpacity(s.started, s.changed, time.Now(), s.phase, s.pending), Format: 1}
 	screen, _, _ := procGetDCScreenHandy.Call(0)
 	if screen != 0 {
 		procUpdateLayeredHandy.Call(s.window, screen, uintptr(unsafe.Pointer(&target)), uintptr(unsafe.Pointer(&size)), dc, uintptr(unsafe.Pointer(&source)), 0, uintptr(unsafe.Pointer(&blend)), handyULW_ALPHA)
@@ -571,6 +572,29 @@ func handyScreenPositionForMonitor(mon uintptr, w, h int) (int32, int32) {
 	return (int32(x) - int32(w)) / 2, int32(y) - int32(h) - 5
 }
 func showHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint64) {
+	createHandyStatus(rec, mode, phase, owner, false)
+}
+
+func showPendingHandyStatus(mode string) {
+	createHandyStatus(nil, mode, statusRecording, 0, true)
+}
+
+// Keep the same native HWND when a held side button becomes a voice command;
+// rebuilding the layered window would visibly blink at the hold threshold.
+func promotePendingHandyStatus(rec *audioRecorder, mode string, owner uint64) bool {
+	s := activeHandyStatus
+	if s == nil || s.window == 0 || !s.pending || s.mode != mode {
+		return false
+	}
+	s.mic = rec
+	s.owner = owner
+	s.pending = false
+	s.changed = time.Now()
+	drawHandyStatus(s)
+	return true
+}
+
+func createHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint64, pending bool) {
 	restore := handyAwareWindowThread()
 	defer restore()
 	closeHandyStatus()
@@ -592,7 +616,7 @@ func showHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint6
 	if hwnd == 0 {
 		return
 	}
-	activeHandyStatus = &handyStatus{window: hwnd, mode: mode, mic: rec, phase: phase, owner: owner, started: time.Now(), changed: time.Now(), x: x, y: y, monitor: monitor, scale: scale}
+	activeHandyStatus = &handyStatus{window: hwnd, mode: mode, mic: rec, pending: pending, phase: phase, owner: owner, started: time.Now(), changed: time.Now(), x: x, y: y, monitor: monitor, scale: scale}
 	drawHandyStatus(activeHandyStatus)
 	procShowWindow.Call(hwnd, SW_SHOWNOACTIVATE)
 	procSetTimer.Call(hwnd, handyPulseTimer, 70, 0)

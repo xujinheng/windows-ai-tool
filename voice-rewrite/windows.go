@@ -457,6 +457,9 @@ func runApp() {
 			go func() { <-rec.result }()
 		}
 		pendingSide = nil
+		if activeHandyStatus != nil && activeHandyStatus.pending {
+			closeHandyStatus()
+		}
 	}
 	defer discardPendingSide()
 	var selected selectedText
@@ -525,7 +528,11 @@ func runApp() {
 		if dictation {
 			statusMode = "听写"
 		}
-		showHandyStatus(rec, statusMode, statusRecording, holdGeneration)
+		// Promote the immediate mouse-down preview without recreating its HWND.
+		// Keyboard hold has no preview and uses the usual status path.
+		if button == 0 || !promotePendingHandyStatus(rec, statusMode, holdGeneration) {
+			showHandyStatus(rec, statusMode, statusRecording, holdGeneration)
+		}
 		beep(900, 60)
 		l.Printf("recording active, flow=%s button=%d", map[bool]string{true: "dictation", false: "rewrite"}[dictation], button)
 	}
@@ -565,8 +572,14 @@ func runApp() {
 		if win == 0 {
 			return
 		}
-		// Capture without displaying an indicator or calling an API. If the
-		// gesture is a short click, discard the PCM immediately.
+		// Paint the provisional status immediately. Recording starts at
+		// physical mouse-down, but only a 250ms hold activates voice mode.
+		// A short click closes this preview and replays browser navigation.
+		mode := "改写"
+		if sideButtonFlow(button, selectedMouseButton, dictationButton) == "dictation" {
+			mode = "听写"
+		}
+		showPendingHandyStatus(mode)
 		rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 		pendingSide = &sideCapture{button: button, targetWindow: win, recorder: rec, err: err}
 	}
@@ -583,6 +596,9 @@ func runApp() {
 		}
 		pendingSide = nil
 		if p.err != nil {
+			if activeHandyStatus != nil && activeHandyStatus.pending {
+				closeHandyStatus()
+			}
 			app.fail(p.err)
 			return
 		}
@@ -602,6 +618,10 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_STATUS_CANCEL {
+			if activeHandyStatus != nil && activeHandyStatus.pending && msg.WParam == 0 {
+				discardPendingSide()
+				continue
+			}
 			if !app.epoch.valid(uint64(msg.WParam)) || activeHandyStatus == nil || activeHandyStatus.owner != uint64(msg.WParam) {
 				continue // a cancel click queued by a previous session
 			}
