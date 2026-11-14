@@ -1,18 +1,37 @@
-# VoiceRewrite — native Windows voice writing
+# VoiceRewrite — Voice Typing & AI Rewriting for Windows
 
-VoiceRewrite is a Windows 11 x64 desktop voice dictation and AI rewrite tool,
-implemented in Go and Win32. It connects to separately configured OpenAI-compatible
-**speech-to-text (ASR)** and **text-generation (LLM)** APIs. It is not a model manager.
+**A lightweight native Windows 11 desktop app** for dictating into other apps, rewriting selected text, translating, and asking AI questions. Written in **Go + Win32**; no Electron, Node.js app runtime, or browser UI.
 
-## What it does
+**Hold Mouse4 to speak → release to transcribe.** Select text and hold **Mouse5** to ask AI to rewrite it. Configure your own OpenAI-compatible **ASR** and **LLM** servers—local or remote.
 
-- **Hold Mouse4** (or configure F1–F24) and dictate. Release to transcribe and attempt text insertion at the original caret.
-- **Select text, hold Mouse5** and speak an edit, translation, or question. Explicit edits may replace the selection after guarded validation; questions open a copyable result card.
-- Pause or resume hotkey interception, inspect last error, restore up to 10 recent results in this session, and configure both services through the native tray settings.
+## See the app · 界面预览
+
+![VoiceRewrite real Windows interface: settings, AI result and recording overlay](docs/ui/overview.png)
+
+*Real screenshots captured from the running Windows EXE in GitHub Actions. The recording overlay uses a deterministic preview, not microphone audio. [How screenshots are kept up to date](voice-rewrite/VISUAL-TESTING.md).*
+
+<table>
+  <tr>
+    <td width="50%" align="center"><strong>Settings · 浅色</strong><br><img src="docs/ui/settings-light.png" alt="Windows VoiceRewrite settings window in light theme" width="100%"></td>
+    <td width="50%" align="center"><strong>Settings · 深色</strong><br><img src="docs/ui/settings-dark.png" alt="Windows VoiceRewrite settings window in dark theme" width="100%"></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>AI result · 改写 / 问答</strong><br><img src="docs/ui/result-card.png" alt="AI answer or rewrite result card with copy and apply actions" width="100%"></td>
+    <td align="center"><strong>Recording overlay · 录音浮条</strong><br><img src="docs/ui/recording-overlay.png" alt="Compact bottom-center recording pill with waveform and timer" width="100%"></td>
+  </tr>
+</table>
+
+## How it works
+
+**1. Dictate:** Focus any text field, hold Mouse4 (or your configured F-key), speak, and release. VoiceRewrite transcribes and attempts insertion at the original caret.
+
+**2. Rewrite:** Select text, hold Mouse5, and say how you want it edited or translated. Explicit edits attempt guarded replacement; questions open a result card.
+
+**3. Review:** Copy the complete text from the result card if the target application cannot be edited safely. Long answers scroll without truncation.
 
 ## Install and run
 
-Download an artifact from [GitHub Actions](https://github.com/xujinheng/windows-ai-tool/actions) after a successful build:
+Download an artifact from [GitHub Actions](https://github.com/xujinheng/windows-voice-rewrite/actions) after a successful build:
 
 - `VoiceRewrite-installer-windows-x64`: per-user Inno Setup installer, Start-menu shortcut, optional desktop shortcut, and uninstall.
 - `VoiceRewrite-portable-windows-x64`: portable ZIP + SHA-256 checksum.

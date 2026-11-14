@@ -3,6 +3,12 @@ on:
   push:
     paths:
       - 'voice-rewrite/appearance_windows.go'
+      - 'voice-rewrite/visual_skin_windows.go'
+      - 'voice-rewrite/settings_layout.go'
+      - 'voice-rewrite/popup_layout.go'
+      - 'voice-rewrite/desktop_geometry.go'
+      - 'voice-rewrite/desktop_monitor_windows.go'
+      - 'scripts/publish-readme-screenshots.ps1'
       - 'voice-rewrite/settings_windows.go'
       - 'voice-rewrite/popup_windows.go'
       - 'voice-rewrite/handy_status_windows.go'
@@ -11,7 +17,7 @@ on:
       - '.github/workflows/visual-matrix.yml'
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   screenshots:
     runs-on: windows-latest
@@ -155,6 +161,34 @@ jobs:
             if ($first -eq $second) { throw "Visual states rendered identically: $($pair -join ' vs ')" }
           }
           Write-Host 'Nine real Win32 screen captures validated; dark theme and scroll positions differ.'
+      - name: Publish verified screenshots to README (main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & ./scripts/publish-readme-screenshots.ps1 -CaptureDir 'visual-matrix' -OutputDir 'docs/ui'
+          if ($LASTEXITCODE -ne 0) { throw "Failed to prepare README screenshots" }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- docs/ui
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'README screenshots have not changed.'
+            exit 0
+          }
+          if ($LASTEXITCODE -ne 1) { throw "git diff --cached failed: $LASTEXITCODE" }
+          $builtHead = (git rev-parse HEAD).Trim()
+          $remoteLine = git ls-remote origin refs/heads/main
+          if ($LASTEXITCODE -ne 0 -or !$remoteLine) { throw 'Cannot verify current main HEAD' }
+          $remoteHead = ($remoteLine -split '\s+')[0]
+          if ($remoteHead -ne $builtHead) {
+            Write-Warning 'Main moved during capture. Do not publish screenshots from an older build; let the latest UI run publish them.'
+            exit 0
+          }
+          git commit -m 'docs(ui): refresh real Windows interface screenshots [skip ci]'
+          if ($LASTEXITCODE -ne 0) { throw "git commit failed: $LASTEXITCODE" }
+          git push origin HEAD:main
+          if ($LASTEXITCODE -ne 0) { throw "GitHub screenshot publication failed: $LASTEXITCODE" }
       - name: Upload actual screenshot evidence
         if: always()
         uses: actions/upload-artifact@v4

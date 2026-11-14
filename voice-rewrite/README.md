@@ -1,5 +1,7 @@
 # VoiceRewrite v26 — Windows native voice writing assistant
 
+[See real Windows screenshots of the settings window, recording pill and AI result card](../README.md#see-the-app--界面预览).
+
 VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configure a standalone F-key in Settings, to dictate at the caret; hold **Mouse5** after selecting text to rewrite, translate, or ask a question. VoiceRewrite is a **client**, not a model installer: ASR and LLM endpoints are configured separately.
 
 ## First run
