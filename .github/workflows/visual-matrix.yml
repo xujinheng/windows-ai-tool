@@ -208,18 +208,18 @@ jobs:
                     $fx=$origin.X-$rect.Left+345
                     $fy=$origin.Y-$rect.Top+223
                     $samples=@(
-                      @($fx,$fy+17),
-                      @($fx+447,$fy+17),
-                      @($fx+60,$fy),
-                      @($fx+60,$fy+34)
+                      [pscustomobject]@{x=$fx;y=($fy+17)},
+                      [pscustomobject]@{x=($fx+447);y=($fy+17)},
+                      [pscustomobject]@{x=($fx+60);y=$fy},
+                      [pscustomobject]@{x=($fx+60);y=($fy+34)}
                     )
                     $edges=@('left','right','top','bottom')
                     for($edge=0;$edge -lt 4;$edge++){
                       $match=$false
                       for($dx=-2;$dx -le 2 -and -not $match;$dx++){
                         for($dy=-2;$dy -le 2;$dy++){
-                          $px=[int]($samples[$edge][0]+$dx)
-                          $py=[int]($samples[$edge][1]+$dy)
+                          $px=[int]($samples[$edge].x+$dx)
+                          $py=[int]($samples[$edge].y+$dy)
                           if($px -lt 0 -or $py -lt 0 -or $px -ge $w -or $py -ge $h){continue}
                           $color=$bitmap.GetPixel($px,$py)
                           if($color.B -gt 155 -and $color.B-$color.G -gt 45 -and $color.B-$color.R -gt 35){$match=$true;break}
