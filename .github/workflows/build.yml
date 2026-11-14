@@ -1,7 +1,7 @@
 name: Build VoiceRewrite Windows
 on:
   push:
-    branches: [main]
+    branches: [main, feat/shortcut-key-capture]
     tags: [v*]
   pull_request:
   workflow_dispatch:
@@ -14,6 +14,32 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # Temporary formatting pass on this feature branch, removed before merge.
+  shortcut-format:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feat/shortcut-key-capture'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+          cache-dependency-path: voice-rewrite/go.mod
+      - name: Format shortcut changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          gofmt -w voice-rewrite/shortcut_options.go voice-rewrite/shortcut_options_test.go \
+            voice-rewrite/windows.go voice-rewrite/task_worker_windows.go \
+            voice-rewrite/settings_windows.go voice-rewrite/settings_direct2d_windows.go \
+            voice-rewrite/mouse_windows.go
+          git add -- voice-rewrite
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'style: gofmt native shortcut capture [skip ci]'
+          git push origin HEAD:feat/shortcut-key-capture
   test-core:
     runs-on: ubuntu-latest
     timeout-minutes: 15
