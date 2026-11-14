@@ -501,6 +501,17 @@ func uxSettingsFeedbackColor(p uiPalette, status string) uint32 {
 	}
 }
 
+// markDirty is shared by the real edit notifications and preview fixture.
+func (p *uxSettings) markDirty() {
+	if p==nil || p.window==0 || p.initializing {return}
+	p.dirty=true
+	if p.hint!=0 {uxSetText(p.hint,"● 有未保存的更改 · 点击右侧保存")}
+	refreshNativeWindow(p.window)
+	for _,ctrl:=range p.controls {
+		if ctrl.id==uxSaveButton {refreshNativeWindow(ctrl.hwnd);break}
+	}
+}
+
 func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	p := uxActiveSettings
 	switch uint32(msg) {
@@ -767,16 +778,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		if p != nil && p.window == hwnd {
 			if !p.initializing && (((wParam>>16)&0xffff == 0x0300) || // EN_CHANGE
 				((wParam>>16)&0xffff == 1 && (wParam&0xffff) == uxMicrophoneInput)) { // CBN_SELCHANGE
-				p.dirty = true
-				uxSetText(p.hint, "● 有未保存的更改 · 点击右侧保存")
-				refreshNativeWindow(p.window)
-				if len(p.controls) > 0 {
-					for _, ctrl := range p.controls {
-						if ctrl.id == uxSaveButton {
-							refreshNativeWindow(ctrl.hwnd)
-						}
-					}
-				}
+				p.markDirty()
 			}
 			if !p.initializing && (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
 				for idx, controls := range [2][3]uintptr{{p.inputs[0], p.inputs[1], p.inputs[2]}, {p.inputs[3], p.inputs[4], p.inputs[5]}} {
@@ -1093,6 +1095,11 @@ func showNativeSettings(app *appState) error {
 	p.hint = makeOne("STATIC", "服务由你选择 · API 密钥已加密保护", stat, 34, 635, 640, 18, 0, false)
 	setFont(p.hint, p.mutedFont)
 	p.initializing = false
+	// CI uses this preview-only knob to render the same dirty state reached
+	// through real EN_CHANGE/CBN_SELCHANGE notifications, without a provider.
+	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW")!="" && os.Getenv("VOICEREWRITE_VISUAL_DIRTY")=="1" {
+		p.markDirty()
+	}
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)
