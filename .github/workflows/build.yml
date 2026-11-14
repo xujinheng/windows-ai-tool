@@ -52,7 +52,7 @@ jobs:
           CGO_ENABLED: '0'
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.24.0-dev' }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.25.0-dev' }
           go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
       - name: Package portable Windows build
         working-directory: voice-rewrite
@@ -85,7 +85,7 @@ jobs:
       - name: Build per-user installer
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.24.0' }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.25.0' }
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path -LiteralPath $compiler)) { throw "Inno Setup compiler not found: $compiler" }
           & $compiler "/DAppVersion=$version" 'installer\VoiceRewrite.iss'

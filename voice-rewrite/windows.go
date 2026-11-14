@@ -21,7 +21,7 @@ import (
 	"unsafe"
 )
 
-var buildID = "0.24.0-dev" // overwritten by -ldflags -X at build time
+var buildID = "0.25.0-dev" // overwritten by -ldflags -X at build time
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -175,6 +175,8 @@ type appState struct {
 	lastResult      string
 	lastResultTitle string
 	paused          atomic.Bool
+	updateBusy      atomic.Bool
+	updateReady     chan updateNotice
 }
 
 // Shell notification APIs and icon lifetime are owned by the Windows UI thread.
@@ -327,7 +329,7 @@ func runApp() {
 		return
 	}
 	defer procDestroyWindow.Call(hwnd)
-	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4)}
+	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4), updateReady: make(chan updateNotice, 1)}
 	defer app.epoch.shutdown()
 	defer closeActiveAnswer()
 	defer closeNativeSettings()
@@ -642,6 +644,41 @@ func runApp() {
 				} else {
 					l.Printf("tray: menu dismissed command=%d", command)
 				}
+			}
+			continue
+		}
+		if msg.Message == WM_TRAY_CHECK_UPDATE {
+			if !app.updateBusy.CompareAndSwap(false, true) {
+				winErr("正在检查更新，请稍后。")
+				continue
+			}
+			go func() {
+				notice := checkForUpdate(buildID)
+				select {
+				case app.updateReady <- notice:
+					procPostMessage.Call(hwnd, WM_TRAY_UPDATE_READY, 0, 0)
+				default:
+					app.updateBusy.Store(false)
+				}
+			}()
+			continue
+		}
+		if msg.Message == WM_TRAY_UPDATE_READY {
+			app.updateBusy.Store(false)
+			select {
+			case notice := <-app.updateReady:
+				if notice.err != nil {
+					winErr("检查更新失败：" + notice.err.Error())
+				} else if !notice.found {
+					winErr("当前仓库尚未发布可下载的版本。\n" + releasesPage)
+				} else if !notice.newer {
+					winErr("当前版本：" + buildID + "\n最新发布：" + notice.latest + "\n已是最新版本。")
+				} else if askViewUpdate(notice.latest) {
+					if err := shellOpenLocalFile(releasesPage); err != nil {
+						winErr("无法打开发布页面：" + err.Error())
+					}
+				}
+			default:
 			}
 			continue
 		}

@@ -24,6 +24,8 @@ const (
 	WM_TRAY_LAST_ERROR   = 0x8000 + 63
 	WM_TRAY_TOGGLE_PAUSE = 0x8000 + 64
 	WM_TRAY_LAST_RESULT  = 0x8000 + 65
+	WM_TRAY_CHECK_UPDATE = 0x8000 + 66
+	WM_TRAY_UPDATE_READY = 0x8000 + 67
 	TRAY_RESET_TIMER_ID  = 3002
 	WM_RBUTTONUP         = 0x0205
 	WM_CONTEXTMENU       = 0x007B
@@ -301,6 +303,7 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	errorLabel, _ := syscall.UTF16PtrFromString("最近一次错误与解决方法")
 	resultLabel, _ := syscall.UTF16PtrFromString("恢复最近一次语音结果")
 	closeLabel, _ := syscall.UTF16PtrFromString("关闭 AI 结果窗口")
+	updateLabel, _ := syscall.UTF16PtrFromString("检查更新…")
 	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
 	procAppendMenu.Call(m, MF_STRING, 6, uintptr(unsafe.Pointer(pauseLabel)))
 	procAppendMenu.Call(m, MF_STRING, 2, uintptr(unsafe.Pointer(configLabel)))
@@ -308,6 +311,7 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	procAppendMenu.Call(m, MF_STRING, 5, uintptr(unsafe.Pointer(errorLabel)))
 	procAppendMenu.Call(m, MF_STRING, 7, uintptr(unsafe.Pointer(resultLabel)))
 	procAppendMenu.Call(m, MF_STRING, 4, uintptr(unsafe.Pointer(closeLabel)))
+	procAppendMenu.Call(m, MF_STRING, 8, uintptr(unsafe.Pointer(updateLabel)))
 	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
 	procAppendMenu.Call(m, MF_STRING, 1, uintptr(unsafe.Pointer(exitLabel)))
 	runtime.KeepAlive(pauseLabel)
@@ -316,6 +320,7 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	runtime.KeepAlive(errorLabel)
 	runtime.KeepAlive(resultLabel)
 	runtime.KeepAlive(closeLabel)
+	runtime.KeepAlive(updateLabel)
 	runtime.KeepAlive(exitLabel)
 	var p trayPoint
 	if ok, _, _ := procGetCursorPos.Call(uintptr(unsafe.Pointer(&p))); ok == 0 {
@@ -347,6 +352,8 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 		procPostMessage.Call(t.hwnd, WM_TRAY_TOGGLE_PAUSE, 0, 0)
 	case 7:
 		procPostMessage.Call(t.hwnd, WM_TRAY_LAST_RESULT, 0, 0)
+	case 8:
+		procPostMessage.Call(t.hwnd, WM_TRAY_CHECK_UPDATE, 0, 0)
 	}
 	return selected, nil
 }
