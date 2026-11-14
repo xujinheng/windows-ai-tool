@@ -539,7 +539,7 @@ func showAnswerPopup(msg popupMessage) error {
 		return err
 	}
 	popup.note = note
-	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
+	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | uxWSTabStop | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
 	editor, err := makeChild("EDIT", "", bodyStyle, px(34), px(164), cw-px(68), ch-px(251), hwnd, 0)
 	if err != nil {
@@ -565,16 +565,16 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	popup.footerNote = footerNote
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(342), bottom, px(122), px(34), hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(342), bottom, px(122), px(34), hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(209), bottom, px(102), px(34), hwnd, BUTTON_COPY); err != nil {
+	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(209), bottom, px(102), px(34), hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(96), bottom, px(74), px(34), hwnd, BUTTON_CLOSE); err != nil {
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(96), bottom, px(74), px(34), hwnd, BUTTON_CLOSE); err != nil {
 		closeActiveAnswer()
 		return err
 	}
