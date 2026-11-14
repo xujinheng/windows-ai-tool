@@ -359,6 +359,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMNCDestroy:
 		if p != nil && p.window == hwnd {
 			uxActiveSettings = nil
+			resultRemoveReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)))
 			if p.renderer != nil {
 				p.renderer.close()
 				p.renderer = nil
@@ -398,7 +399,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var ps handyPaintStruct
 			hdc, _, _ := procBeginPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			if hdc != 0 {
-				if p.renderer == nil || !p.renderer.drawSettings(p.scrollX, p.scrollY) {
+				if p.renderer != nil && p.renderer.drawSettings(p.scrollX, p.scrollY) {
+					resultSetReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)), 1)
+				} else {
 					p.drawSettingsFallback(hdc)
 				}
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
