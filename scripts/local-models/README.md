@@ -3,7 +3,14 @@
 [Start-VoiceRewrite-Models.ps1](Start-VoiceRewrite-Models.ps1) starts separate `llama-server.exe` processes for speech recognition and text generation.
 
 1. Download a Windows `llama.cpp` build with support for your models.
-2. Set the executable, ASR GGUF, ASR `mmproj` and LLM GGUF paths at the top of the script.
+2. Copy the example to a **local, gitignored** file and enter your paths there:
+
+```powershell
+Copy-Item .\local-paths.example.ps1 .\local-paths.ps1
+notepad .\local-paths.ps1
+```
+
+   Never commit `local-paths.ps1`: the nested `.gitignore` excludes it.
 3. Run:
 
 ```powershell

@@ -1,11 +1,18 @@
 #Requires -Version 5.1
 $ErrorActionPreference = 'Stop'
 
-# Edit these four paths; both processes use the same llama-server.exe.
-$llamaServer = 'C:\llama.cpp\llama-server.exe'
-$asrModel    = 'C:\Models\Qwen3-ASR-1.7B.gguf'
-$asrMmproj   = 'C:\Models\mmproj-Qwen3-ASR-1.7B.gguf'
-$llmModel    = 'C:\Models\Qwen3.5-9B.gguf'
+# Personal paths belong in the gitignored file next to this script, not in the repository.
+$localPaths = Join-Path $PSScriptRoot 'local-paths.ps1'
+if (-not (Test-Path -LiteralPath $localPaths -PathType Leaf)) {
+    throw 'Missing local-paths.ps1. Copy local-paths.example.ps1 to local-paths.ps1 and set your local paths.'
+}
+. $localPaths
+foreach ($name in @('llamaServer', 'asrModel', 'asrMmproj', 'llmModel')) {
+    $value = Get-Variable -Name $name -ValueOnly -ErrorAction SilentlyContinue
+    if ([string]::IsNullOrWhiteSpace([string]$value)) {
+        throw "Set variable $name in local-paths.ps1 before starting the models."
+    }
+}
 
 foreach ($file in @($llamaServer, $asrModel, $asrMmproj, $llmModel)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "File not found: $file" }
