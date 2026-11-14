@@ -53,10 +53,11 @@ func uiDrawActionButton(item *drawItemStruct, palette uiPalette, font uintptr, l
 		procDeleteObject.Call(background)
 	}
 	if primary && item.ItemState&ODS_SELECTED != 0 {
+		// Respect the shared result/settings lilac theme on mouse press.
 		if palette.dark {
-			fill = 0xC44D81
+			fill = 0x9B8AE6
 		} else {
-			fill = 0x93365C
+			fill = 0x5D45B5
 		}
 		outline = fill
 	}
