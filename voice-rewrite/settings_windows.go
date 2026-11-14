@@ -448,7 +448,7 @@ func uxSettingsKeyMessage(msg winMSG) bool {
 			return false
 		}
 	}
-	procSendMessage.Call(p.window,uxWMClose,0,0)
+	procSendMessage.Call(p.window, uxWMClose, 0, 0)
 	return true
 }
 
@@ -475,20 +475,26 @@ func (p *uxSettings) refreshTheme() {
 // reachable does not necessarily mean a model can execute the requested task.
 func uxSettingsFeedbackColor(p uiPalette, status string) uint32 {
 	switch {
-	case strings.Contains(status,"接受 WAV") ||
-		strings.Contains(status,"已连接") ||
-		strings.Contains(status,"已在服务中发现"):
-		if p.dark {return 0x7BD6B1}
+	case strings.Contains(status, "接受 WAV") ||
+		strings.Contains(status, "已连接") ||
+		strings.Contains(status, "已在服务中发现"):
+		if p.dark {
+			return 0x7BD6B1
+		}
 		return 0x237A58
-	case strings.Contains(status,"无效") ||
-		strings.Contains(status,"拒绝") ||
-		strings.Contains(status,"无法连接") ||
-		strings.Contains(status,"错误") ||
-		strings.Contains(status,"不可用"):
-		if p.dark {return 0xF39B9B}
+	case strings.Contains(status, "无效") ||
+		strings.Contains(status, "拒绝") ||
+		strings.Contains(status, "无法连接") ||
+		strings.Contains(status, "错误") ||
+		strings.Contains(status, "不可用"):
+		if p.dark {
+			return 0xF39B9B
+		}
 		return 0xB54353
-	case strings.Contains(status,"可达") || strings.Contains(status,"不提供模型列表"):
-		if p.dark {return 0xE8BD78}
+	case strings.Contains(status, "可达") || strings.Contains(status, "不提供模型列表"):
+		if p.dark {
+			return 0xE8BD78
+		}
 		return 0x896012
 	default:
 		return p.muted
@@ -539,14 +545,16 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case uxWMClose:
-		if p != nil && p.window==hwnd && p.dirty {
-			question:=uxPtr("当前有未保存的设置。确定放弃这些更改吗？")
-			title:=uxPtr("VoiceRewrite · 放弃更改")
+		if p != nil && p.window == hwnd && p.dirty {
+			question := uxPtr("当前有未保存的设置。确定放弃这些更改吗？")
+			title := uxPtr("VoiceRewrite · 放弃更改")
 			// Yes/No with No as the safe default; do not silently discard credentials.
-			choice,_,_:=user32.NewProc("MessageBoxW").Call(hwnd,
-				uintptr(unsafe.Pointer(question)),uintptr(unsafe.Pointer(title)),
+			choice, _, _ := user32.NewProc("MessageBoxW").Call(hwnd,
+				uintptr(unsafe.Pointer(question)), uintptr(unsafe.Pointer(title)),
 				0x00000004|0x00000030|0x00000100)
-			if choice!=6 {return 0} // IDYES
+			if choice != 6 {
+				return 0
+			} // IDYES
 		}
 		procDestroyWindow.Call(hwnd)
 		return 0
@@ -689,9 +697,12 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				procDrawText.Call(item.Hdc, uintptr(unsafe.Pointer(ptr)), ^uintptr(0), uintptr(unsafe.Pointer(&item.Rect)), DT_CENTER|DT_VCENTER|DT_SINGLELINE)
 				uxSelectObject.Call(item.Hdc, old)
 				if item.ItemState&0x0010 != 0 { // ODS_FOCUS
-					focus:=item.Rect
-					focus.Left+=4;focus.Top+=4;focus.Right-=4;focus.Bottom-=4
-					user32.NewProc("DrawFocusRect").Call(item.Hdc,uintptr(unsafe.Pointer(&focus)))
+					focus := item.Rect
+					focus.Left += 4
+					focus.Top += 4
+					focus.Right -= 4
+					focus.Bottom -= 4
+					user32.NewProc("DrawFocusRect").Call(item.Hdc, uintptr(unsafe.Pointer(&focus)))
 				}
 				return 1
 			}
@@ -700,7 +711,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			switch item.CtlID {
 			case uxSaveButton:
 				label, primary = "保存设置", true
-				if p.dirty {label="保存更改"}
+				if p.dirty {
+					label = "保存更改"
+				}
 			case uxCloseButton:
 				label = "关闭"
 			case uxAdvancedButton:
@@ -717,7 +730,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			color := p.palette.text
 			if lParam == p.hint {
 				color = p.palette.muted
-				if p.dirty { color = p.palette.primary }
+				if p.dirty {
+					color = p.palette.primary
+				}
 			} else if lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
 				color = uxSettingsFeedbackColor(p.palette, uxWinText(lParam))
 			}
@@ -749,13 +764,15 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMCommand:
 		if p != nil && p.window == hwnd {
 			if !p.initializing && (((wParam>>16)&0xffff == 0x0300) || // EN_CHANGE
-				((wParam>>16)&0xffff == 1 && (wParam&0xffff)==uxMicrophoneInput)) { // CBN_SELCHANGE
-				p.dirty=true
-				uxSetText(p.hint,"● 有未保存的更改 · 点击右侧保存")
+				((wParam>>16)&0xffff == 1 && (wParam&0xffff) == uxMicrophoneInput)) { // CBN_SELCHANGE
+				p.dirty = true
+				uxSetText(p.hint, "● 有未保存的更改 · 点击右侧保存")
 				refreshNativeWindow(p.window)
-				if len(p.controls)>0 {
-					for _,ctrl:=range p.controls {
-						if ctrl.id==uxSaveButton {refreshNativeWindow(ctrl.hwnd)}
+				if len(p.controls) > 0 {
+					for _, ctrl := range p.controls {
+						if ctrl.id == uxSaveButton {
+							refreshNativeWindow(ctrl.hwnd)
+						}
 					}
 				}
 			}
@@ -786,7 +803,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 				return 0
 			case uxCloseButton:
-				procSendMessage.Call(hwnd,uxWMClose,0,0)
+				procSendMessage.Call(hwnd, uxWMClose, 0, 0)
 				return 0
 			case uxAdvancedButton:
 				if err := shellOpenLocalFile(configPath()); err != nil {
@@ -835,9 +852,11 @@ func (p *uxSettings) save() error {
 		return err
 	}
 	p.app.cfg = cfg
-	p.dirty=false
-	for _,ctrl:=range p.controls {
-		if ctrl.id==uxSaveButton {refreshNativeWindow(ctrl.hwnd)}
+	p.dirty = false
+	for _, ctrl := range p.controls {
+		if ctrl.id == uxSaveButton {
+			refreshNativeWindow(ctrl.hwnd)
+		}
 	}
 	if changedShortcut || changedAudioDevice {
 		uxSetText(p.hint, "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。")
@@ -944,7 +963,7 @@ func showNativeSettings(app *appState) error {
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
-	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool), palette: systemPalette(), initializing:true}
+	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool), palette: systemPalette(), initializing: true}
 	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") != "" {
 		switch os.Getenv("VOICEREWRITE_VISUAL_TAB") {
 		case "1":
@@ -1071,7 +1090,7 @@ func showNativeSettings(app *appState) error {
 	makeOne("BUTTON", "保存设置", btn, 572, 578, 156, 36, uxSaveButton, false)
 	p.hint = makeOne("STATIC", "服务由你选择 · API 密钥已加密保护", stat, 34, 635, 640, 18, 0, false)
 	setFont(p.hint, p.mutedFont)
-	p.initializing=false
+	p.initializing = false
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)
