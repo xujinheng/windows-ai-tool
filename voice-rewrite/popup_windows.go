@@ -77,6 +77,8 @@ type answerPopup struct {
 	window, edit, note uintptr
 	fonts              []uintptr
 	bgBrush            uintptr
+	editBrush          uintptr
+	palette            uiPalette
 	body               string
 	app                *appState
 	selection          *selectedText
@@ -246,16 +248,22 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			procFillRect.Call(wParam, uintptr(unsafe.Pointer(&r)), activeAnswer.bgBrush)
 			return 1
 		}
-	case WM_CTLCOLORSTATIC, WM_CTLCOLOREDIT:
+	case WM_CTLCOLORSTATIC:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			procSetBkMode.Call(wParam, TRANSPARENT)
 			if uint32(msg) == WM_CTLCOLORSTATIC && activeAnswer.note == lParam {
-				procSetTextColor.Call(wParam, colorRGB(119, 128, 144))
+				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.muted))
 			} else {
-				procSetTextColor.Call(wParam, colorRGB(37, 45, 60))
+				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
 			}
-			procSetBkColor.Call(wParam, colorRGB(255, 255, 255))
+			procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.background))
 			return activeAnswer.bgBrush
+		}
+	case WM_CTLCOLOREDIT:
+		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.editBrush != 0 {
+			procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
+			procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.field))
+			return activeAnswer.editBrush
 		}
 	case WM_DRAWITEM:
 		if lParam != 0 {
@@ -296,6 +304,9 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if activeAnswer.bgBrush != 0 {
 				procDeleteObject.Call(activeAnswer.bgBrush)
 			}
+			if activeAnswer.editBrush != 0 {
+				procDeleteObject.Call(activeAnswer.editBrush)
+			}
 			activeAnswer = nil
 		}
 	}
@@ -310,19 +321,19 @@ func drawCardButton(item *drawItemStruct) bool {
 	primary := item.CtlID == BUTTON_APPLY
 	var fill, border, ink uintptr
 	if primary {
-		fill = colorRGB(190, 75, 123)
+		fill = activeAnswer.palette.color(activeAnswer.palette.primary)
 		border = fill
-		ink = colorRGB(255, 255, 255)
+		ink = activeAnswer.palette.color(activeAnswer.palette.primaryText)
 	} else {
-		fill = colorRGB(247, 246, 250)
-		border = colorRGB(232, 228, 236)
-		ink = colorRGB(45, 56, 75)
+		fill = activeAnswer.palette.color(activeAnswer.palette.secondary)
+		border = activeAnswer.palette.color(activeAnswer.palette.border)
+		ink = activeAnswer.palette.color(activeAnswer.palette.text)
 	}
 	if item.ItemState&ODS_SELECTED != 0 {
 		if primary {
-			fill = colorRGB(155, 51, 99)
+			fill = activeAnswer.palette.color(activeAnswer.palette.primary)
 		} else {
-			fill = colorRGB(227, 232, 241)
+			fill = activeAnswer.palette.color(activeAnswer.palette.secondaryPressed)
 		}
 	}
 	b, _, _ := procCreateSolidBrush.Call(fill)
@@ -445,9 +456,11 @@ func showAnswerPopup(msg popupMessage) error {
 	if hwnd == 0 {
 		return fmt.Errorf("create result card: %w", err)
 	}
-	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation}
+	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation, palette: systemPalette()}
 	activeAnswer = popup
-	popup.bgBrush, _, _ = procCreateSolidBrush.Call(colorRGB(255, 255, 255))
+	popup.bgBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.background))
+	popup.editBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.field))
+	applyWindowPalette(hwnd, popup.palette)
 	var bounds rect32
 	procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 	cw, ch := bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
@@ -508,11 +521,11 @@ func showAnswerPopup(msg popupMessage) error {
 	setFont(note, popup.fonts[3])
 	rounded := uint32(2)
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, uintptr(unsafe.Pointer(&rounded)), unsafe.Sizeof(rounded))
-	captionColor := uint32(colorRGB(250, 249, 251))
+	captionColor := uint32(popup.palette.color(popup.palette.background))
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_CAPTION_COLOR, uintptr(unsafe.Pointer(&captionColor)), unsafe.Sizeof(captionColor))
-	captionText := uint32(colorRGB(45, 56, 73))
+	captionText := uint32(popup.palette.color(popup.palette.text))
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_TEXT_COLOR, uintptr(unsafe.Pointer(&captionText)), unsafe.Sizeof(captionText))
-	borderColor := uint32(colorRGB(228, 232, 238))
+	borderColor := uint32(popup.palette.color(popup.palette.border))
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_BORDER_COLOR, uintptr(unsafe.Pointer(&borderColor)), unsafe.Sizeof(borderColor))
 	procShowWindow.Call(hwnd, SW_SHOWNOACTIVATE)
 	procSetWindowPos.Call(hwnd, HWND_TOPMOST, uintptr(x), uintptr(y), uintptr(width), uintptr(height), SWP_NOACTIVATE)

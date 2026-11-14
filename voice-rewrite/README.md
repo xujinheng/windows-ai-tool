@@ -1,4 +1,4 @@
-# VoiceRewrite v22 — Windows native voice writing assistant
+# VoiceRewrite v23 — Windows native voice writing assistant
 
 VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configure a standalone F-key in Settings, to dictate at the caret; hold **Mouse5** after selecting text to rewrite, translate, or ask a question. VoiceRewrite is a **client**, not a model installer: ASR and LLM endpoints are configured separately.
 
@@ -19,12 +19,16 @@ VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configur
 
 ## Architecture
 
-- Go 1.23, standard library and Win32, one native Windows GUI executable.
+- Go 1.23, standard library and Win32, one native Windows GUI executable. v23 separates configuration, ASR, LLM, intent routing, recording, clipboard insertion, and the Windows task worker into dedicated modules.
+- The settings center and result card use a shared Windows light/dark appearance palette chosen on window creation; settings height was reduced for common laptop screens.
+- Each task owns a cancelable context: pressing Cancel fences results *and cancels outstanding HTTP I/O*.
+- Long recordings are split into 25-second-or-shorter PCM chunks near quieter audio windows, then transcribed sequentially and rejoined without dropping source samples.
+- Connection pooling reuses HTTP transport, redirects are not followed, and server error bodies are not echoed in the UI/logs.
 - ASR: OpenAI-compatible `POST /audio/transcriptions`; handles `{"text":"..."}`, JSON strings and text/plain, strips Qwen3-ASR language markers.
 - LLM: OpenAI-compatible `POST /chat/completions`. ASR and LLM may use different remote/local servers.
 - Selected text is untrusted model input, not a source of instructions.
 - Clipboard/SendInput insertion is **best effort**; sending Ctrl+V does not prove that a third-party application accepted it. Rich clipboard formats are not fully preserved yet.
-- `PRODUCT-DESIGN.md` describes the product interaction contract, and `EXPERIENCE-V22.md` records this release.
+- `PRODUCT-DESIGN.md` describes the product interaction contract; `ARCHITECTURE-V23.md` explains module boundaries, and `EXPERIENCE-V23.md` records this release.
 
 ## Build
 

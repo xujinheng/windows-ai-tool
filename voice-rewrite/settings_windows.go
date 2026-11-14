@@ -64,6 +64,8 @@ type uxSettings struct {
 	font, titleFont uintptr
 	background      uintptr
 	cardBrush       uintptr
+	editBrush       uintptr
+	palette         uiPalette
 	cardStatics     map[uintptr]bool
 	probeMu         sync.Mutex
 	probeResult     [2]string
@@ -156,7 +158,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMGetMinMaxInfo:
 		if p != nil && lParam != 0 {
 			bounds := (*uxMinMaxInfo)(unsafe.Pointer(lParam))
-			bounds.MinSize = trayPoint{X: int32(680 * p.scale), Y: int32(740 * p.scale)}
+			bounds.MinSize = trayPoint{X: int32(680 * p.scale), Y: int32(690 * p.scale)}
 		}
 		return 0
 	case uxWMClose:
@@ -177,6 +179,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			if p.cardBrush != 0 {
 				procDeleteObject.Call(p.cardBrush)
 			}
+			if p.editBrush != 0 {
+				procDeleteObject.Call(p.editBrush)
+			}
 		}
 		return 0
 	case uxWMEraseBkgnd:
@@ -194,16 +199,16 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				old, _, _ := uxSelectObject.Call(hdc, p.cardBrush)
 				nullPen, _, _ := uxGetStockObject.Call(8) // NULL_PEN
 				oldPen, _, _ := uxSelectObject.Call(hdc, nullPen)
-				for _, top := range []int32{99, 335} {
+				for _, top := range []int32{93, 285} {
 					sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
 					var rc rect32
 					procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
-					uxRoundRect.Call(hdc, sc(17), sc(top), uintptr(rc.Right)-sc(17), sc(top+218), sc(18), sc(18))
+					uxRoundRect.Call(hdc, sc(17), sc(top), uintptr(rc.Right)-sc(17), sc(top+185), sc(18), sc(18))
 				}
 				sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
 				var rc rect32
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
-				uxRoundRect.Call(hdc, sc(17), sc(560), uintptr(rc.Right)-sc(17), sc(659), sc(18), sc(18))
+				uxRoundRect.Call(hdc, sc(17), sc(477), uintptr(rc.Right)-sc(17), sc(565), sc(18), sc(18))
 				uxSelectObject.Call(hdc, old)
 				uxSelectObject.Call(hdc, oldPen)
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
@@ -212,7 +217,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		}
 	case uxWMColorStatic:
 		if p != nil && p.window == hwnd && p.background != 0 {
-			uxSetTextColor.Call(wParam, uintptr(0x002D2734))
+			uxSetTextColor.Call(wParam, p.palette.color(p.palette.text))
 			uxSetBkMode.Call(wParam, TRANSPARENT)
 			if p.cardStatics[lParam] {
 				return p.cardBrush
@@ -220,7 +225,11 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			return p.background
 		}
 	case uxWMColorEdit:
-		// Preserve the standard high-contrast system EDIT background.
+		if p != nil && p.window == hwnd && p.editBrush != 0 {
+			uxSetTextColor.Call(wParam, p.palette.color(p.palette.text))
+			procSetBkColor.Call(wParam, p.palette.color(p.palette.field))
+			return p.editBrush
+		}
 	case uxWMProbeDone:
 		if p != nil && p.window == hwnd && wParam < 2 {
 			idx := int(wParam)
@@ -396,19 +405,21 @@ func showNativeSettings(app *appState) error {
 		scale = 1
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
-	x, y := uxCenteredWindow(int32(sc(714)), int32(sc(790)))
+	x, y := uxCenteredWindow(int32(sc(714)), int32(sc(720)))
 	if y < 0 {
 		y = 60
 	}
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
-		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame, uintptr(x), uintptr(y), sc(714), sc(790), 0, 0, module, 0)
+		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame, uintptr(x), uintptr(y), sc(714), sc(720), 0, 0, module, 0)
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
-	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool)}
+	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool), palette: systemPalette()}
 	uxActiveSettings = p
-	p.background, _, _ = procCreateSolidBrush.Call(uintptr(0x00FAF8F6))
-	p.cardBrush, _, _ = procCreateSolidBrush.Call(uintptr(0x00FFFFFF))
+	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
+	p.cardBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
+	p.editBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.field))
+	applyWindowPalette(h, p.palette)
 	fontName := uxPtr("Segoe UI Variable")
 	p.font, _, _ = procCreateFont.Call(sc(-15), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.titleFont, _, _ = procCreateFont.Call(sc(-21), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
@@ -436,34 +447,34 @@ func showNativeSettings(app *appState) error {
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop)
 	makeOne("STATIC", "VoiceRewrite", stat, 28, 18, 400, 34, 0, true)
 	makeOne("STATIC", "全局语音操作  ·  "+app.cfg.DictationHotkey+" 听写  ·  "+app.cfg.HotkeyRecord+" 改写与问答", stat, 30, 59, 610, 23, 0, false)
-	makeOne("STATIC", "01   语音识别 ASR", stat, 34, 115, 410, 28, 0, true)
-	makeOne("STATIC", "API 地址", stat, 34, 163, 100, 20, 0, false)
-	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 130, 157, 385, 30, 0, false)
-	makeOne("BUTTON", "检测", btn, 527, 157, 96, 30, uxProbeASRButton, false)
-	makeOne("STATIC", "模型 ID", stat, 34, 208, 100, 20, 0, false)
-	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 130, 202, 493, 30, 0, false)
-	makeOne("STATIC", "API Key", stat, 34, 252, 100, 20, 0, false)
-	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 130, 246, 493, 30, 0, false)
-	p.probeStatus[0] = makeOne("STATIC", "● 尚未检测 · 可在设置后试录音验证", stat, 34, 287, 594, 24, 0, false)
+	makeOne("STATIC", "01   语音识别 ASR", stat, 34, 101, 410, 28, 0, true)
+	makeOne("STATIC", "API 地址", stat, 34, 141, 100, 20, 0, false)
+	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 130, 135, 385, 30, 0, false)
+	makeOne("BUTTON", "检测", btn, 527, 135, 96, 30, uxProbeASRButton, false)
+	makeOne("STATIC", "模型 ID", stat, 34, 179, 100, 20, 0, false)
+	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 130, 173, 493, 30, 0, false)
+	makeOne("STATIC", "API Key", stat, 34, 217, 100, 20, 0, false)
+	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 130, 211, 493, 30, 0, false)
+	p.probeStatus[0] = makeOne("STATIC", "● 尚未检测 · 可在设置后试录音验证", stat, 34, 251, 594, 24, 0, false)
 
-	makeOne("STATIC", "02   AI 文本处理 LLM", stat, 34, 351, 410, 28, 0, true)
-	makeOne("STATIC", "API 地址", stat, 34, 398, 100, 20, 0, false)
-	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 130, 392, 385, 30, 0, false)
-	makeOne("BUTTON", "检测", btn, 527, 392, 96, 30, uxProbeLLMButton, false)
-	makeOne("STATIC", "模型 ID", stat, 34, 442, 100, 20, 0, false)
-	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 130, 436, 493, 30, 0, false)
-	makeOne("STATIC", "API Key", stat, 34, 484, 100, 20, 0, false)
-	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 130, 478, 493, 30, 0, false)
-	p.probeStatus[1] = makeOne("STATIC", "● 尚未检测 · 用于改写 / 翻译 / 问答", stat, 34, 522, 594, 24, 0, false)
+	makeOne("STATIC", "02   AI 文本处理 LLM", stat, 34, 295, 410, 28, 0, true)
+	makeOne("STATIC", "API 地址", stat, 34, 331, 100, 20, 0, false)
+	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 130, 325, 385, 30, 0, false)
+	makeOne("BUTTON", "检测", btn, 527, 325, 96, 30, uxProbeLLMButton, false)
+	makeOne("STATIC", "模型 ID", stat, 34, 372, 100, 20, 0, false)
+	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 130, 366, 493, 30, 0, false)
+	makeOne("STATIC", "API Key", stat, 34, 413, 100, 20, 0, false)
+	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 130, 407, 493, 30, 0, false)
+	p.probeStatus[1] = makeOne("STATIC", "● 尚未检测 · 用于改写 / 翻译 / 问答", stat, 34, 451, 594, 24, 0, false)
 
-	makeOne("STATIC", "03   快捷键", stat, 34, 575, 300, 26, 0, true)
-	makeOne("STATIC", "听写快捷键", stat, 34, 613, 108, 22, 0, false)
-	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 607, 290, 30, uxShortcutInput, false)
-	makeOne("STATIC", "Mouse4 / Mouse5 / F1–F24 · 更改后重启", stat, 435, 611, 210, 22, 0, false)
-	makeOne("BUTTON", "保存并应用", btn, 29, 680, 141, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级设置", btn, 186, 680, 119, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 550, 680, 93, 34, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "检测仅说明 API 可达；实际听写请使用 Mouse4。API Key 在磁盘上加密保存。", stat, 30, 729, 610, 22, 0, false)
+	makeOne("STATIC", "03   快捷键", stat, 34, 490, 300, 26, 0, true)
+	makeOne("STATIC", "听写快捷键", stat, 34, 527, 108, 22, 0, false)
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 521, 290, 30, uxShortcutInput, false)
+	makeOne("STATIC", "Mouse4 / Mouse5 / F1–F24 · 更改后重启", stat, 435, 525, 210, 22, 0, false)
+	makeOne("BUTTON", "保存并应用", btn, 29, 575, 141, 34, uxSaveButton, false)
+	makeOne("BUTTON", "高级设置", btn, 186, 575, 119, 34, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 550, 575, 93, 34, uxCloseButton, false)
+	p.hint = makeOne("STATIC", "服务检测不等于转写成功 · 实际听写请按住 "+app.cfg.DictationHotkey+" · API Key 已加密", stat, 30, 634, 610, 22, 0, false)
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)

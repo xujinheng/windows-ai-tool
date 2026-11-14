@@ -34,3 +34,34 @@ func TestTextClipboardRestoreOwnership(t *testing.T) {
 		}
 	}
 }
+
+func TestTaskEpochCancelsPriorRequests(t *testing.T) {
+	var g taskEpoch
+	first := g.start()
+	previous := g.contextFor(first)
+	select {
+	case <-previous.Done():
+		t.Fatal("current task should not be canceled")
+	default:
+	}
+	second := g.start()
+	select {
+	case <-previous.Done():
+	default:
+		t.Fatal("starting a new task must cancel previous requests")
+	}
+	if !g.valid(second) || g.valid(first) {
+		t.Fatal("old generation must not be valid")
+	}
+	select {
+	case <-g.contextFor(first).Done():
+	default:
+		t.Fatal("stale generation context must be canceled")
+	}
+	g.shutdown()
+	select {
+	case <-g.contextFor(second).Done():
+	default:
+		t.Fatal("shutdown must cancel active requests")
+	}
+}

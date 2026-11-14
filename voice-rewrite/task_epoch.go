@@ -1,38 +1,75 @@
 package main
 
-import "sync/atomic"
+import (
+	"context"
+	"sync"
+)
 
-// taskEpoch prevents a completed older task from committing after a newer
-// capture starts or shutdown begins. It does not authorize a paste: the target
-// window and selected text must still be verified independently.
+// taskEpoch is the authoritative owner of the currently active operation.
+// Starting another generation cancels the previous one's I/O immediately.
+// The target window, selection, and clipboard ownership still require their
+// independent checks before any external editor is modified.
 type taskEpoch struct {
-	currentID atomic.Uint64
-	closed    atomic.Bool
+	mu        sync.Mutex
+	currentID uint64
+	closed    bool
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 func (g *taskEpoch) start() uint64 {
-	if g.closed.Load() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
 		return 0
 	}
-	id := g.currentID.Add(1)
-	if g.closed.Load() {
-		return 0
+	if g.cancel != nil {
+		g.cancel()
 	}
-	return id
+	g.currentID++
+	g.ctx, g.cancel = context.WithCancel(context.Background())
+	return g.currentID
 }
 
 func (g *taskEpoch) valid(id uint64) bool {
-	return id != 0 && !g.closed.Load() && g.currentID.Load() == id
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return id != 0 && !g.closed && g.currentID == id
+}
+
+// contextFor returns a canceled context for a stale generation. This makes
+// even a delayed network request terminate without contacting the provider.
+func (g *taskEpoch) contextFor(id uint64) context.Context {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if id != 0 && !g.closed && g.currentID == id && g.ctx != nil {
+		return g.ctx
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	return ctx
+}
+
+func (g *taskEpoch) current() uint64 {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.currentID
 }
 
 func (g *taskEpoch) shutdown() {
-	g.closed.Store(true)
-	g.currentID.Add(1)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.closed = true
+	g.currentID++
+	if g.cancel != nil {
+		g.cancel()
+		g.cancel = nil
+	}
+	g.ctx = nil
 }
 
-// A clipboard snapshot can only be restored if the clipboard sequence remains
-// unchanged since the application's last known write. Never overwrite a newer
-// user clipboard update. This is a guard for plain text only, not rich data.
+// Clipboard ownership is checked independently from task cancellation.
+// Plain-text restoration must never overwrite a newer user clipboard value.
 func mayRestoreTextClipboard(hasOriginalText bool, lastOwnedSeq, currentSeq uintptr) bool {
 	return hasOriginalText && lastOwnedSeq != 0 && currentSeq == lastOwnedSeq
 }
