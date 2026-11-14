@@ -629,7 +629,7 @@ func showNativeSettings(app *appState) error {
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
-	winW, winH := desktopFitSize(int32(sc(710)), int32(sc(580)), work, 12)
+	winW, winH := desktopFitSize(int32(sc(710)), int32(sc(560)), work, 12)
 	x, y := uxCenteredWindow(winW, winH)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
