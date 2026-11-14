@@ -29,6 +29,14 @@ var (
 	resultDWCreate  = resultDWDLL.NewProc("DWriteCreateFactory")
 )
 
+// A one-bit HWND diagnostic replaces the old brand-color pixel assertion in
+// Windows CI: it is set only after Direct2D EndDraw succeeds.
+var (
+	resultReadyProperty, _ = syscall.UTF16PtrFromString("VoiceRewrite.Direct2D.FrameReady")
+	resultSetReadyProperty = user32.NewProc("SetPropW")
+	resultRemoveReadyProperty = user32.NewProc("RemovePropW")
+)
+
 type resultD2DColor struct{ R, G, B, A float32 }
 type resultD2DRect struct{ Left, Top, Right, Bottom float32 }
 type resultD2DRound struct {
