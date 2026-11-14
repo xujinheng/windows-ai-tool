@@ -9,7 +9,7 @@ import (
 	"unsafe"
 )
 
-// Visual-only preview: uses the real Win32 result card, not a mockup.
+// Open the result card with sample content for screenshot tests.
 // No model, microphone, clipboard, or selected text is accessed.
 func runAnswerVisualPreview() {
 	runtime.LockOSThread()

@@ -331,8 +331,7 @@ func (p handyPainter) checkGlyph(cx, cy int) {
 	gpFillPolygonI.Call(p.graphics, brush, uintptr(unsafe.Pointer(&vertices[0])), uintptr(len(vertices)), 0)
 }
 
-// GDI+ polygon filling smooths the two diagonal strokes, including on scaled
-// displays; the previous GDI text × could overlap and looked pixelated.
+// Use a polygon close icon that scales with the window DPI.
 func (p handyPainter) closeGlyph(cx, cy int) {
 	type vertex struct{ X, Y int32 }
 	polygons := [2][6]vertex{
@@ -610,9 +609,7 @@ func updateHandyStatus(phase uintptr) {
 	s.scale = handyScaleForMonitor(s.monitor)
 	width, height := handyPhysicalSize(handyStatusWidth(phase), handyStatusHeight, s.scale)
 	s.x, s.y = handyScreenPositionForMonitor(s.monitor, width, height)
-	// v12 updated only DIB dimensions: the real HWND kept its recording
-	// dimensions, cropping working/success states into a straight right edge.
-	// SWP_NOACTIVATE|SWP_NOZORDER preserves editor focus and topmost state.
+	// Resize the HWND with the bitmap; preserve focus and z-order.
 	procSetWindowPos.Call(s.window, 0, uintptr(s.x), uintptr(s.y), uintptr(width), uintptr(height), 0x0014)
 	drawHandyStatus(s)
 }

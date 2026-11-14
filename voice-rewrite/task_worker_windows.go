@@ -333,6 +333,4 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	app.logger.Printf("popup result queued; chars=%d", utf8.RuneCountInString(answer.Result))
 }
 
-// Standard Windows message dispatch is essential for interactive popup controls.
-// In the v5 prototype the queue was drained without this call, so WM_PAINT,
-// WM_COMMAND and WM_CLOSE were never delivered to the popup WndProc.
+// Dispatch popup paint, command and close events through the Win32 message loop.

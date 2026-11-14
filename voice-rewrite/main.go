@@ -13,8 +13,7 @@ func releaseDebounced(keyDown bool, upPolls *int) bool {
 	return *upPolls >= 2
 }
 
-// trayMenuRequested recognizes both pre-v4 notification callbacks and
-// NOTIFYICON_VERSION_4 WM_CONTEXTMENU events.
+// trayMenuRequested handles WM_RBUTTONUP and WM_CONTEXTMENU notifications.
 func trayMenuRequested(event uint32) bool {
 	return event == 0x0205 || event == 0x007b
 }

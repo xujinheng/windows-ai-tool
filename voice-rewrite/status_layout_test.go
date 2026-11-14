@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func TestV14CompactGeometry(t *testing.T) {
+func TestStatusCompactGeometry(t *testing.T) {
 	if handyStatusHeight != 50 {
 		t.Fatalf("height %d", handyStatusHeight)
 	}
@@ -27,7 +27,7 @@ func TestV14CompactGeometry(t *testing.T) {
 		}
 	}
 }
-func TestV14OpacityForInterruptedSessions(t *testing.T) {
+func TestStatusOpacityOnInterruption(t *testing.T) {
 	start := time.Unix(100, 0)
 	if got := handyOpacity(start, start, start, statusRecording); got != 0 {
 		t.Fatalf("first frame alpha=%d", got)
@@ -51,7 +51,7 @@ func TestV14OpacityForInterruptedSessions(t *testing.T) {
 		t.Fatalf("new session alpha=%d", got)
 	}
 }
-func TestV14MicSmoothing(t *testing.T) {
+func TestMicrophoneLevelSmoothing(t *testing.T) {
 	level := 0.0
 	for i := 0; i < 20; i++ {
 		level = handySmoothedLevel(level, 1)
