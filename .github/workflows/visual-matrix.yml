@@ -167,7 +167,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           & ./scripts/publish-readme-screenshots.ps1 -CaptureDir 'visual-matrix' -OutputDir 'docs/ui'
-          if ($LASTEXITCODE -ne 0) { throw "Failed to prepare README screenshots" }
+          # The .ps1 script throws on errors; LASTEXITCODE may be stale from Go.
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- docs/ui
