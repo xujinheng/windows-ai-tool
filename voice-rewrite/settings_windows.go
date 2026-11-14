@@ -83,6 +83,9 @@ var (
 	uxSetBkMode      = gdi32.NewProc("SetBkMode")
 	uxWindowCallback = syscall.NewCallback(uxSettingsWndProc)
 	procShowScrollBarUX = user32.NewProc("ShowScrollBar")
+	procSaveDCPrefs = gdi32.NewProc("SaveDC")
+	procRestoreDCPrefs = gdi32.NewProc("RestoreDC")
+	procClipPrefs = gdi32.NewProc("IntersectClipRect")
 	uxActiveSettings *uxSettings
 )
 
@@ -465,38 +468,46 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				sc := func(v int32) int32 { return int32(float64(v)*p.scale + 0.5) }
 				var rc rect32
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
-				for _, card := range []struct{ top, bottom int32 }{{94, 280}, {284, 481}, {485, 605}} {
-					right := int32(float64(rc.Right) / p.scale)
-					if right < uxContentWidth {
-						right = uxContentWidth
-					}
-					uiRoundSurface(hdc, rect32{sc(19 - p.scrollX), sc(card.top - p.scrollY), sc(right - 19 - p.scrollX), sc(card.bottom - p.scrollY)}, sc(18), p.palette.color(p.palette.surface), p.palette.color(p.palette.border))
+				viewW:=int32(float64(rc.Right)/p.scale)
+				viewH:=int32(float64(rc.Bottom)/p.scale)
+				compact:=viewH<460
+				footerTop:=viewH-82
+				bodyTop:=int32(176)
+				cardTop:=int32(265)
+				cardBottom:=int32(548)
+				if viewW<640 {cardBottom=604}
+				if compact {footerTop=viewH-66;bodyTop=179;cardTop=186;cardBottom=515}
+				// The content surface scrolls under stable navigation and action bars.
+				saved,_,_:=procSaveDCPrefs.Call(hdc)
+				procClipPrefs.Call(hdc,0,uintptr(sc(bodyTop)),uintptr(rc.Right),uintptr(sc(footerTop)))
+				uiRoundSurface(hdc,rect32{sc(26),sc(cardTop-p.scrollY),rc.Right-sc(26),sc(cardBottom-p.scrollY)},
+					sc(18),p.palette.color(p.palette.surface),p.palette.color(p.palette.border))
+				contentW:=viewW
+				for _, field:=range p.fieldFrames {
+					if field.tab != p.activeTab {continue}
+					x,y,w,h:=preferenceRect(field,contentW,viewH,p.scrollY)
+					uiRoundSurface(hdc,rect32{sc(x),sc(y),sc(x+w),sc(y+h)},sc(10),
+						p.palette.color(p.palette.field),p.palette.color(p.palette.border))
 				}
-				// Keep real native EDIT controls while painting a softer, rounded frame
-				// behind each one. All geometry remains in logical 96-DPI units.
-				contentW := int32(float64(rc.Right) / p.scale)
-				if contentW < uxContentWidth {
-					contentW = uxContentWidth
-				}
-				for _, field := range p.fieldFrames {
-					x, y, w, h := uxLayoutRect(field, contentW)
-					uiRoundSurface(hdc, rect32{sc(x - p.scrollX), sc(y - p.scrollY), sc(x + w - p.scrollX), sc(y + h - p.scrollY)}, sc(10), p.palette.color(p.palette.field), p.palette.color(p.palette.border))
-				}
-				uiRoundSurface(hdc, rect32{sc(29 - p.scrollX), sc(24 - p.scrollY), sc(65 - p.scrollX), sc(60 - p.scrollY)}, sc(14), p.palette.color(p.palette.primary), p.palette.color(p.palette.primary))
-				uxSetBkMode.Call(hdc, TRANSPARENT)
-				uxSetTextColor.Call(hdc, p.palette.color(p.palette.primaryText))
-				oldFont, _, _ := uxSelectObject.Call(hdc, p.sectionFont)
-				monogram := uxPtr("V")
-				brandRect := rect32{sc(29), sc(24), sc(65), sc(60)}
-				procDrawText.Call(hdc, uintptr(unsafe.Pointer(monogram)), ^uintptr(0), uintptr(unsafe.Pointer(&brandRect)), DT_CENTER|DT_VCENTER|DT_SINGLELINE)
-				uxSelectObject.Call(hdc, oldFont)
-				accentBrush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.primary))
-				if accentBrush != 0 {
-					for _, top := range []int32{110, 300, 496} {
-						stripe := rect32{sc(32 - p.scrollX), sc(top - p.scrollY), sc(36 - p.scrollX), sc(top + 20 - p.scrollY)}
-						procFillRect.Call(hdc, uintptr(unsafe.Pointer(&stripe)), accentBrush)
-					}
-					procDeleteObject.Call(accentBrush)
+				if saved!=0 {procRestoreDCPrefs.Call(hdc,saved)}
+				// One restrained accent mark anchors the brand; avoid decorating every group.
+				brandY:=int32(30)
+				if compact {brandY=13}
+				uiRoundSurface(hdc,rect32{sc(32),sc(brandY),sc(66),sc(brandY+34)},sc(11),
+					p.palette.color(p.palette.primary),p.palette.color(p.palette.primary))
+				uxSetBkMode.Call(hdc,TRANSPARENT)
+				uxSetTextColor.Call(hdc,p.palette.color(p.palette.primaryText))
+				oldFont,_,_:=uxSelectObject.Call(hdc,p.sectionFont)
+				monogram:=uxPtr("V")
+				brandRect:=rect32{sc(32),sc(brandY),sc(66),sc(brandY+34)}
+				procDrawText.Call(hdc,uintptr(unsafe.Pointer(monogram)),^uintptr(0),uintptr(unsafe.Pointer(&brandRect)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+				uxSelectObject.Call(hdc,oldFont)
+				// Hairline above stable footer: quiet, native macOS preferences rhythm.
+				lineBrush,_,_:=procCreateSolidBrush.Call(p.palette.color(p.palette.border))
+				if lineBrush!=0 {
+					line:=rect32{0,sc(footerTop),rc.Right,sc(footerTop+1)}
+					procFillRect.Call(hdc,uintptr(unsafe.Pointer(&line)),lineBrush)
+					procDeleteObject.Call(lineBrush)
 				}
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			}
@@ -505,6 +516,21 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMDrawItem:
 		if p != nil && p.window == hwnd && lParam != 0 {
 			item := (*drawItemStruct)(unsafe.Pointer(lParam))
+			if item.CtlID>=uxTabSpeech && item.CtlID<=uxTabInput {
+				labels:=[3]string{"语音输入","AI 写作","快捷键"}
+				selected:=int(item.CtlID-uxTabSpeech)==p.activeTab
+				fill,border,ink:=p.palette.background,p.palette.background,p.palette.muted
+				if selected {fill,border,ink=p.palette.surface,p.palette.border,p.palette.text}
+				if item.ItemState&ODS_SELECTED!=0 {fill=p.palette.secondaryPressed}
+				uiRoundSurface(item.Hdc,item.Rect,13,p.palette.color(fill),p.palette.color(border))
+				uxSetBkMode.Call(item.Hdc,TRANSPARENT)
+				uxSetTextColor.Call(item.Hdc,p.palette.color(ink))
+				old,_,_:=uxSelectObject.Call(item.Hdc,p.font)
+				ptr:=uxPtr(labels[int(item.CtlID-uxTabSpeech)])
+				procDrawText.Call(item.Hdc,uintptr(unsafe.Pointer(ptr)),^uintptr(0),uintptr(unsafe.Pointer(&item.Rect)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+				uxSelectObject.Call(item.Hdc,old)
+				return 1
+			}
 			label := ""
 			primary := false
 			switch item.CtlID {
@@ -568,6 +594,11 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 			}
 			switch wParam & 0xffff {
+			case uxTabSpeech,uxTabWriting,uxTabInput:
+				p.activeTab=int((wParam & 0xffff)-uxTabSpeech)
+				p.scrollY=0
+				p.layout()
+				return 0
 			case uxSaveButton:
 				if err := p.save(); err != nil {
 					uxSetText(p.hint, "保存失败："+err.Error())
@@ -709,7 +740,7 @@ func showNativeSettings(app *appState) error {
 		return nil
 	}
 	className := uxPtr("VoiceRewrite.Settings.v20")
-	title := uxPtr("VoiceRewrite · 连接设置")
+	title := uxPtr("VoiceRewrite · 偏好设置")
 	module, _, _ := procGetModuleHandle.Call(0)
 	klass := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: uxWindowCallback, Instance: module, ClassName: className}
 	atom, _, regErr := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&klass)))
@@ -723,14 +754,20 @@ func showNativeSettings(app *appState) error {
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
-	winW, winH := desktopFitSize(int32(sc(714)), int32(sc(720)), work, 12)
+	winW, winH := desktopFitSize(int32(sc(760)), int32(sc(690)), work, 12)
 	x, y := uxCenteredWindow(winW, winH)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
-		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
+		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
 	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool), palette: systemPalette()}
+	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW")!="" {
+		switch os.Getenv("VOICEREWRITE_VISUAL_TAB") {
+		case "1":p.activeTab=1
+		case "2":p.activeTab=2
+		}
+	}
 	uxActiveSettings = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.cardBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
