@@ -310,7 +310,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		if e == nil {
 			app.setStatus(traySuccess)
 			app.postHandyPhase(statusSuccess, generation)
-			beep(1050, 110)
+			// Completion is indicated by the non-blocking status bar; no sound.
 			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
 			return
 		}
