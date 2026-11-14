@@ -26,11 +26,11 @@ func (d *resultRenderer) drawSettings(scrollX, scrollY int32) bool {
 	d.text("设置", 20-x, 13-y, 260, 34, 2, 4)
 	d.round(14-x, 54-y, 323, 301, 13, 2)
 	d.outline(14-x, 54-y, 323, 301, 13, 6)
-	d.round(348-x, 54-y, 331, 301, 13, 2)
-	d.outline(348-x, 54-y, 331, 301, 13, 6)
-	d.round(14-x, 366-y, 665, 96, 13, 2)
-	d.outline(14-x, 366-y, 665, 96, 13, 6)
-	d.fill(18-x, 470-y, 657, 1, 6)
+	d.round(348-x, 54-y, 328, 301, 13, 2)
+	d.outline(348-x, 54-y, 328, 301, 13, 6)
+	d.round(14-x, 362-y, 662, 90, 13, 2)
+	d.outline(14-x, 362-y, 662, 90, 13, 6)
+	d.fill(18-x, 456-y, 654, 1, 6)
 	hr := resultCOM(d.target, 49, 0, 0)
 	if uint32(hr) == 0x8899000c { // D2DERR_RECREATE_TARGET
 		d.disposeTarget()
@@ -45,8 +45,8 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	ox, oy := p.scrollX, p.scrollY
 	for _, r := range []rect32{
 		{14, 54, 337, 355},
-		{348, 54, 679, 355},
-		{14, 366, 679, 462},
+		{348, 54, 676, 355},
+		{14, 362, 676, 452},
 	} {
 		uiRoundSurface(hdc, rect32{
 			sc(r.Left - ox), sc(r.Top - oy),
