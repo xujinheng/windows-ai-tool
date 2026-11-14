@@ -288,7 +288,7 @@ func (p *answerPopup) refreshTheme() {
 	procDwmSetWindowAttribute.Call(p.window, DWMWA_BORDER_COLOR, uintptr(unsafe.Pointer(&border)), unsafe.Sizeof(border))
 	refreshNativeWindow(p.window)
 	if p.edit != 0 {
-		applyNativeControlTheme(p.edit,palette.dark)
+		applyNativeControlTheme(p.edit, palette.dark)
 		refreshNativeWindow(p.edit)
 	}
 	if p.note != 0 {
@@ -575,7 +575,7 @@ func showAnswerPopup(msg popupMessage) error {
 		return err
 	}
 	popup.edit = editor
-	applyNativeControlTheme(editor,popup.palette.dark)
+	applyNativeControlTheme(editor, popup.palette.dark)
 	// Short multiline responses must be scrollable rather than silently clipped.
 	procSendMessage.Call(editor, 0x00D3, 3, uintptr(uint32(px(12))|(uint32(px(12))<<16)))
 	// Multiline EDIT controls default to a 32K character limit. Raise it

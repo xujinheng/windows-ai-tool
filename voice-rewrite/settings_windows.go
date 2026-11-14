@@ -465,7 +465,7 @@ func (p *uxSettings) refreshTheme() {
 	p.editBrush = refreshPaletteBrush(p.editBrush, palette, palette.field)
 	p.palette = palette
 	applyWindowPalette(p.window, palette)
-	applyNativeControlTheme(p.microphone,palette.dark)
+	applyNativeControlTheme(p.microphone, palette.dark)
 	refreshNativeWindow(p.window)
 	for _, c := range p.controls {
 		refreshNativeWindow(c.hwnd)
@@ -1098,7 +1098,7 @@ func showNativeSettings(app *appState) error {
 	makeOne("STATIC", "麦克风", stat, 48, 365, 110, 24, 0, false)
 	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 164, 355, 556, 200, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
-	applyNativeControlTheme(p.microphone,p.palette.dark)
+	applyNativeControlTheme(p.microphone, p.palette.dark)
 	makeOne("STATIC", "修改快捷键后，重启 VoiceRewrite 即可生效。", stat, 48, 502, 660, 26, 0, false)
 
 	tabGroup = -1

@@ -71,12 +71,18 @@ func applyWindowPalette(hwnd uintptr, p uiPalette) {
 var uxSetWindowTheme = syscall.NewLazyDLL("uxtheme.dll").NewProc("SetWindowTheme")
 
 func applyNativeControlTheme(hwnd uintptr, dark bool) {
-	if hwnd==0 {return}
-	name:="Explorer"
-	if dark {name="DarkMode_Explorer"}
-	app,err:=syscall.UTF16PtrFromString(name)
-	if err!=nil {return}
-	uxSetWindowTheme.Call(hwnd,uintptr(unsafe.Pointer(app)),0)
+	if hwnd == 0 {
+		return
+	}
+	name := "Explorer"
+	if dark {
+		name = "DarkMode_Explorer"
+	}
+	app, err := syscall.UTF16PtrFromString(name)
+	if err != nil {
+		return
+	}
+	uxSetWindowTheme.Call(hwnd, uintptr(unsafe.Pointer(app)), 0)
 }
 
 func refreshPaletteBrush(old uintptr, palette uiPalette, rgb uint32) uintptr {
