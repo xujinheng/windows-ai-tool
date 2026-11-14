@@ -435,7 +435,7 @@ func showNativeSettings(app *appState) error {
 	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxWSBorder | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop)
 	makeOne("STATIC", "VoiceRewrite", stat, 28, 18, 400, 34, 0, true)
-	makeOne("STATIC", "全局语音操作  ·  Mouse4 听写  ·  Mouse5 改写与问答", stat, 30, 59, 610, 23, 0, false)
+	makeOne("STATIC", "全局语音操作  ·  "+app.cfg.DictationHotkey+" 听写  ·  "+app.cfg.HotkeyRecord+" 改写与问答", stat, 30, 59, 610, 23, 0, false)
 	makeOne("STATIC", "01   语音识别 ASR", stat, 34, 115, 410, 28, 0, true)
 	makeOne("STATIC", "API 地址", stat, 34, 163, 100, 20, 0, false)
 	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 130, 157, 385, 30, 0, false)

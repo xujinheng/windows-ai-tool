@@ -81,7 +81,7 @@ func trayInfo(s trayState) trayStateInfo {
 	case trayPaused:
 		return trayStateInfo{"已暂停 · 鼠标侧键恢复正常功能", 0x8b95a8}
 	default:
-		return trayStateInfo{"待机 · Mouse4 听写 / Mouse5 选区改写", 0x7c8794}
+		return trayStateInfo{"待机 · 使用配置的听写和改写快捷键", 0x7c8794}
 	}
 }
 
