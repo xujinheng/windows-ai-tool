@@ -48,9 +48,9 @@ const (
 	uxProbeLLMButton  = 9105
 	uxShortcutInput   = 9106
 	uxMicrophoneInput = 9107
-	uxNavSpeech = 9120
-	uxNavAI = 9121
-	uxNavInput = 9122
+	uxNavSpeech       = 9120
+	uxNavAI           = 9121
+	uxNavInput        = 9122
 	uxCBAddString     = 0x0143
 	uxCBSetCurSel     = 0x014E
 	uxCBGetCurSel     = 0x0147
@@ -184,20 +184,30 @@ func (p *uxSettings) layout() {
 		switch ctrl.id {
 		case uxSaveButton:
 			x = 220
-			if viewW < 650 { x = 12 }
+			if viewW < 650 {
+				x = 12
+			}
 		case uxAdvancedButton:
 			x = 358
-			if viewW < 650 { x = 149 }
+			if viewW < 650 {
+				x = 149
+			}
 		case uxCloseButton:
 			x = viewW - w - 18
-			if viewW < 650 { x = 276 }
+			if viewW < 650 {
+				x = 276
+			}
 		case uxNavSpeech, uxNavAI, uxNavInput:
 			x = ctrl.x
 		}
 		if ctrl.hwnd == p.hint {
 			x = 223
-			if viewW < 650 { x = 14 }
-			if w > viewW-x-12 { w = viewW-x-12 }
+			if viewW < 650 {
+				x = 14
+			}
+			if w > viewW-x-12 {
+				w = viewW - x - 12
+			}
 		}
 		if ctrl.id == uxNavSpeech || ctrl.id == uxNavAI || ctrl.id == uxNavInput {
 			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
@@ -207,22 +217,33 @@ func (p *uxSettings) layout() {
 	}
 	procInvalidateRectSettings.Call(p.window, 0, 1)
 }
+
 // switchPage only hides controls; input values and in-flight probe results
 // remain intact so navigation cannot discard unsaved changes.
 func (p *uxSettings) switchPage(next int) {
-	if p == nil || next < 0 || next >= len(p.pages) { return }
+	if p == nil || next < 0 || next >= len(p.pages) {
+		return
+	}
 	p.page = next
 	for page, windows := range p.pages {
 		for _, handle := range windows {
 			how := uintptr(0) // SW_HIDE
-			if page == next { how = SW_SHOW }
-			if handle != 0 { procShowWindow.Call(handle, how) }
+			if page == next {
+				how = SW_SHOW
+			}
+			if handle != 0 {
+				procShowWindow.Call(handle, how)
+			}
 		}
 	}
 	for _, hwnd := range p.navButtons {
-		if hwnd != 0 { refreshNativeWindow(hwnd) }
+		if hwnd != 0 {
+			refreshNativeWindow(hwnd)
+		}
 	}
-	if p.window != 0 { refreshNativeWindow(p.window) }
+	if p.window != 0 {
+		refreshNativeWindow(p.window)
+	}
 }
 
 func (p *uxSettings) scroll(axis, request uintptr) {
@@ -441,7 +462,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		if p != nil && p.window == hwnd && lParam != 0 {
 			item := (*drawItemStruct)(unsafe.Pointer(lParam))
 			if item.CtlID >= uxNavSpeech && item.CtlID <= uxNavInput {
-				if p.drawSidebarItem(item, int(item.CtlID-uxNavSpeech)) { return 1 }
+				if p.drawSidebarItem(item, int(item.CtlID-uxNavSpeech)) {
+					return 1
+				}
 			}
 			label := ""
 			primary := false
@@ -507,7 +530,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			}
 			switch wParam & 0xffff {
 			case uxNavSpeech, uxNavAI, uxNavInput:
-				p.switchPage(int((wParam & 0xffff)-uxNavSpeech))
+				p.switchPage(int((wParam & 0xffff) - uxNavSpeech))
 				return 0
 			case uxSaveButton:
 				if err := p.save(); err != nil {
@@ -727,7 +750,9 @@ func showNativeSettings(app *appState) error {
 	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 350, 313, 437, 34, 0, false)
 	p.probeStatus[0] = makeOne("STATIC", "尚未检测连接", stat, 352, 375, 435, 60, 0, false)
 	makeOne("BUTTON", "测试连接", btn, 696, 138, 92, 31, uxProbeASRButton, false)
-	for _, c := range p.controls[start:] { p.pages[0] = append(p.pages[0], c.hwnd) }
+	for _, c := range p.controls[start:] {
+		p.pages[0] = append(p.pages[0], c.hwnd)
+	}
 	start = len(p.controls)
 	makeOne("STATIC", "API 地址", stat, 224, 181, 122, 24, 0, false)
 	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 350, 173, 437, 34, 0, false)
@@ -737,7 +762,9 @@ func showNativeSettings(app *appState) error {
 	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 350, 313, 437, 34, 0, false)
 	p.probeStatus[1] = makeOne("STATIC", "尚未检测连接", stat, 352, 375, 435, 60, 0, false)
 	makeOne("BUTTON", "测试连接", btn, 696, 138, 92, 31, uxProbeLLMButton, false)
-	for _, c := range p.controls[start:] { p.pages[1] = append(p.pages[1], c.hwnd) }
+	for _, c := range p.controls[start:] {
+		p.pages[1] = append(p.pages[1], c.hwnd)
+	}
 	start = len(p.controls)
 	makeOne("STATIC", "听写快捷键", stat, 224, 181, 124, 24, 0, false)
 	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 350, 173, 216, 34, uxShortcutInput, false)
@@ -747,7 +774,9 @@ func showNativeSettings(app *appState) error {
 	resultStyleNativeEdit(p.microphone, p.palette.dark)
 	info := makeOne("STATIC", "更换快捷键或录音设备后，需要重启 VoiceRewrite 生效。", stat, 226, 326, 565, 44, 0, false)
 	setFont(info, p.mutedFont)
-	for _, c := range p.controls[start:] { p.pages[2] = append(p.pages[2], c.hwnd) }
+	for _, c := range p.controls[start:] {
+		p.pages[2] = append(p.pages[2], c.hwnd)
+	}
 	makeOne("BUTTON", "保存设置", btn, 220, 472, 124, 34, uxSaveButton, false)
 	makeOne("BUTTON", "高级配置", btn, 358, 472, 112, 34, uxAdvancedButton, false)
 	makeOne("BUTTON", "关闭", btn, 710, 472, 94, 34, uxCloseButton, false)

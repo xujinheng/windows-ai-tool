@@ -16,9 +16,13 @@ var settingsSubtitles = [3]string{
 var settingsSectionNames = [3]string{"连接配置", "模型配置", "输入偏好"}
 
 func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32) bool {
-	if d == nil { return false }
+	if d == nil {
+		return false
+	}
 	if d.target == 0 {
-		if err := d.createTarget(); err != nil { return false }
+		if err := d.createTarget(); err != nil {
+			return false
+		}
 	}
 	var rc rect32
 	procGetClientRect.Call(d.hwnd, uintptr(unsafe.Pointer(&rc)))
@@ -37,7 +41,9 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32) bool {
 	d.text("LOCAL  ·  WINDOWS", 22, h-51, 165, 20, 0, 5)
 	d.text("原生 · 轻量", 22, h-32, 156, 18, 0, 5)
 	// Main pane. No brand banner, stacked white cards or redundant headings.
-	if page < 0 || page >= len(settingsHeadings) { page = 0 }
+	if page < 0 || page >= len(settingsHeadings) {
+		page = 0
+	}
 	d.text(settingsHeadings[page], 220, 35, w-245, 39, 2, 4)
 	d.text(settingsSubtitles[page], 222, 79, w-244, 23, 0, 5)
 	d.fill(219, 121, w-239, 1, 6)
@@ -53,14 +59,16 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32) bool {
 	}
 	d.fill(194, h-77, w-194, 1, 6)
 	hr := resultCOM(d.target, 49, 0, 0)
-	if uint32(hr) == 0x8899000c { d.disposeTarget() }
+	if uint32(hr) == 0x8899000c {
+		d.disposeTarget()
+	}
 	return int32(hr) >= 0
 }
 
 // GDI paints the same overall navigation and main hierarchy if Direct2D is
 // unavailable, without sacrificing Win32 fields or keyboard access.
 func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
-	sc := func(n int32) int32 { return int32(float64(n)*p.scale+0.5) }
+	sc := func(n int32) int32 { return int32(float64(n)*p.scale + 0.5) }
 	var rc rect32
 	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&rc)))
 	side := rect32{0, 0, sc(194), rc.Bottom}
@@ -71,19 +79,21 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.text))
 	head, _ := procSelectObject.Call(hdc, p.titleFont)
 	title := uxPtr(settingsHeadings[p.page])
-	bounds := rect32{sc(220), sc(34), rc.Right-sc(15), sc(80)}
+	bounds := rect32{sc(220), sc(34), rc.Right - sc(15), sc(80)}
 	procDrawText.Call(hdc, uintptr(unsafe.Pointer(title)), ^uintptr(0), uintptr(unsafe.Pointer(&bounds)), 0)
 	procSelectObject.Call(hdc, head)
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.muted))
 	sub := uxPtr(settingsSubtitles[p.page])
-	bounds = rect32{sc(222), sc(80), rc.Right-sc(15), sc(110)}
+	bounds = rect32{sc(222), sc(80), rc.Right - sc(15), sc(110)}
 	procDrawText.Call(hdc, uintptr(unsafe.Pointer(sub)), ^uintptr(0), uintptr(unsafe.Pointer(&bounds)), 0)
 }
 
 // Owner-drawn native sidebar BUTTON: focusable, keyboard-activatable, no
 // browser renderer. Only the selected item receives a tinted background.
 func (p *uxSettings) drawSidebarItem(item *drawItemStruct, index int) bool {
-	if p == nil || item == nil || index < 0 || index >= len(settingsHeadings) { return false }
+	if p == nil || item == nil || index < 0 || index >= len(settingsHeadings) {
+		return false
+	}
 	r := item.Rect
 	brush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
 	// The background around a rounded selection must match the sidebar.
@@ -96,15 +106,19 @@ func (p *uxSettings) drawSidebarItem(item *drawItemStruct, index int) bool {
 		uiRoundSurface(item.Hdc, r, 9, p.palette.color(p.palette.secondary), p.palette.color(p.palette.secondary))
 		accent, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.primary))
 		if accent != 0 {
-			mark := rect32{r.Left+2, r.Top+9, r.Left+5, r.Bottom-9}
+			mark := rect32{r.Left + 2, r.Top + 9, r.Left + 5, r.Bottom - 9}
 			procFillRect.Call(item.Hdc, uintptr(unsafe.Pointer(&mark)), accent)
 			procDeleteObject.Call(accent)
 		}
 	}
-	if brush != 0 { procDeleteObject.Call(brush) }
+	if brush != 0 {
+		procDeleteObject.Call(brush)
+	}
 	procSetBkMode.Call(item.Hdc, TRANSPARENT)
 	ink := p.palette.muted
-	if index == p.page { ink = p.palette.text }
+	if index == p.page {
+		ink = p.palette.text
+	}
 	procSetTextColor.Call(item.Hdc, p.palette.color(ink))
 	if p.font != 0 {
 		old, _, _ := procSelectObject.Call(item.Hdc, p.font)
@@ -115,7 +129,10 @@ func (p *uxSettings) drawSidebarItem(item *drawItemStruct, index int) bool {
 	procDrawText.Call(item.Hdc, uintptr(unsafe.Pointer(label)), ^uintptr(0), uintptr(unsafe.Pointer(&r)), DT_VCENTER|DT_SINGLELINE)
 	if item.ItemState&0x0010 != 0 {
 		focus := item.Rect
-		focus.Left += 8; focus.Top += 4; focus.Right -= 6; focus.Bottom -= 4
+		focus.Left += 8
+		focus.Top += 4
+		focus.Right -= 6
+		focus.Bottom -= 4
 		user32.NewProc("DrawFocusRect").Call(item.Hdc, uintptr(unsafe.Pointer(&focus)))
 	}
 	return true
