@@ -79,6 +79,7 @@ type answerPopup struct {
 	bgBrush            uintptr
 	editBrush          uintptr
 	palette            uiPalette
+    scale float64
 	body               string
 	app                *appState
 	selection          *selectedText
@@ -303,10 +304,11 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				var rc rect32
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 				palette := activeAnswer.palette
-				uiRoundSurface(hdc, rect32{20, 99, rc.Right - 20, rc.Bottom - 59}, 16, palette.color(palette.surface), palette.color(palette.border))
+				sc:=func(v int32)int32{return int32(float64(v)*activeAnswer.scale+0.5)}
+                uiRoundSurface(hdc,rect32{sc(20),sc(99),rc.Right-sc(20),rc.Bottom-sc(59)},sc(16), palette.color(palette.surface), palette.color(palette.border))
 				accent, _, _ := procCreateSolidBrush.Call(palette.color(palette.primary))
 				if accent != 0 {
-					rail := rect32{22, 27, 27, 50}
+					rail:=rect32{sc(22),sc(27),sc(27),sc(50)}
 					procFillRect.Call(hdc, uintptr(unsafe.Pointer(&rail)), accent)
 					procDeleteObject.Call(accent)
 				}
@@ -452,6 +454,8 @@ func setFont(hwnd, font uintptr) {
 	}
 }
 func showAnswerPopup(msg popupMessage) error {
+    restoreDPI:=handyAwareWindowThread()
+    defer restoreDPI()
 	closeActiveAnswer()
 	if strings.TrimSpace(msg.body) == "" {
 		return errors.New("AI 未返回可显示的文字")
@@ -459,25 +463,12 @@ func showAnswerPopup(msg popupMessage) error {
 	// Never truncate a model response: users must be able to review and copy
 	// the full answer, including large translations and generated documents.
 	n := utf8.RuneCountInString(msg.body)
-	width, height := v14PopupSize(n)
-	x, y := msg.anchor.X+18, msg.anchor.Y+22
-	left, _, _ := procGetSystemMetrics.Call(SM_XVIRTUALSCREEN)
-	top, _, _ := procGetSystemMetrics.Call(SM_YVIRTUALSCREEN)
-	ww, _, _ := procGetSystemMetrics.Call(SM_CXVIRTUALSCREEN)
-	hh, _, _ := procGetSystemMetrics.Call(SM_CYVIRTUALSCREEN)
-	vx, vy := int32(left), int32(top)
-	if x > vx+int32(ww)-width {
-		x = vx + int32(ww) - width
-	}
-	if y > vy+int32(hh)-height {
-		y = vy + int32(hh) - height
-	}
-	if x < vx {
-		x = vx
-	}
-	if y < vy {
-		y = vy
-	}
+    logicalW,logicalH:=v14PopupSize(n)
+    // Keep result on the source monitor's WORK AREA, including negative coordinates.
+    work:=uxWorkAreaForPoint(msg.anchor)
+    scale:=uxMonitorScaleForPoint(msg.anchor)
+    width,height:=int32(float64(logicalW)*scale),int32(float64(logicalH)*scale)
+    x,y,width,height:=desktopPopupPlacement(msg.anchor.X,msg.anchor.Y,width,height,work)
 	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ResultCard.v20")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
@@ -494,15 +485,16 @@ func showAnswerPopup(msg popupMessage) error {
 	if hwnd == 0 {
 		return fmt.Errorf("create result card: %w", err)
 	}
-	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation, palette: systemPalette()}
+	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation, palette: systemPalette(), scale:scale}
 	activeAnswer = popup
 	popup.bgBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.background))
 	popup.editBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.surface))
 	applyWindowPalette(hwnd, popup.palette)
 	var bounds rect32
 	procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
-	cw, ch := bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
-	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, 36, 24, cw-64, 34, hwnd, 0)
+	cw,ch:=bounds.Right-bounds.Left,bounds.Bottom-bounds.Top
+    px:=func(v int32)int32{return int32(float64(v)*scale+0.5)}
+    title,err:=makeChild("STATIC",msg.title,WS_CHILD|WS_VISIBLE,px(36),px(24),cw-px(64),px(34),hwnd,0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -513,7 +505,7 @@ func showAnswerPopup(msg popupMessage) error {
 	} else if !msg.allowApply {
 		summary = "基于选中文字 · AI 回答"
 	}
-	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, 36, 62, cw-72, 23, hwnd, 0)
+	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, px(36),px(62),cw-px(72),px(23),hwnd,0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -521,14 +513,14 @@ func showAnswerPopup(msg popupMessage) error {
 	popup.note = note
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, 32, 111, cw-64, ch-179, hwnd, 0)
+	editor, err := makeChild("EDIT", "", bodyStyle, px(32),px(111),cw-px(64),ch-px(179),hwnd,0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
 	popup.edit = editor
 	// Short multiline responses must be scrollable rather than silently clipped.
-	procSendMessage.Call(editor, 0x00D3, 3, uintptr(12|(12<<16)))
+	procSendMessage.Call(editor, 0x00D3, 3, uintptr(uint32(px(12))|(uint32(px(12))<<16)))
 	// Multiline EDIT controls default to a 32K character limit. Raise it
 	// before setting the text, otherwise the UI silently drops the tail.
 	procSendMessage.Call(editor, EM_LIMITTEXT, uintptr(len(utf16.Encode([]rune(editorText)))+1), 0)
@@ -537,22 +529,22 @@ func showAnswerPopup(msg popupMessage) error {
 		closeActiveAnswer()
 		return errors.New("卡片正文控件未收到模型结果")
 	}
-	bottom := ch - 46
+	bottom := ch-px(46)
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-342, bottom, 122, 34, hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(342),bottom,px(122),px(34),hwnd,BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-209, bottom, 102, 34, hwnd, BUTTON_COPY); err != nil {
+	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(209),bottom,px(102),px(34),hwnd,BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-96, bottom, 74, 34, hwnd, BUTTON_CLOSE); err != nil {
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(96),bottom,px(74),px(34),hwnd,BUTTON_CLOSE); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	popup.fonts = []uintptr{popupFont(-24, 650), popupFont(-18, 400), popupFont(-16, 600), popupFont(-14, 400)}
+	popup.fonts = []uintptr{popupFont(-px(24),650),popupFont(-px(18),400),popupFont(-px(16),600),popupFont(-px(14),400)}
 	setFont(title, popup.fonts[0])
 	setFont(editor, popup.fonts[1])
 	setFont(note, popup.fonts[3])
