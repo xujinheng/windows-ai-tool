@@ -119,6 +119,7 @@ jobs:
                     if($ctrl -eq [IntPtr]::Zero) {throw "Missing footer control $id"}
                     $cr=New-Object MatrixWin+RECT
                     if(-not [MatrixWin]::GetWindowRect($ctrl,[ref]$cr)) {throw "Footer control $id has no geometry"}
+                    if(-not [MatrixWin]::IsWindowVisible($ctrl)) {throw "$($case.id): primary footer control $id is hidden"}
                     if($cr.Left -lt $rect.Left -or $cr.Right -gt $rect.Right -or $cr.Top -lt $rect.Top -or $cr.Bottom -gt $rect.Bottom) {
                       throw "$($case.id): footer control $id clipped after scroll: x=$($cr.Left)..$($cr.Right), y=$($cr.Top)..$($cr.Bottom)"
                     }
@@ -152,7 +153,7 @@ jobs:
             if (!(Test-Path -LiteralPath $path)) { throw "Missing actual capture: $name" }
             if ((Get-Item $path).Length -lt 2000) { throw "Unusually small capture: $name" }
           }
-          foreach ($pair in @(@('settings-light-top','settings-dark-top'),@('settings-200-top','settings-200-bottom'))) {
+          foreach ($pair in @(@('settings-light-top','settings-dark-top'),@('settings-light-top','settings-writing-top'),@('settings-light-top','settings-shortcuts-top'),@('settings-200-top','settings-200-bottom'))) {
             $first = (Get-FileHash (Join-Path $folder ($pair[0] + '.png')) -Algorithm SHA256).Hash
             $second = (Get-FileHash (Join-Path $folder ($pair[1] + '.png')) -Algorithm SHA256).Hash
             if ($first -eq $second) { throw "Visual states rendered identically: $($pair -join ' vs ')" }
