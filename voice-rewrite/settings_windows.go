@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"sync"
@@ -48,6 +49,16 @@ const (
 	uxProbeLLMButton  = 9105
 	uxShortcutInput   = 9106
 	uxMicrophoneInput = 9107
+	uxTabSpeech = 9120
+	uxTabWriting = 9121
+	uxTabInput = 9122
+	uxRoleOther = iota + 100
+	uxRolePageTitle
+	uxRolePageDescription
+	uxRoleLabel
+	uxRoleField
+	uxRoleProbe
+	uxRoleStatus
 	uxCBAddString     = 0x0143
 	uxCBSetCurSel     = 0x014E
 	uxCBGetCurSel     = 0x0147
@@ -71,6 +82,7 @@ var (
 	uxGetStockObject = gdi32.NewProc("GetStockObject")
 	uxSetBkMode      = gdi32.NewProc("SetBkMode")
 	uxWindowCallback = syscall.NewCallback(uxSettingsWndProc)
+	procShowScrollBarUX = user32.NewProc("ShowScrollBar")
 	uxActiveSettings *uxSettings
 )
 
@@ -94,6 +106,8 @@ type uxSettings struct {
 	probeSerial                             [2]uint64
 	controls                                []uxControl
 	fieldFrames                             []uxControl
+	activeTab                               int
+	tabs                                    [3]uintptr
 	scale                                   float64
 	scrollX, scrollY                        int32
 }
@@ -106,6 +120,9 @@ type uxControl struct {
 	stretch    bool
 	right      bool
 	id         uintptr
+	tab        int
+	role       int
+	row        int
 }
 
 func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
@@ -132,85 +149,113 @@ func uxScrollClamp(n, limit int32) int32 {
 	}
 	return n
 }
-func (p *uxSettings) layout() {
-	if p == nil || p.window == 0 {
+// preferenceRect keeps a compact, macOS-inspired preferences toolbar while
+// moving labels above fields on narrow/high-DPI windows. The form is one
+// page at a time; no control is placed outside the usable horizontal viewport.
+func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32) {
+	x, y, w, h = c.x, c.y, c.w, c.h
+	narrow := viewW < 640
+	if c.id >= uxTabSpeech && c.id <= uxTabInput {
+		width := (viewW - 64 - 16) / 3
+		if width < 90 { width = 90 }
+		x = 32 + (int32(c.id-uxTabSpeech))*(width+8)
+		return x, 115, width, 40
+	}
+	if c.id == uxSaveButton {
+		return viewW - 188, viewH - 64, 156, 36
+	}
+	if c.id == uxCloseButton {
+		return viewW - 296, viewH - 64, 94, 36
+	}
+	if c.id == uxAdvancedButton {
+		return 32, viewH - 64, 130, 36
+	}
+	if c.tab < 0 {
+		if c.y >= 600 { return 34, viewH - 22, viewW - 68, 18 }
+		if c.x >= 510 { return viewW - 220, y, 184, h }
+		if c.x == 80 || c.x == 78 { w = viewW - x - 38 }
 		return
 	}
-	var rect rect32
-	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&rect)))
-	viewW, viewH := int32(float64(rect.Right-rect.Left)/p.scale), int32(float64(rect.Bottom-rect.Top)/p.scale)
-	if viewW < 1 {
-		viewW = 1
-	}
-	if viewH < 1 {
-		viewH = 1
-	}
-	maxX, maxY := uxContentWidth-viewW, uxContentHeight-viewH
-	if maxX < 0 {
-		maxX = 0
-	}
-	if maxY < 0 {
-		maxY = 0
-	}
-	p.scrollX = uxScrollClamp(p.scrollX, maxX)
-	p.scrollY = uxScrollClamp(p.scrollY, maxY)
-	for _, spec := range []struct {
-		axis               uintptr
-		content, page, pos int32
-	}{
-		{uxSBHorz, uxContentWidth, viewW, p.scrollX},
-		{uxSBVert, uxContentHeight, viewH, p.scrollY},
-	} {
-		info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFRange | uxSIFPage | uxSIFPos,
-			Min: 0, Max: spec.content - 1, Page: uint32(spec.page), Pos: spec.pos}
-		procSetScrollInfoUX.Call(p.window, spec.axis, uintptr(unsafe.Pointer(&info)), 1)
-	}
-	contentW := viewW
-	if contentW < uxContentWidth {
-		contentW = uxContentWidth
-	}
-	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
-	for _, ctrl := range p.controls {
-		x, y, w, h := uxLayoutRect(ctrl, contentW)
-		x -= p.scrollX
-		// Keep the primary footer actions horizontally accessible even when
-		// the form itself needs horizontal scrolling at high DPI.
-		switch ctrl.id {
-		case uxSaveButton:
-			x = 29
-		case uxAdvancedButton:
-			x = 212
-		case uxCloseButton:
-			x = viewW - w - 20
-			if x < 350 {
-				x = 350
-			}
+	switch c.role {
+	case uxRolePageTitle:
+		x, y, w = 46, 186, viewW - 92
+	case uxRolePageDescription:
+		x, y, w = 46, 222, viewW - 92
+	case uxRoleLabel:
+		if narrow {
+			x, y, w = 42, 270+int32(c.row)*88, viewW - 84
+		} else {
+			x, y, w = 48, 297+int32(c.row)*68, 98
 		}
-		if ctrl.hwnd == p.hint {
-			x = 33
-			if w > viewW-45 {
-				w = viewW - 45
-			}
+	case uxRoleField:
+		if narrow {
+			x, y, w, h = 42, 294+int32(c.row)*88, viewW-84, 35
+			if c.row == 0 && c.tab != 2 { w -= 110 }
+		} else {
+			x, y, w, h = 164, 287+int32(c.row)*68, viewW-200, 38
+			if c.row == 0 && c.tab != 2 { w -= 116 }
 		}
-		procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y-p.scrollY), sc(w), sc(h), 1)
+	case uxRoleProbe:
+		if narrow {
+			x, y, w, h = viewW-144, 294, 102, 35
+		} else {
+			x, y, w, h = viewW-148, 287, 112, 38
+		}
+	case uxRoleStatus:
+		x, y, w = 48, 502, viewW-96
+		if narrow { x,y,w = 42, 562, viewW-84 }
 	}
-	procInvalidateRectSettings.Call(p.window, 0, 1)
+	return x, y-scrollY, w, h
+}
+func (p *uxSettings) layout() {
+	if p == nil || p.window == 0 { return }
+	var r rect32
+	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&r)))
+	viewW := int32(float64(r.Right-r.Left)/p.scale)
+	viewH := int32(float64(r.Bottom-r.Top)/p.scale)
+	if viewW < 1 { viewW=1 }
+	if viewH < 1 { viewH=1 }
+	footerTop := viewH - 82
+	bottom := int32(550)
+	if viewW < 640 { bottom=604 }
+	maxScroll := bottom-footerTop
+	if maxScroll < 0 { maxScroll=0 }
+	p.scrollX=0
+	p.scrollY=uxScrollClamp(p.scrollY,maxScroll)
+	// Hide the native scrollbar on normal monitors; use it as an explicit
+	// accessibility fallback on vertically constrained high-DPI work areas.
+	if maxScroll > 0 {
+		info := uxScrollInfo{Size:uint32(unsafe.Sizeof(uxScrollInfo{})),Mask:uxSIFRange|uxSIFPage|uxSIFPos,
+			Min:0,Max:bottom-176,Page:uint32(footerTop-176),Pos:p.scrollY}
+		if footerTop<=176 { info.Page=1 }
+		procSetScrollInfoUX.Call(p.window,uxSBVert,uintptr(unsafe.Pointer(&info)),1)
+	}
+	procShowScrollBarUX.Call(p.window,uxSBVert, boolToUintptr(maxScroll>0))
+	px := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale+0.5)) }
+	for _, c := range p.controls {
+		x,y,w,h:=preferenceRect(c,viewW,viewH,p.scrollY)
+		if w<1 {w=1}
+		if h<1 {h=1}
+		procMoveWindow.Call(c.hwnd,px(x),px(y),px(w),px(h),1)
+		visible := c.tab<0 || c.tab==p.activeTab
+		if c.tab>=0 && (y<172 || y+h>footerTop) {visible=false}
+		if visible { procShowWindow.Call(c.hwnd,SW_SHOW) } else {procShowWindow.Call(c.hwnd,0)}
+	}
+	procInvalidateRectSettings.Call(p.window,0,1)
 }
 func (p *uxSettings) scroll(axis, request uintptr) {
 	var rect rect32
 	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&rect)))
-	view := int32(float64(rect.Bottom-rect.Top) / p.scale)
-	content := uxContentHeight
+	viewW := int32(float64(rect.Right-rect.Left)/p.scale)
+	viewH := int32(float64(rect.Bottom-rect.Top)/p.scale)
+	bottom := int32(550)
+	if viewW<640 {bottom=604}
+	max := bottom-(viewH-82)
+	if max<0 {max=0}
+	view := viewH-258
+	if view<36 {view=36}
 	pos := &p.scrollY
-	if axis == uxSBHorz {
-		view = int32(float64(rect.Right-rect.Left) / p.scale)
-		content = uxContentWidth
-		pos = &p.scrollX
-	}
-	max := content - view
-	if max < 0 {
-		max = 0
-	}
+	if axis == uxSBHorz { return }
 	var delta int32
 	switch request & 0xffff {
 	case 0:
