@@ -39,6 +39,25 @@ jobs:
           CGO_ENABLED: '0'
         shell: pwsh
         run: go build -trimpath -ldflags '-H=windowsgui -s -w' -o VoiceRewrite.exe .
+      - name: Package portable Windows build
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path 'package/VoiceRewrite' -Force | Out-Null
+          Copy-Item -LiteralPath 'VoiceRewrite.exe' -Destination 'package/VoiceRewrite/'
+          Copy-Item -LiteralPath 'README.md' -Destination 'package/VoiceRewrite/'
+          Copy-Item -LiteralPath 'config.example.json' -Destination 'package/VoiceRewrite/'
+          Compress-Archive -Path 'package/VoiceRewrite' -DestinationPath 'VoiceRewrite-windows-x64.zip' -Force
+          $hash = (Get-FileHash -LiteralPath 'VoiceRewrite-windows-x64.zip' -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *VoiceRewrite-windows-x64.zip" | Set-Content -LiteralPath 'SHA256SUMS.txt' -Encoding ascii
+      - name: Upload portable package and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceRewrite-portable-windows-x64
+          path: |
+            voice-rewrite/VoiceRewrite-windows-x64.zip
+            voice-rewrite/SHA256SUMS.txt
+          if-no-files-found: error
       - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:

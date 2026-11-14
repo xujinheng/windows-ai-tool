@@ -16,6 +16,10 @@ OneClick is a small launcher + proxy, **not** an all-in-one model/runtime instal
 
 Qwen3.5 text generation may continue using LM Studio or a separate compatible llama-server on port 1234; the optional [two-server script](scripts/local-models/README.md) is not required for OneClick.
 
+## Windows portable build
+
+Each successful main-branch Windows build uploads a `VoiceRewrite-portable-windows-x64` Artifact containing `VoiceRewrite-windows-x64.zip` and its `SHA256SUMS.txt`. The ZIP includes `VoiceRewrite.exe`, an example config and the user guide. Extract to a normal directory before launch; user configuration is written to the Windows user profile rather than the extracted directory. The separate OneClick build is available as a different artifact and as `dist/Qwen3-ASR-OneClick-Windows-x64.exe`.
+
 ## Development
 
 ```powershell

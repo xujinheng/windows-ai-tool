@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible issue without uploading sensitive audio or text
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Do not paste API keys, real dictation, clipboard contents, or private config.json. Use synthetic examples."
+  - type: input
+    id: build
+    attributes:
+      label: Build ID / commit
+      description: Find the build ID in the VoiceRewrite diagnostic log.
+      placeholder: "2026-11-14-native-ux-v22"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Start VoiceRewrite ... 2. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Windows version / target application / display scale
+      placeholder: "Windows 11, VS Code, 125% DPI"
