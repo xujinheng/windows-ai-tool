@@ -40,6 +40,17 @@ func uiDrawActionButton(item *drawItemStruct, palette uiPalette, font uintptr, l
 	} else if item.ItemState&ODS_SELECTED != 0 {
 		fill = palette.secondaryPressed
 	}
+	// Owner-drawn Win32 buttons do not erase their corner pixels for us.
+	// Paint the surface behind the rounded rect first, especially in dark mode.
+	back := palette.background
+	if item.CtlID == uxProbeASRButton || item.CtlID == uxProbeLLMButton {
+		back = palette.surface
+	}
+	background, _, _ := procCreateSolidBrush.Call(palette.color(back))
+	if background != 0 {
+		procFillRect.Call(item.Hdc, uintptr(unsafe.Pointer(&item.Rect)), background)
+		procDeleteObject.Call(background)
+	}
 	if primary && item.ItemState&ODS_SELECTED != 0 {
 		if palette.dark {
 			fill = 0xC44D81
