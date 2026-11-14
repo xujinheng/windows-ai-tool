@@ -9,9 +9,9 @@ const (
 	settingsFieldFrameHeight int32 = 34
 	settingsFieldFirstY      int32 = 169
 	settingsFieldRowStep     int32 = 54
-	settingsFieldInsetX     int32 = 14
-	settingsFieldInsetY     int32 = 5
-	settingsFieldEditHeight int32 = 24
+	settingsFieldInsetX      int32 = 14
+	settingsFieldInsetY      int32 = 5
+	settingsFieldEditHeight  int32 = 24
 )
 
 type settingsFieldRect struct{ X, Y, W, H int32 }

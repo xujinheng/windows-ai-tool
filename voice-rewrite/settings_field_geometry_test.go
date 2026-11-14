@@ -20,8 +20,8 @@ func TestSettingsFieldGeometryKeepsWholeFocusBorderVisible(t *testing.T) {
 			t.Errorf("row %d: native label not vertically centered: frame=%+v label=%+v", row, frame, label)
 		}
 		if row > 0 {
-			previous := settingsFieldFrame(row-1)
-			if gap := frame.Y-(previous.Y+previous.H); gap < 12 || gap > 22 {
+			previous := settingsFieldFrame(row - 1)
+			if gap := frame.Y - (previous.Y + previous.H); gap < 12 || gap > 22 {
 				t.Errorf("row gap %d: %d (want 12..22)", row, gap)
 			}
 		}
