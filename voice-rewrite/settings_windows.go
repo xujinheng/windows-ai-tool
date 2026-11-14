@@ -513,7 +513,7 @@ func showNativeSettings(app *appState) error {
 			return 0
 		}
 		if cls == "EDIT" {
-			procSendMessage.Call(control, uxEMSetMargins, 3, uintptr(8|(8<<16)))
+			procSendMessage.Call(control, uxEMSetMargins, 3, uintptr(8 | (8 << 16)))
 		}
 		if cls == "STATIC" && y >= 99 && y < 596 {
 			p.cardStatics[control] = true
