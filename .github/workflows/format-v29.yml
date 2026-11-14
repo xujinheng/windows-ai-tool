@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - '.github/workflows/format-v29.yml'
+      - 'voice-rewrite/settings_windows.go'
   workflow_dispatch:
 permissions:
   contents: write
