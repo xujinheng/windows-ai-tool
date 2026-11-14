@@ -79,7 +79,9 @@ jobs:
               if(($style -band 0x00c00000) -ne 0){throw "$($case.name): old Windows caption is still present"}
               $editor=[RWResult]::FindWindowEx($hwnd,[IntPtr]::Zero,'Edit',$null)
               if($editor -eq [IntPtr]::Zero -or -not [RWResult]::IsWindowVisible($editor)) {throw "missing readable native edit"}
-              $body=[RWResult]::GetWindowTextLengthW($editor)
+              # GetWindowTextLengthW is unreliable for another process's EDIT.
+              # WM_GETTEXTLENGTH is marshalled by user32 and can be queried safely.
+              $body=[RWResult]::SendMessage($editor,0x000E,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
               if($body -lt 60) {throw "result body truncated: $body chars"}
               if($case.long -eq '1' -and $body -lt 1000) {throw "long result was clipped: $body chars"}
               $copy=[RWResult]::GetDlgItem($hwnd,431)
