@@ -77,8 +77,16 @@ jobs:
               Start-Sleep -Milliseconds 750
               $style=[RWResult]::GetWindowLongPtr($hwnd,-16).ToInt64()
               if(($style -band 0x00c00000) -ne 0){throw "$($case.name): old Windows caption is still present"}
-              $editor=[RWResult]::FindWindowEx($hwnd,[IntPtr]::Zero,'Edit',$null)
-              if($editor -eq [IntPtr]::Zero -or -not [RWResult]::IsWindowVisible($editor)) {throw "missing readable native edit"}
+              # Child EDIT creation and the first Direct2D draw are asynchronous
+              # relative to the parent HWND becoming visible. Wait for the
+              # actual Windows control instead of racing its initialization.
+              $editor=[IntPtr]::Zero
+              for($e=0;$e -lt 40;$e++){
+                $editor=[RWResult]::FindWindowEx($hwnd,[IntPtr]::Zero,'Edit',$null)
+                if($editor -ne [IntPtr]::Zero -and [RWResult]::IsWindowVisible($editor)){break}
+                Start-Sleep -Milliseconds 250
+              }
+              if($editor -eq [IntPtr]::Zero -or -not [RWResult]::IsWindowVisible($editor)) {throw "missing readable native edit after 10s initialization"}
               # GetWindowTextLengthW is unreliable for another process's EDIT.
               # WM_GETTEXTLENGTH is marshalled by user32 and can be queried safely.
               $body=[RWResult]::SendMessage($editor,0x000E,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
