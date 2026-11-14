@@ -36,7 +36,7 @@ func TestIntentsRouting(t *testing.T) {
 		{"怎么用英文说？", "translate", true, false, "popup"},
 		{"把这句话改成英文", "edit", true, false, "replace"},
 		{"解释一下这个术语", "edit", true, true, "popup"},
-		// v7 regressions: WeChat, VS Code and browser inputs have unknown Win32 classes.
+		// Third-party editors may expose unknown Win32 control classes.
 		{"请写成英文", "translate", false, false, "try_replace"}, // WeChat
 		{"帮我润色一下", "edit", false, false, "try_replace"},     // VS Code
 		{"翻译成中文", "translate", false, false, "try_replace"}, // nonnative editor

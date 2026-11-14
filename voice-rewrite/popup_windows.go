@@ -554,7 +554,7 @@ func showAnswerPopup(msg popupMessage) error {
 	// Never truncate a model response: users must be able to review and copy
 	// the full answer, including large translations and generated documents.
 	n := utf8.RuneCountInString(msg.body)
-	logicalW, logicalH := v14PopupSize(n)
+	logicalW, logicalH := popupSizeForText(n)
 	// Keep result on the source monitor's WORK AREA, including negative coordinates.
 	work := uxWorkAreaForPoint(msg.anchor)
 	scale := uxMonitorScaleForPoint(msg.anchor)

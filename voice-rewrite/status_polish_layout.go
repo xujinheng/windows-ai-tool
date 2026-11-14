@@ -30,9 +30,7 @@ const (
 
 func handyCancelHit(x, width int) bool { return x >= width-handyCancelWidth && x < width }
 
-// Keep every drawing rectangle in logical 96-DPI units. Physical pixel widths
-// are calculated ONLY at the final bitmap/window boundary. v12 mixed physical
-// window widths into these coordinates, causing right-end clipping at 125%+ DPI.
+// Keep geometry in logical 96-DPI units and scale only at the bitmap/window boundary.
 func handyPhysicalSize(logicalWidth, logicalHeight int, scale float64) (int, int) {
 	if scale <= 0 {
 		scale = 1

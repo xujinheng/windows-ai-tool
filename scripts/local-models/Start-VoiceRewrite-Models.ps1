@@ -11,12 +11,11 @@ foreach ($file in @($llamaServer, $asrModel, $asrMmproj, $llmModel)) {
     if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "File not found: $file" }
 }
 
-# OneClick replacement: Qwen3-ASR at http://127.0.0.1:8080/v1
+# Qwen3-ASR endpoint: http://127.0.0.1:8080/v1
 $asrArgs = '-m "{0}" --mmproj "{1}" --host 127.0.0.1 --port 8080 -ngl 99 -c 8192 -np 1 --alias whisper-1 --no-webui' -f $asrModel, $asrMmproj
 
-# LM Studio replacement: Qwen3.5-9B at http://127.0.0.1:1234/v1
-# Mirrors the LM Studio screenshots: context 65536, GPU layers 32, threads 6,
-# batch 2048/512, unified GPU KV, flash attention, reasoning disabled.
+# Qwen3.5 endpoint: http://127.0.0.1:1234/v1
+# Adjust model parameters for the installed llama.cpp build and GPU.
 $llmArgs = '-m "{0}" --host 127.0.0.1 --port 1234 -ngl 32 -c 65536 -np 1 --threads 6 --batch-size 2048 --ubatch-size 512 --ctx-checkpoints 32 --flash-attn on --kv-unified --kv-offload --load-mode none --jinja --reasoning off --alias qwen3.5 --no-webui' -f $llmModel
 
 $workDir = Split-Path -Parent $llamaServer

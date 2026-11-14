@@ -1,4 +1,4 @@
-name: Publish VoiceRewrite workflow demonstration video
+name: README demo video
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
   # Screenshot commits use GITHUB_TOKEN and [skip ci], so a plain push
   # trigger will NOT fire. Build the demo when the visual matrix completes.
   workflow_run:
-    workflows: ['VoiceRewrite visual matrix (real Windows pixels)']
+    workflows: ['Windows UI screenshots']
     types: [completed]
 
 permissions:
@@ -48,13 +48,13 @@ jobs:
           sudo apt-get install -y fonts-noto-cjk
           test -f /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
           ffmpeg -hide_banner -version | head -1
-      - name: Render 30-second product video from real native UI screenshots
+      - name: Render walkthrough
         shell: bash
         run: |
           set -euo pipefail
           python scripts/render-demo-video.py --assets docs/ui --output docs/demo
           ffprobe -v error -show_entries format=duration,size -of default=nw=1 docs/demo/voicerewrite-demo.mp4
-      - name: Verify deliverables
+      - name: Check video files
         shell: bash
         run: |
           set -euo pipefail
@@ -64,39 +64,32 @@ jobs:
           import subprocess
           directory = Path('docs/demo')
           video=directory/'voicerewrite-demo.mp4'
-          gif=directory/'voicerewrite-preview.gif'
           webp=directory/'voicerewrite-preview.webp'
-          poster=directory/'poster.jpg'
-          for path in [video,gif,webp,poster]:
+          for path in [video,webp]:
               if not path.is_file() or path.stat().st_size<4096:
                   raise SystemExit('Missing/empty demo asset: '+str(path))
           duration=float(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(video)],text=True))
           if not 29.9 <= duration <= 30.1:
               raise SystemExit(f'Unexpected demo length {duration}')
-          with Image.open(gif) as image:
-              if image.n_frames < 80:
-                  raise SystemExit('Fallback preview is not an animated GIF')
           with Image.open(webp) as image:
               if image.format != 'WEBP' or image.size != (1280,720) or image.n_frames < 300:
                   raise SystemExit('README WebP preview must be full HD and animated')
-          print('MP4, HD animated WebP, GIF fallback and thumbnail validated')
+          print('MP4 and animated WebP validated')
           PY
-      - name: Upload rendered product demo
+      - name: Upload demo video
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-product-demo-video
           path: |
             docs/demo/voicerewrite-demo.mp4
             docs/demo/voicerewrite-preview.webp
-            docs/demo/voicerewrite-preview.gif
-            docs/demo/poster.jpg
           if-no-files-found: error
       - name: Update README media on main (only for the current revision)
         if: github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
-          git add -- docs/demo/voicerewrite-demo.mp4 docs/demo/voicerewrite-preview.webp docs/demo/voicerewrite-preview.gif docs/demo/poster.jpg
+          git add -- docs/demo/voicerewrite-demo.mp4 docs/demo/voicerewrite-preview.webp
           if git diff --cached --quiet; then
             echo 'Video assets unchanged.'
             exit 0

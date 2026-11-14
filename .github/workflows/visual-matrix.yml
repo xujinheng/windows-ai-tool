@@ -1,4 +1,4 @@
-name: VoiceRewrite visual matrix (real Windows pixels)
+name: Windows UI screenshots
 on:
   push:
     paths:
@@ -35,7 +35,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Capture actual windows in light, dark and simulated 125–200% scaling
+      - name: Capture Windows UI states
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
@@ -144,7 +144,7 @@ jobs:
             }
           }
           $report | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 'visual-matrix/diagnostics.json'
-      - name: Assert real screenshots exist and differ by theme
+      - name: Check UI captures
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -189,17 +189,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "git commit failed: $LASTEXITCODE" }
           git push origin HEAD:main
           if ($LASTEXITCODE -ne 0) { throw "GitHub screenshot publication failed: $LASTEXITCODE" }
-      - name: Upload README-ready image gallery
+      - name: Upload README images
         if: always() && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-readme-gallery
           path: docs/ui/
           if-no-files-found: warn
-      - name: Upload actual screenshot evidence
+      - name: Upload UI screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: VoiceRewrite-v29-real-windows-visual-matrix
+          name: VoiceRewrite-ui-screenshots
           path: visual-matrix/
           if-no-files-found: warn

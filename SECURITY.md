@@ -1,16 +1,11 @@
-# Security policy
+# Security
 
-This is a source-available Windows desktop utility undergoing hardening, not a production-certified security product.
+Report vulnerabilities through GitHub private vulnerability reporting when available, or contact the maintainer privately. Do not include sensitive recordings, selected text, clipboard data, API keys or local logs in public issues.
 
-Do not put real API Keys, audio recordings, text selections, clipboard data, user-specific paths, or private logs into public GitHub issues. To report sensitive vulnerabilities, use GitHub's private vulnerability reporting feature **if it is enabled** for the repository; otherwise contact the maintainer through a private channel listed on the maintainer's profile before sharing sensitive details.
+- ASR and LLM requests go to the configured endpoints. HTTP redirects are rejected.
+- API keys are encrypted with Windows DPAPI in the current user's context.
+- Text replacement checks the foreground target before applying output.
+- Clipboard restoration depends on the formats and ownership available through Windows APIs.
+- Native password controls and supported UI Automation password fields are excluded from automatic input. Detection across third-party applications is not universal.
 
-Security boundaries:
-
-- Only user-configured ASR/LLM endpoints receive task content. HTTP redirects are denied. Remote API operators are outside this application's trust boundary.
-- API Keys use Windows DPAPI at rest, bound to the signed-in user's protection context. Config and temporary files should never be committed.
-- Results are inserted only after rechecking foreground-window identity; editor acceptance cannot always be verified.
-- Clipboard HGLOBAL snapshots and ownership fences are best effort for supported formats; GDI/OLE/owner-rendered formats cannot be guaranteed.
-- Native EDIT/RichEdit password controls are excluded; browser/Electron password detection is incomplete.
-- Unsigned installers are development previews; release signing, source audits and real-device testing remain outstanding.
-
-See `voice-rewrite/EXPERIENCE-V24.md` for current technical limitations.
+The Windows installer is unsigned. Verify downloaded checksums and [build provenance](RELEASE-TRUST.md) where available. See [Privacy](PRIVACY.md).

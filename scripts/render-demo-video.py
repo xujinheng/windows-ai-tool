@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Create an explicitly illustrated VoiceRewrite product walkthrough.
+"""Render a VoiceRewrite walkthrough from UI screenshots and scripted examples.
 
-Uses screenshots of the *real Windows EXE* committed at docs/ui, a synthetic
-Notepad-style editor, and fixed example speech/text. It does not capture real
-microphone audio or assert that an ASR/LLM API has processed the samples.
-Requires Pillow and ffmpeg; no Node, Electron, browser engine, or remote API.
+Requires Pillow and FFmpeg.
 """
 import argparse
 from functools import lru_cache
@@ -254,26 +251,18 @@ def build(assets,output,fps=FPS,duration=DURATION):
         for i in range(fps*duration):
             frame=scene(Image.new('RGBA',(W,H),BG),recording,i/fps).convert('RGB')
             p.stdin.write(frame.tobytes())
-            if i==fps*6:frame.save(output/'poster.jpg',quality=88)
-        p.stdin.close()
+            p.stdin.close()
         err=p.stderr.read().decode('utf8','replace')
         ret=p.wait()
     except Exception:
         if p.stdin and not p.stdin.closed:p.stdin.close()
         p.kill();p.wait();raise
     if ret:raise RuntimeError('ffmpeg encoding failed: '+err[-900:])
-    # GitHub README hero: full-resolution, true-color animation. Animated WebP
-    # avoids GIF's 256-color palette and the former 560px scaling blur.
     webp=output/'voicerewrite-preview.webp'
     subprocess.run(['ffmpeg','-y','-hide_banner','-loglevel','error','-i',str(mp4),
         '-vf','fps=12,scale=1280:-2:flags=lanczos', '-c:v','libwebp_anim',
         '-lossless','0','-quality','90','-compression_level','4',
         '-loop','0','-an',str(webp)], check=True)
-    # Retain a very small GIF fallback for older Markdown consumers.
-    gif=output/'voicerewrite-preview.gif'
-    filt='fps=5,scale=560:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4'
-    subprocess.run(['ffmpeg','-y','-hide_banner','-loglevel','error','-i',str(mp4),'-filter_complex',filt,'-loop','0',str(gif)],check=True)
-    print('MP4',mp4.stat().st_size,'bytes; WebP',webp.stat().st_size,'bytes; GIF',gif.stat().st_size,'bytes')
     return mp4,webp
 
 if __name__=='__main__':
