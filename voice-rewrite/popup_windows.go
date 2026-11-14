@@ -168,14 +168,16 @@ func nativePasswordFieldFocused(target uintptr) bool {
 	}
 	tid, _, _ := procGetWindowThreadProcessId.Call(target, 0)
 	if tid == 0 {
-		return false
+		return true
 	}
 	info := guiThreadInfo{Size: uint32(unsafe.Sizeof(guiThreadInfo{}))}
-	if ok, _, _ := procGetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&info))); ok == 0 || info.Focus == 0 {
-		return false
+	if ok, _, _ := procGetGUIThreadInfo.Call(tid, uintptr(unsafe.Pointer(&info))); ok != 0 && info.Focus != 0 {
+		style, _, _ := procGetWindowLongPtr.Call(info.Focus, GWL_STYLE)
+		if nativePasswordControl(windowClassName(info.Focus), style) {
+			return true
+		}
 	}
-	style, _, _ := procGetWindowLongPtr.Call(info.Focus, GWL_STYLE)
-	return nativePasswordControl(windowClassName(info.Focus), style)
+	return uiaSensitiveFocus(target)
 }
 
 func isSafelyEditableControl(target uintptr) bool {
