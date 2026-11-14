@@ -41,6 +41,7 @@ jobs:
             [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd,out RECT r);
             [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
             [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr hwnd,int id);
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
             [DllImport("user32.dll")] public static extern int GetWindowTextLengthW(IntPtr hwnd);
             [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hwnd,uint msg,IntPtr wp,IntPtr lp);
             [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hwnd,int index);
@@ -76,9 +77,11 @@ jobs:
               Start-Sleep -Milliseconds 750
               $style=[RWResult]::GetWindowLongPtr($hwnd,-16).ToInt64()
               if(($style -band 0x00c00000) -ne 0){throw "$($case.name): old Windows caption is still present"}
-              $editor=[RWResult]::GetDlgItem($hwnd,0)
-              # EDIT is a child with ID 0; find it by class below.
+              $editor=[RWResult]::FindWindowEx($hwnd,[IntPtr]::Zero,'Edit',$null)
+              if($editor -eq [IntPtr]::Zero -or -not [RWResult]::IsWindowVisible($editor)) {throw "missing readable native edit"}
               $body=[RWResult]::GetWindowTextLengthW($editor)
+              if($body -lt 60) {throw "result body truncated: $body chars"}
+              if($case.long -eq '1' -and $body -lt 1000) {throw "long result was clipped: $body chars"}
               $copy=[RWResult]::GetDlgItem($hwnd,431)
               $close=[RWResult]::GetDlgItem($hwnd,432)
               $apply=[RWResult]::GetDlgItem($hwnd,433)
@@ -97,6 +100,14 @@ jobs:
               $g=[System.Drawing.Graphics]::FromImage($bmp)
               try{
                 $g.CopyFromScreen($rect.Left,$rect.Top,0,0,[System.Drawing.Size]::new($w,$h))
+                # This lilac mark is painted by Direct2D, not the Win32
+                # owner-draw button fallback; assert an actual D2D frame.
+                $brand=$bmp.GetPixel(42,34)
+                if($case.theme -eq 'dark'){
+                  if([math]::Abs([int]$brand.R-186) -gt 5 -or [math]::Abs([int]$brand.B-255) -gt 5){throw "Direct2D dark paint missing: $brand"}
+                } else {
+                  if([math]::Abs([int]$brand.R-114) -gt 5 -or [math]::Abs([int]$brand.B-207) -gt 5){throw "Direct2D light paint missing: $brand"}
+                }
                 $file=Join-Path $folder ($case.name+'.png')
                 $bmp.Save($file,[System.Drawing.Imaging.ImageFormat]::Png)
               }finally{$g.Dispose();$bmp.Dispose()}
