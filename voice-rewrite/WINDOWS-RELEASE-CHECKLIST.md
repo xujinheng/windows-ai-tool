@@ -1,10 +1,10 @@
-# Windows 11 acceptance checklist (manual; not yet executed)
+# Windows 11 验收清单（尚未进行完整实机验证）
 
-- Fresh profile: launch EXE in Downloads with no existing config. Verify `%APPDATA%\\VoiceRewrite\\config.json` created, setup shown, both pages navigable at 100/125/150/200% display scaling.
-- Connect ASR localhost/remote; connect text localhost/remote; confirm changing URLs/IDs and API keys survives restart and never launches model processes.
-- Select shared llama-server.exe and compatible ASR+mmproj and LLM GGUF; ensure 8080/8082 children appear, load, respond to API, and disappear when GUI exits. Check normal exit and crash cleanup separately.
-- Mix launch ASR/connect LLM and connect ASR/launch LLM; save during model loading and when busy. Verify no externally launched process is killed.
-- Intentionally use duplicate ports, remote URL in launch mode, missing GGUF, wrong model type, missing CUDA DLL, unsupported ASR endpoint; check the UI and log messages.
-- Mouse4 dictation in Notepad, WeChat, VS Code, Chrome and a browser contenteditable. Mouse5 selected-text replacement and question card in same apps. Check cancellation, clipboard restore, focus switching, no wrong-window paste.
-- Test CPU-only llama-server, available GPU VRAM, two large models, load time, GPU OOM, shutdown/restart and whether subprocesses leak.
-- Verify status bar position/anti-aliasing/timers, answer card interaction and file picker modal focus with DPI/multiple monitors.
+- 首次安装：在未有配置文件的新用户环境运行 EXE；应自动展示一页包含 ASR 与 LLM 两组配置的设置窗口，且无任何模型启动或路径选择功能。
+- 设置页面在 100%、125%、150%、200% 显示缩放和多显示器下：标题、API 地址、模型 ID、API Key、检测、保存、关闭按钮都必须可见且无遮挡。
+- 输入本地、局域网、HTTPS 远程两种 API；分别修改地址、模型 ID 和 API Key，保存、重开后检查内容正确。
+- 使用提供 `/v1/models` 的服务器和不提供 `/v1/models` 的 ASR 服务器分别检测。401/403、404、503、网络失败应准确反馈，不应误报“模型转写成功”。
+- 验证 VoiceRewrite 启动、保存设置、退出时**没有创建或终止任何模型 server 子进程**。已运行的服务器保持原状。
+- Mouse4 在记事本、微信、VS Code、Chrome 文本输入框中听写；Mouse5 选区改写/问答；检查插入失败恢复、切换焦点、取消与剪贴板保留。
+- 验证状态条显示、缩放、关闭按钮和结果卡片焦点，多次快速交替使用 Mouse4 与 Mouse5。
+- 在只有 ASR 连接可用、只有 LLM 连接可用、二者均不可用时验证托盘状态、错误提示、日志和后续恢复。

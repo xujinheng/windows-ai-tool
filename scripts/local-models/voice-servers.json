@@ -1,0 +1,37 @@
+{
+  "llamaServer": "",
+  "modelSearchDirs": [
+    "%USERPROFILE%\\.lmstudio\\models",
+    "models"
+  ],
+  "asr": {
+    "model": "",
+    "mmproj": "",
+    "port": 8080,
+    "gpuLayers": 99,
+    "ctxSize": 8192,
+    "parallel": 1,
+    "alias": "whisper-1",
+    "extraArgs": []
+  },
+  "llm": {
+    "model": "",
+    "mmproj": "",
+    "port": 1234,
+    "gpuLayers": 32,
+    "ctxSize": 65536,
+    "parallel": 1,
+    "alias": "qwen3.5",
+    "jinja": true,
+    "extraArgs": [],
+    "cpuThreads": 6,
+    "batchSize": 2048,
+    "ubatchSize": 512,
+    "contextCheckpoints": 32,
+    "flashAttention": true,
+    "unifiedKV": true,
+    "kvOffload": true,
+    "tryMmap": false,
+    "enableThinking": false
+  }
+}

@@ -38,16 +38,6 @@ type Config struct {
 	MaxSelectedRunes       int    `json:"max_selected_characters"`
 	SelectionCopyAttempts  int    `json:"selection_copy_attempts"`
 	SelectionCopyTimeoutMS int    `json:"selection_copy_timeout_ms"`
-	ASRServiceMode         string `json:"asr_service_mode"`
-	LLMServiceMode         string `json:"llm_service_mode"`
-	LLAMAServerPath        string `json:"llama_server_path,omitempty"`
-	ASRModelPath           string `json:"asr_model_path,omitempty"`
-	LLMModelPath           string `json:"llm_model_path,omitempty"`
-	ASRMMProjPath          string `json:"asr_mmproj_path,omitempty"`
-	ASRGPULayers           int    `json:"asr_gpu_layers"`
-	ASRContextSize         int    `json:"asr_context_size"`
-	LLMGPULayers           int    `json:"llm_gpu_layers"`
-	LLMContextSize         int    `json:"llm_context_size"`
 }
 
 func defaults() Config {
@@ -63,12 +53,6 @@ func defaults() Config {
 		MaxRecordSeconds:       60,
 		MaxSelectedRunes:       12000,
 		MaxResponseTokens:      1200,
-		ASRServiceMode:         serviceConnect,
-		LLMServiceMode:         serviceConnect,
-		ASRGPULayers:           99,
-		ASRContextSize:         8192,
-		LLMGPULayers:           99,
-		LLMContextSize:         8192,
 		SelectionCopyAttempts:  2,
 		SelectionCopyTimeoutMS: 750,
 	}
@@ -90,7 +74,7 @@ func mouseSideButton(s string) (uint16, bool) {
 func configPath() string {
 	base, err := os.UserConfigDir()
 	if err != nil || base == "" {
-		return filepath.Join(asrExecRoot(), "config.json")
+		return filepath.Join(os.TempDir(), "VoiceRewrite", "config.json")
 	}
 	return filepath.Join(base, "VoiceRewrite", "config.json")
 }
@@ -114,27 +98,6 @@ func loadConfig() (Config, error) {
 	}
 	if err = json.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("配置文件 JSON 错误: %w", err)
-	}
-	if cfg.ASRContextSize < 256 || cfg.ASRContextSize > 262144 {
-		cfg.ASRContextSize = 8192
-	}
-	if cfg.LLMContextSize < 256 || cfg.LLMContextSize > 262144 {
-		cfg.LLMContextSize = 8192
-	}
-	if cfg.LLMGPULayers < 0 || cfg.LLMGPULayers > 1000 {
-		cfg.LLMGPULayers = 99
-	}
-	if cfg.ASRGPULayers < 0 || cfg.ASRGPULayers > 1000 {
-		cfg.ASRGPULayers = 99
-	}
-	if cfg.ASRServiceMode == "" {
-		cfg.ASRServiceMode = serviceConnect
-	}
-	if cfg.LLMServiceMode == "" {
-		cfg.LLMServiceMode = serviceConnect
-	}
-	if err := validateServiceModes(cfg); err != nil {
-		return cfg, err
 	}
 	if cfg.ASRModel == "" {
 		cfg.ASRModel = "whisper-1"
@@ -280,7 +243,7 @@ func transcribe(ctx context.Context, cfg Config, pcm []byte) (string, error) {
 	}
 	resp, e := requestClient(90 * time.Second).Do(req)
 	if e != nil {
-		return "", fmt.Errorf("语音转写请求失败（请在设置中检测 ASR 连接；默认服务端口 8080）: %w", e)
+		return "", fmt.Errorf("语音转写请求失败（请检查 ASR API 地址及网络）: %w", e)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
@@ -319,11 +282,11 @@ func discoverModel(ctx context.Context, cfg Config) (string, error) {
 	}
 	resp, e := requestClient(10 * time.Second).Do(req)
 	if e != nil {
-		return "", fmt.Errorf("无法连接 LM Studio (默认 1234): %w", e)
+		return "", fmt.Errorf("无法连接文本处理 API: %w", e)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("查询 LM Studio 模型失败 HTTP %d: %s", resp.StatusCode, bodyString(resp.Body))
+		return "", fmt.Errorf("查询文本模型列表失败 HTTP %d: %s", resp.StatusCode, bodyString(resp.Body))
 	}
 	var v struct {
 		Data []modelItem `json:"data"`
@@ -340,7 +303,7 @@ func discoverModel(ctx context.Context, cfg Config) (string, error) {
 		candidates = append(candidates, i.ID)
 	}
 	if len(candidates) == 0 {
-		return "", errors.New("LM Studio 没有发现可用的文本 Instruct 模型；请加载 Qwen3 4B Instruct 等文本模型，并确认 LM Studio 已启动本地服务器")
+		return "", errors.New("没有发现可用的文本模型；请在连接设置中填写明确的文本模型 ID，或确认 API 提供 /v1/models")
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return textModelScore(candidates[i]) > textModelScore(candidates[j]) })
 	return candidates[0], nil
@@ -353,9 +316,6 @@ func textModelScore(s string) int {
 	}
 	if strings.Contains(l, "chat") {
 		n += 6
-	}
-	if strings.Contains(l, "qwen") {
-		n += 3
 	}
 	if strings.Contains(l, "vision") || strings.Contains(l, "vl") {
 		n -= 3
@@ -428,7 +388,7 @@ type AssistantResult struct {
 	Result string `json:"result"`
 }
 
-const unifiedPrompt = `你是 Windows 桌面本地 AI 划词助手。收到用户的语音指令和他选中的文字。
+const unifiedPrompt = `你是 Windows 桌面 AI 划词助手。收到用户的语音指令和他选中的文字。
 一次完成意图判定和内容生成；意图可以是 edit、translate、answer、summarize、ambiguous。
 - edit：明确要求改写、纠错、润色、缩写或改变选中文字，输出可直接代替原文的正文。
 - translate：要求“写成英文”“翻译成中文”“用日语表达”等文本翻译或语言转换，输出纯译文。程序在可编辑文字中可以将译文直接替换原文。

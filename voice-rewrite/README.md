@@ -1,80 +1,50 @@
-# VoiceRewrite · Mouse4 听写 / Mouse5 AI 改写
+# VoiceRewrite — 纯客户端语音听写与文字改写（v19）
 
-Windows 11 x64 上的原生 Go 桌面应用，**一个 GUI 管理语音识别和文本模型**。不需要额外安装 Electron、WebView2、Python，也不需要为每个模型手工先开命令行服务。
+适用于 Windows 11 x64。**不包含模型、不下载模型，也不会启动、停止或配置任何模型推理服务。**
 
-**注意**：你仍需要提供自己的模型文件、兼容的 `llama-server.exe`（含 GPU/CPU 运行时）或者已经运行的 API 服务。本项目暂未集成模型下载器或 CUDA 推理引擎。
+VoiceRewrite 只向你填写的两个 OpenAI 兼容 API 发送请求：
 
-## 操作
+- **语音识别 ASR：** `POST /v1/audio/transcriptions`，收取音频转写文本。
+- **文本处理 LLM：** `POST /v1/chat/completions`，用于根据语音指令修改选区或回答问题。
 
-| 快捷键 | 做什么 |
+可以连接本机、局域网或远程服务，可以分别使用不同的提供方。模型运行环境由服务提供方负责；这里不做任何 `llama-server.exe`、GGUF、GPU、mmproj 或服务器进程管理。
+
+## 如何使用
+
+1. 运行 `VoiceRewrite-v19-Windows-x64.exe`。首次启动会自动打开「连接设置」；以后右键系统托盘图标选择「设置与连接检测」。
+2. **语音识别 API**：填入已在运行的 ASR API 地址（含 `/v1`）、模型 ID，必要时填 API Key。
+3. **文本处理 API**：填入已在运行的 LLM API 地址（含 `/v1`）、模型 ID，必要时填 API Key。两组设置在同一页，不用切换标签。
+4. 分别点「检测」，然后「保存并应用」。检测只检查 `/models` 是否可访问；部分 ASR 服务没有 `/models`，请用实际听写测试。
+5. 在记事本或微信输入框里**按住 Mouse4**，说话后松开，将识别内容插入光标位置；**选中文字并按住 Mouse5** 说“翻译成英文”“简化语句”等，会尝试替换选区；说“这是什么意思”则显示答案卡片。
+
+默认地址示例（**不是软件自动启动的服务器**）：
+
+| 项目 | 默认值 |
 | --- | --- |
-| 按住 Mouse4 | 对着麦克风说话，松开直接在当前光标输入识别文字 |
-| 选中文字，按住 Mouse5 | 说“润色/翻译/修改为……”等指令后优先替换当前选区 |
-| 选中文字，按住 Mouse5 提问 | 在附近出现解释/答案卡片 |
+| ASR API | `http://127.0.0.1:8080/v1` |
+| ASR 模型 ID | `whisper-1` |
+| LLM API | `http://127.0.0.1:1234/v1` |
+| LLM 模型 ID | `auto`，由 API 模型列表自动发现 |
 
-浮动状态条不会抢编辑器焦点。粘贴是 Win32 键盘模拟，不能保证所有应用都成功；窗口焦点变更时优先避免误写入其他应用。
+API 路径、模型 ID 和 Key 全部可修改。VoiceRewrite 不指定你必须使用什么模型或推理软件。ASR 接口可以返回 `{"text": "..."}`、JSON 字符串或 `text/plain`。对于 Qwen3-ASR 输出中的 `language Chinese<asr_text>` 等前缀，客户端会直接清理。
 
-## 第一次启动
+## 配置与隐私
 
-1. 打开 `VoiceRewrite-v17-Windows-x64.exe`，首次运行会自动弹出「模型与连接」。以后可右键托盘图标打开。
-2. 界面上方可选取一个 **`llama-server.exe` 路径**（两个托管模型共用；只用外部 API 就留空）。
-3. 在「语音识别 ASR」和「文本处理 LLM」两个标签页**分别**选择：
-   - **连接已有服务**：不选“由 VoiceRewrite 自动启动”。填写任意兼容 OpenAI API 的 `.../v1` 地址、模型 ID、必要的 API Key；可为本机、局域网或受信任的云端接口。模型文件不需要在此电脑上。
-   - **由 VoiceRewrite 启动**：勾选自动启动。浏览选择本机 ASR GGUF、音频 mmproj（模型需要时），以及 LLM GGUF。两个服务必须用**不同的本地端口**，例如 `8080` 和 `8082`。文本页勾选自动启动时，会自动把默认 `1234` 改为 `8082`。
-4. 点击「保存并应用」。托管的 llama-server 将在后台载入模型；等待载入后分别点「测试 ASR」「测试 LLM」。首次加载时间受硬件与模型大小影响。
-5. 在记事本等普通输入框里先测试 Mouse4，然后选中文字测试 Mouse5。
+设置保存于 `%APPDATA%\VoiceRewrite\config.json`（用户配置目录）。API Key 会存储在此文件内；**不要分享含有真实 Key 的配置文件**。软件只向用户指定的 API 地址发送音频/选中文本，不会自动连接其他模型服务。使用云端服务时应遵守对应服务商的隐私说明。高级配置中的快捷键和时间上限等可以通过「高级 JSON」修改。
 
-所有设置保存在 **`%APPDATA%\VoiceRewrite\config.json`**，无需把程序放在可写目录。UI 无法编辑的 GPU 层数、上下文大小等参数可以通过「高级参数 JSON」修改，重启程序后生效。
+本工具对目标编辑器使用剪贴板与键盘模拟。**已发送粘贴指令并不等于已经确认插入成功**；请在不同软件中实测，尤其是富文本编辑器、管理员程序和远程桌面。
 
-### 常见配置范例
+## 构建与测试
 
-**两个用户已有的 API（完全不启动模型进程）：**
+依赖 Go 1.23+，不需要 CGO、WebView2、Python 或运行时模型库：
 
-```json
-{
-  "asr_service_mode": "connect",
-  "asr_base_url": "http://192.168.1.50:9000/v1",
-  "asr_model": "my-speech-model",
-  "llm_service_mode": "connect",
-  "llm_base_url": "http://localhost:1234/v1",
-  "text_model": "my-text-model"
-}
+```shell
+go test ./...
+go test -race ./...
+go vet ./...
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .
 ```
 
-**两个 GGUF 都由 VoiceRewrite 启动：**
+Windows 真实桌面测试仍须单独进行。完整的手动验收项目见 `WINDOWS-RELEASE-CHECKLIST.md`。
 
-```json
-{
-  "asr_service_mode": "launch",
-  "llm_service_mode": "launch",
-  "llama_server_path": "D:\\llama\\llama-server.exe",
-  "asr_model_path": "D:\\models\\speech.gguf",
-  "asr_mmproj_path": "D:\\models\\speech-mmproj.gguf",
-  "llm_model_path": "D:\\models\\general-instruct.gguf",
-  "asr_base_url": "http://127.0.0.1:8080/v1",
-  "llm_base_url": "http://127.0.0.1:8082/v1",
-  "asr_model": "whisper-1",
-  "text_model": "auto"
-}
-```
-
-**混用也可以：**只把 ASR 或 LLM 之一设为 `launch`，另一个设为 `connect`，不受限制。路径可以为完整路径或相对 VoiceRewrite EXE 目录的路径。
-
-**格式限制：** 自启动功能只支持 `llama.cpp` 可以加载的 **GGUF**；ASR 模型还须由所用 `llama-server` 版本支持音频转写 API。单纯放入一个普通文本 GGUF 并不能让它识别音频。对于其他推理框架、API 或模型格式，请选择「连接已有服务」。例如 Qwen3-ASR 的某些 GGUF 需要与主模型匹配的 mmproj 音频投影文件。
-
-**网络安全：** 托管进程仅绑定 `127.0.0.1`。连接模式由用户指定 API 地址，远程地址意味着语音/文本会发到该服务。API Key 保存在当前用户的配置文件中，请注意本机文件权限；不用于任何其他目的。云服务使用者应核查提供方隐私协议。
-
-## 正确理解“单软件”
-
-只需打开 VoiceRewrite 这个桌面 GUI。勾选自启动后，GUI 会自动运行、管理并在退出时结束最多两个 `llama-server.exe` 子进程；**它们仍是后台进程**，只是无需手工管理。连接已有服务时 VoiceRewrite 不会启动或终止用户的服务。
-
-## 诊断和限制
-
-- 两个托管模型可能占用较多 GPU 显存，加载失败可改成较小 GGUF、调低 GPU layers，或只托管一个模型。
-- ASR 需要 `POST /v1/audio/transcriptions`，LLM 需要 `POST /v1/chat/completions`；探测连接成功不能保证模型兼容或跨应用粘贴成功。
-- 如果按钮测试显示错误，查看 `%LOCALAPPDATA%\VoiceRewrite\VoiceRewrite.log`；后台 `llama-server` 输出也写入此日志。
-- 密码输入框、提升为管理员的窗口、自定义输入法以及富文本编辑器可能拒绝或异常处理模拟粘贴。不要把跨应用粘贴认为已完全验证。
-- 此版未在真实 Windows 桌面执行完整 UI/微信/VS Code/Chrome 验收，测试与编译不等于用户端验收。
-- 正式对外开源发布前，还需添加由仓库所有者确认的开源 `LICENSE`、发布构建说明和真实桌面测试结果。
-
-开发：`go test ./... && go test -race ./... && go vet ./...`。Windows 编译：`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .`。
+**开源许可说明：** 仓库所有者尚需确认整个项目的正式 LICENSE。界面参考 Handy，相关说明见 `THIRD_PARTY_NOTICES.md`。

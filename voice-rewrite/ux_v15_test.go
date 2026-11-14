@@ -51,18 +51,18 @@ func TestParseASRResponseFormats(t *testing.T) {
 }
 func TestConfigValuesValidation(t *testing.T) {
 	cfg := defaults()
-	cfg2, e := uxUpdatedConfig(cfg, [4]string{" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "http://127.0.0.1:1234/v1", ""})
+	cfg2, e := uxUpdatedConfig(cfg, [6]string{" http://127.0.0.1:8081/v1/ ", " qwen3-asr ", "secret", "http://127.0.0.1:1234/v1", "", "llm-secret"})
 	if e != nil || cfg2.ASRModel != "qwen3-asr" || cfg2.TextModel != "auto" || cfg2.ASRBaseURL != "http://127.0.0.1:8081/v1" {
 		t.Fatalf("updated=%+v, error=%v", cfg2, e)
 	}
-	_, e = uxUpdatedConfig(cfg, [4]string{"ftp://user:pw@bad/v1", "m", "http://localhost:1234/v1", "auto"})
+	_, e = uxUpdatedConfig(cfg, [6]string{"ftp://user:pw@bad/v1", "m", "", "http://localhost:1234/v1", "auto", ""})
 	if e == nil {
 		t.Fatal("must reject unsupported API URL")
 	}
 }
 func TestNativeServiceProbe(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/health" || r.URL.Path == "/v1/models" {
+		if r.URL.Path == "/v1/models" {
 			w.WriteHeader(200)
 			return
 		}
