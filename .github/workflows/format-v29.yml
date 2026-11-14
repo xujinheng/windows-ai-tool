@@ -30,4 +30,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add voice-rewrite
           git commit -m "style: gofmt native Windows visual changes"
-          git push origin HEAD:main
+          # Never write a feature-branch format commit onto main.
+          git push origin HEAD:"${GITHUB_REF_NAME}"
