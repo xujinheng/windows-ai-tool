@@ -23,7 +23,11 @@ concurrency:
 
 jobs:
   render:
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # workflow_run runs on the default branch even when the originating UI job ran elsewhere.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -38,14 +42,16 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --disable-pip-version-check 'Pillow>=11,<13'
-          if ! command -v ffmpeg >/dev/null; then
-            sudo apt-get update -qq
-            sudo apt-get install -y ffmpeg
+          # Install only missing system prerequisites, with at most one apt update.
+          packages=()
+          if ! command -v ffmpeg >/dev/null; then packages+=(ffmpeg); fi
+          if ! test -f /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc; then
+            packages+=(fonts-noto-cjk)
           fi
-          # GitHub Ubuntu runners do not reliably include a Chinese font.
-          # Without this package every caption becomes a tofu rectangle.
-          sudo apt-get update -qq
-          sudo apt-get install -y fonts-noto-cjk
+          if ((${#packages[@]})); then
+            sudo apt-get update -qq
+            sudo apt-get install -y "${packages[@]}"
+          fi
           test -f /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc
           ffmpeg -hide_banner -version | head -1
       - name: Render walkthrough

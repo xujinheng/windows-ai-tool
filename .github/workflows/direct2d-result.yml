@@ -3,6 +3,8 @@ on:
   push:
     paths:
       - 'voice-rewrite/result_direct2d_windows.go'
+      - 'voice-rewrite/appearance_windows.go'
+      - 'voice-rewrite/visual_skin_windows.go'
       - 'voice-rewrite/popup_windows.go'
       - 'voice-rewrite/popup_dismiss_windows.go'
       - 'voice-rewrite/popup_layout.go'
@@ -13,6 +15,11 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+
+concurrency:
+  group: direct2d-ui-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows-ui:
     runs-on: windows-latest
@@ -22,12 +29,12 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
-      - name: Test production Go logic and compile integrated Windows UI
+          cache-dependency-path: voice-rewrite/go.mod
+      # Unit tests run in build.yml on every main push / PR; this job exercises the real UI.
+      - name: Compile integrated Windows UI
         shell: pwsh
         working-directory: voice-rewrite
         run: |
-          go test ./...
-          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
           go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
           if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
       - name: Exercise actual Direct2D/DirectWrite window and capture states
