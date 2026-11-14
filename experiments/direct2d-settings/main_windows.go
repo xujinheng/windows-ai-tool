@@ -582,6 +582,7 @@ func run() error {
 	}
 	s.hwnd = hwnd
 	active = s
+	s.updating = true // suppress native EN_CHANGE during control initialization
 	if err := s.initialize(); err != nil {
 		procDestroy.Call(hwnd)
 		return err
@@ -607,6 +608,7 @@ func run() error {
 		procSend.Call(s.combo, 0x0143, 0, uintptr(unsafe.Pointer(utf16("麦克风阵列（示例）"))))
 	}
 	s.resize()
+	s.updating = false
 	procShow.Call(hwnd, swShow)
 	user.NewProc("UpdateWindow").Call(hwnd)
 	for {
