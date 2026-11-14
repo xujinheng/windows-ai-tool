@@ -1,8 +1,19 @@
-# VoiceRewrite v16 — local ASR launcher preview
+# VoiceRewrite v17 (universal)
 
-Restored from the v16 Windows release archive provided by the repository owner.
+Windows 11 x64 native Go desktop voice dictation and AI rewrite tool.
 
-Go / Windows 11 x64 native voice dictation and selection rewrite with an optional managed local ASR server.
-See [voice-rewrite/README-V16.md](voice-rewrite/README-V16.md) and [voice-rewrite/README.md](voice-rewrite/README.md).
+This source snapshot was restored from the v17 user-provided Windows release archive.
 
-This historical source snapshot was not validated on a real Windows interactive desktop during GitHub recovery.
+Read [the detailed README](voice-rewrite/README.md) for usage, API configuration, privacy and limitations.
+
+## Development
+
+```powershell
+cd voice-rewrite
+go test ./...
+go vet ./...
+go build -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .
+```
+
+This version has not been validated in a real interactive Windows desktop environment as part of this recovery.
+There is no project-wide LICENSE file: add a user-approved license before advertising redistribution terms.

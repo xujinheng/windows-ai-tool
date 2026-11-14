@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-14-public-beta-v16"
+const buildID = "2026-11-14-universal-models-v17"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -167,6 +167,7 @@ type appState struct {
 	status atomic.Int32
 	trayMu sync.Mutex
 	tray   *trayIndicator
+	models *serviceManager
 	popups chan popupMessage
 }
 
@@ -363,8 +364,11 @@ func runApp() {
 		return
 	}
 	app.tray = indicator
-	stopASR := startManagedASR(app.cfg, l)
-	defer stopASR()
+	app.models = newServiceManager(l)
+	defer app.models.Close()
+	for role, launchErr := range app.models.Apply(app.cfg) {
+		l.Printf("%s model startup: %v", role, launchErr)
+	}
 	defer func() {
 		app.trayMu.Lock()
 		indicator.close()

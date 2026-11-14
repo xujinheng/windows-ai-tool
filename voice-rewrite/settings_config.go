@@ -40,6 +40,9 @@ func uxUpdatedConfig(old Config, values [4]string) (Config, error) {
 }
 
 func uxProbe(ctx context.Context, kind, base string) string {
+	return uxProbeWithKey(ctx, kind, base, "")
+}
+func uxProbeWithKey(ctx context.Context, kind, base, apiKey string) string {
 	if !uxValidURL(base) {
 		return kind + "：服务地址无效"
 	}
@@ -57,6 +60,9 @@ func uxProbe(ctx context.Context, kind, base string) string {
 	req, err := http.NewRequestWithContext(ctx, "GET", u.String(), nil)
 	if err != nil {
 		return kind + "：检测请求无效"
+	}
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 	res, err := requestClient(4 * time.Second).Do(req)
 	if err != nil {

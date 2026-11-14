@@ -38,12 +38,16 @@ type Config struct {
 	MaxSelectedRunes       int    `json:"max_selected_characters"`
 	SelectionCopyAttempts  int    `json:"selection_copy_attempts"`
 	SelectionCopyTimeoutMS int    `json:"selection_copy_timeout_ms"`
-	AutoStartASR           bool   `json:"auto_start_asr"`
+	ASRServiceMode         string `json:"asr_service_mode"`
+	LLMServiceMode         string `json:"llm_service_mode"`
 	LLAMAServerPath        string `json:"llama_server_path,omitempty"`
 	ASRModelPath           string `json:"asr_model_path,omitempty"`
+	LLMModelPath           string `json:"llm_model_path,omitempty"`
 	ASRMMProjPath          string `json:"asr_mmproj_path,omitempty"`
 	ASRGPULayers           int    `json:"asr_gpu_layers"`
 	ASRContextSize         int    `json:"asr_context_size"`
+	LLMGPULayers           int    `json:"llm_gpu_layers"`
+	LLMContextSize         int    `json:"llm_context_size"`
 }
 
 func defaults() Config {
@@ -59,9 +63,12 @@ func defaults() Config {
 		MaxRecordSeconds:       60,
 		MaxSelectedRunes:       12000,
 		MaxResponseTokens:      1200,
-		AutoStartASR:           true,
+		ASRServiceMode:         serviceConnect,
+		LLMServiceMode:         serviceConnect,
 		ASRGPULayers:           99,
 		ASRContextSize:         8192,
+		LLMGPULayers:           99,
+		LLMContextSize:         8192,
 		SelectionCopyAttempts:  2,
 		SelectionCopyTimeoutMS: 750,
 	}
@@ -81,22 +88,24 @@ func mouseSideButton(s string) (uint16, bool) {
 }
 
 func configPath() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return "config.json"
+	base, err := os.UserConfigDir()
+	if err != nil || base == "" {
+		return filepath.Join(asrExecRoot(), "config.json")
 	}
-	return filepath.Join(filepath.Dir(exe), "config.json")
+	return filepath.Join(base, "VoiceRewrite", "config.json")
 }
 
 func loadConfig() (Config, error) {
 	p := configPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0700); err != nil {
+		return defaults(), fmt.Errorf("无法创建用户配置目录：%w", err)
+	}
 	cfg := defaults()
 	data, err := os.ReadFile(p)
 	if errors.Is(err, os.ErrNotExist) {
 		blob, _ := json.MarshalIndent(cfg, "", "  ")
 		if e := os.WriteFile(p, append(blob, '\n'), 0600); e != nil {
-			// The application still works without being able to save config beside exe.
-			fmt.Fprintf(os.Stderr, "config file cannot be created: %v\n", e)
+			return cfg, fmt.Errorf("无法创建配置文件：%w", e)
 		}
 		return cfg, nil
 	}
@@ -106,19 +115,26 @@ func loadConfig() (Config, error) {
 	if err = json.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("配置文件 JSON 错误: %w", err)
 	}
-	// The 8081 OneClick proxy has been retired. This was the old default;
-	// switch it to the direct llama-server port, including existing local configs.
-	if cfg.ASRBaseURL == "http://127.0.0.1:8081/v1" {
-		cfg.ASRBaseURL = defaults().ASRBaseURL
-		if updated, e := json.MarshalIndent(cfg, "", "  "); e == nil {
-			_ = os.WriteFile(p, append(updated, '\n'), 0600)
-		}
-	}
-	if cfg.ASRContextSize < 1024 || cfg.ASRContextSize > 131072 {
+	if cfg.ASRContextSize < 256 || cfg.ASRContextSize > 262144 {
 		cfg.ASRContextSize = 8192
+	}
+	if cfg.LLMContextSize < 256 || cfg.LLMContextSize > 262144 {
+		cfg.LLMContextSize = 8192
+	}
+	if cfg.LLMGPULayers < 0 || cfg.LLMGPULayers > 1000 {
+		cfg.LLMGPULayers = 99
 	}
 	if cfg.ASRGPULayers < 0 || cfg.ASRGPULayers > 1000 {
 		cfg.ASRGPULayers = 99
+	}
+	if cfg.ASRServiceMode == "" {
+		cfg.ASRServiceMode = serviceConnect
+	}
+	if cfg.LLMServiceMode == "" {
+		cfg.LLMServiceMode = serviceConnect
+	}
+	if err := validateServiceModes(cfg); err != nil {
+		return cfg, err
 	}
 	if cfg.ASRModel == "" {
 		cfg.ASRModel = "whisper-1"
