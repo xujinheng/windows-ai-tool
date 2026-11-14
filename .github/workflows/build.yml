@@ -19,8 +19,8 @@ jobs:
         run: go test ./...
       - name: Vet
         working-directory: voice-rewrite
-        # Windows callbacks and GlobalLock return native pointers as uintptr.
-        # These are intentional Win32 FFI conversions; keep every other vet check.
+        # Win32 callbacks pass OS-owned memory addresses as uintptr.
+        # Retain other go vet checks without suppressing warnings globally.
         run: go vet -unsafeptr=false ./...
       - name: Build x64 GUI
         working-directory: voice-rewrite
@@ -35,3 +35,49 @@ jobs:
         with:
           name: VoiceRewrite-windows-x64
           path: voice-rewrite/VoiceRewrite.exe
+  build-oneclick:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Test OneClick
+        working-directory: oneclick
+        run: go test ./...
+      - name: Vet OneClick
+        working-directory: oneclick
+        run: go vet ./...
+      - name: Build Qwen3-ASR OneClick Windows x64 EXE
+        working-directory: oneclick
+        shell: pwsh
+        run: go build -trimpath -ldflags '-s -w' -o Qwen3-ASR-OneClick-Windows-x64.exe .
+      - name: Upload Qwen3-ASR OneClick executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: Qwen3-ASR-OneClick-Windows-x64
+          path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
+          if-no-files-found: error
+  publish-oneclick:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build-oneclick
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Qwen3-ASR-OneClick-Windows-x64
+          path: dist
+      - name: Commit restored EXE to GitHub repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dist/Qwen3-ASR-OneClick-Windows-x64.exe
+          if ! git diff --cached --quiet; then
+            git commit -m "Publish restored Qwen3-ASR OneClick Windows x64 executable"
+            git push origin HEAD:main
+          fi
