@@ -1,0 +1,27 @@
+name: Format Raycast-style settings PR
+on:
+  push:
+    branches: ['design/raycast-linear-settings-navigation']
+    paths:
+      - '.github/workflows/format-raycast-settings.yml'
+permissions:
+  contents: write
+jobs:
+  gofmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Format settings UI and tests on this feature branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          gofmt -w voice-rewrite/settings_windows.go voice-rewrite/settings_direct2d_windows.go voice-rewrite/settings_layout.go voice-rewrite/settings_layout_test.go
+          if git diff --quiet -- voice-rewrite; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add voice-rewrite/settings_windows.go voice-rewrite/settings_direct2d_windows.go voice-rewrite/settings_layout.go voice-rewrite/settings_layout_test.go
+          git commit -m "style(settings): format native sidebar and pages"
+          git push origin HEAD:design/raycast-linear-settings-navigation
