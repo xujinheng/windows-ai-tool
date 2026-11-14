@@ -14,6 +14,26 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # One-time cleanup of v0.1.0. Remove after the asset has been deleted.
+  prune-v0_1_0-oneclick:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[prune-oneclick-v0.1.0]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Remove OneClick EXE from published v0.1.0 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset_id=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.1.0" --jq '.assets[] | select(.name == "Qwen3-ASR-OneClick-Windows-x64.exe") | .id')
+          if [ -n "$asset_id" ]; then
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id"
+          fi
+          remaining=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/v0.1.0" --jq '.assets[] | select(.name == "Qwen3-ASR-OneClick-Windows-x64.exe") | .name')
+          test -z "$remaining"
   test-core:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -180,10 +200,6 @@ jobs:
           pattern: VoiceRewrite-*
           path: release
           merge-multiple: true
-      - uses: actions/download-artifact@v4
-        with:
-          name: Qwen3-ASR-OneClick-Windows-x64
-          path: release
       - name: Publish unsigned release
         uses: softprops/action-gh-release@v2
         with:
