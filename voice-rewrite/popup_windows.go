@@ -315,23 +315,23 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				sc := func(v int32) int32 { return int32(float64(v)*activeAnswer.scale + 0.5) }
 				// Calm, single-layer reading surface: only navigation and actions
 				// get emphasis, leaving the answer itself visually dominant.
-				uiRoundSurface(hdc,rect32{sc(22),sc(152),rc.Right-sc(22),rc.Bottom-sc(72)},
-					sc(16),palette.color(palette.surface),palette.color(palette.surface))
-				uiRoundSurface(hdc,rect32{sc(28),sc(24),sc(58),sc(54)},sc(10),
-					palette.color(palette.primary),palette.color(palette.primary))
-				procSetBkMode.Call(hdc,TRANSPARENT)
-				procSetTextColor.Call(hdc,palette.color(palette.primaryText))
-				if len(activeAnswer.fonts)>2 {
-					old,_,_:=procSelectObject.Call(hdc,activeAnswer.fonts[2])
-					glyph:=uxPtr("V")
-					glyphRect:=rect32{sc(28),sc(24),sc(58),sc(54)}
-					procDrawText.Call(hdc,uintptr(unsafe.Pointer(glyph)),^uintptr(0),uintptr(unsafe.Pointer(&glyphRect)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
-					procSelectObject.Call(hdc,old)
+				uiRoundSurface(hdc, rect32{sc(22), sc(152), rc.Right - sc(22), rc.Bottom - sc(72)},
+					sc(16), palette.color(palette.surface), palette.color(palette.surface))
+				uiRoundSurface(hdc, rect32{sc(28), sc(24), sc(58), sc(54)}, sc(10),
+					palette.color(palette.primary), palette.color(palette.primary))
+				procSetBkMode.Call(hdc, TRANSPARENT)
+				procSetTextColor.Call(hdc, palette.color(palette.primaryText))
+				if len(activeAnswer.fonts) > 2 {
+					old, _, _ := procSelectObject.Call(hdc, activeAnswer.fonts[2])
+					glyph := uxPtr("V")
+					glyphRect := rect32{sc(28), sc(24), sc(58), sc(54)}
+					procDrawText.Call(hdc, uintptr(unsafe.Pointer(glyph)), ^uintptr(0), uintptr(unsafe.Pointer(&glyphRect)), DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+					procSelectObject.Call(hdc, old)
 				}
-				lineBrush,_,_:=procCreateSolidBrush.Call(palette.color(palette.border))
-				if lineBrush!=0 {
-					line:=rect32{sc(24),rc.Bottom-sc(66),rc.Right-sc(24),rc.Bottom-sc(65)}
-					procFillRect.Call(hdc,uintptr(unsafe.Pointer(&line)),lineBrush)
+				lineBrush, _, _ := procCreateSolidBrush.Call(palette.color(palette.border))
+				if lineBrush != 0 {
+					line := rect32{sc(24), rc.Bottom - sc(66), rc.Right - sc(24), rc.Bottom - sc(65)}
+					procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), lineBrush)
 					procDeleteObject.Call(lineBrush)
 				}
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))

@@ -49,10 +49,10 @@ const (
 	uxProbeLLMButton  = 9105
 	uxShortcutInput   = 9106
 	uxMicrophoneInput = 9107
-	uxTabSpeech = 9120
-	uxTabWriting = 9121
-	uxTabInput = 9122
-	uxRoleOther = iota + 100
+	uxTabSpeech       = 9120
+	uxTabWriting      = 9121
+	uxTabInput        = 9122
+	uxRoleOther       = iota + 100
 	uxRolePageTitle
 	uxRolePageDescription
 	uxRoleLabel
@@ -75,18 +75,18 @@ const (
 )
 
 var (
-	uxGetWindowText  = user32.NewProc("GetWindowTextW")
-	uxSetTextColor   = gdi32.NewProc("SetTextColor")
-	uxSelectObject   = gdi32.NewProc("SelectObject")
-	uxRoundRect      = gdi32.NewProc("RoundRect")
-	uxGetStockObject = gdi32.NewProc("GetStockObject")
-	uxSetBkMode      = gdi32.NewProc("SetBkMode")
-	uxWindowCallback = syscall.NewCallback(uxSettingsWndProc)
+	uxGetWindowText     = user32.NewProc("GetWindowTextW")
+	uxSetTextColor      = gdi32.NewProc("SetTextColor")
+	uxSelectObject      = gdi32.NewProc("SelectObject")
+	uxRoundRect         = gdi32.NewProc("RoundRect")
+	uxGetStockObject    = gdi32.NewProc("GetStockObject")
+	uxSetBkMode         = gdi32.NewProc("SetBkMode")
+	uxWindowCallback    = syscall.NewCallback(uxSettingsWndProc)
 	procShowScrollBarUX = user32.NewProc("ShowScrollBar")
-	procSaveDCPrefs = gdi32.NewProc("SaveDC")
-	procRestoreDCPrefs = gdi32.NewProc("RestoreDC")
-	procClipPrefs = gdi32.NewProc("IntersectClipRect")
-	uxActiveSettings *uxSettings
+	procSaveDCPrefs     = gdi32.NewProc("SaveDC")
+	procRestoreDCPrefs  = gdi32.NewProc("RestoreDC")
+	procClipPrefs       = gdi32.NewProc("IntersectClipRect")
+	uxActiveSettings    *uxSettings
 )
 
 type uxSettings struct {
@@ -153,6 +153,7 @@ func uxScrollClamp(n, limit int32) int32 {
 	}
 	return n
 }
+
 // preferenceRect keeps a compact, macOS-inspired preferences toolbar while
 // moving labels above fields on narrow/high-DPI windows. The form is one
 // page at a time; no control is placed outside the usable horizontal viewport.
@@ -162,13 +163,19 @@ func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32)
 	compact := viewH < 460
 	if c.id >= uxTabSpeech && c.id <= uxTabInput {
 		width := (viewW - 64 - 16) / 3
-		if width < 90 { width = 90 }
+		if width < 90 {
+			width = 90
+		}
 		x = 32 + (int32(c.id-uxTabSpeech))*(width+8)
-		if compact { return x, 66, width, 38 }
+		if compact {
+			return x, 66, width, 38
+		}
 		return x, 115, width, 40
 	}
-	footerY := viewH-64
-	if compact { footerY=viewH-54 }
+	footerY := viewH - 64
+	if compact {
+		footerY = viewH - 54
+	}
 	if c.id == uxSaveButton {
 		return viewW - 188, footerY, 156, 36
 	}
@@ -179,35 +186,53 @@ func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32)
 		return 32, footerY, 130, 36
 	}
 	if c.tab < 0 {
-		if c.y >= 600 { return 34, viewH - 22, viewW - 68, 18 }
-		if compact && c.y < 100 {
-			if c.x==78 {y=13}
-			if c.x==80 {y=51}
+		if c.y >= 600 {
+			return 34, viewH - 22, viewW - 68, 18
 		}
-		if c.x >= 510 { return viewW - 220, y, 184, h }
-		if c.x == 80 || c.x == 78 { w = viewW - x - 38 }
+		if compact && c.y < 100 {
+			if c.x == 78 {
+				y = 13
+			}
+			if c.x == 80 {
+				y = 51
+			}
+		}
+		if c.x >= 510 {
+			return viewW - 220, y, 184, h
+		}
+		if c.x == 80 || c.x == 78 {
+			w = viewW - x - 38
+		}
 		return
 	}
 	switch c.role {
 	case uxRolePageTitle:
-		x, y, w = 46, 186, viewW - 92
-		if compact {x,y,w=42,115,viewW-84}
+		x, y, w = 46, 186, viewW-92
+		if compact {
+			x, y, w = 42, 115, viewW-84
+		}
 	case uxRolePageDescription:
-		x, y, w = 46, 222, viewW - 92
-		if compact {x,y,w=42,152,viewW-84}
+		x, y, w = 46, 222, viewW-92
+		if compact {
+			x, y, w = 42, 152, viewW-84
+		}
 	case uxRoleLabel:
 		if narrow {
-			x, y, w = 42, 270+int32(c.row)*88, viewW - 84
+			x, y, w = 42, 270+int32(c.row)*88, viewW-84
 		} else {
 			x, y, w = 48, 297+int32(c.row)*68, 98
 		}
 	case uxRoleField:
 		if narrow {
 			x, y, w, h = 42, 294+int32(c.row)*88, viewW-84, 35
-			if c.row == 0 && c.tab != 2 { w -= 110 }
+			if c.row == 0 && c.tab != 2 {
+				w -= 110
+			}
 		} else {
 			x, y, w, h = 164, 287+int32(c.row)*68, viewW-200, 38
-			if c.row == 0 && c.tab != 2 { w -= 116 }
+			if c.row == 0 && c.tab != 2 {
+				w -= 116
+			}
 		}
 	case uxRoleProbe:
 		if narrow {
@@ -217,7 +242,9 @@ func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32)
 		}
 	case uxRoleStatus:
 		x, y, w = 48, 502, viewW-96
-		if narrow { x,y,w = 42, 562, viewW-84 }
+		if narrow {
+			x, y, w = 42, 562, viewW-84
+		}
 	}
 	if compact {
 		switch c.role {
@@ -225,75 +252,129 @@ func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32)
 			x, y, w = 42, 197+int32(c.row)*82, viewW-84
 		case uxRoleField:
 			x, y, w, h = 42, 222+int32(c.row)*82, viewW-84, 35
-			if c.row==0 && c.tab!=2 {w-=110}
+			if c.row == 0 && c.tab != 2 {
+				w -= 110
+			}
 		case uxRoleProbe:
-			x,y,w,h=viewW-144,222,102,35
+			x, y, w, h = viewW-144, 222, 102, 35
 		case uxRoleStatus:
-			x,y,w=42,476,viewW-84
+			x, y, w = 42, 476, viewW-84
 		}
 	}
-	if c.role != uxRolePageTitle && c.role != uxRolePageDescription { y-=scrollY }
-	if c.inset {x+=6;y+=2;w-=12;h-=4}
+	if c.role != uxRolePageTitle && c.role != uxRolePageDescription {
+		y -= scrollY
+	}
+	if c.inset {
+		x += 6
+		y += 2
+		w -= 12
+		h -= 4
+	}
 	return
 }
 func (p *uxSettings) layout() {
-	if p == nil || p.window == 0 { return }
+	if p == nil || p.window == 0 {
+		return
+	}
 	var r rect32
 	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&r)))
-	viewW := int32(float64(r.Right-r.Left)/p.scale)
-	viewH := int32(float64(r.Bottom-r.Top)/p.scale)
-	if viewW < 1 { viewW=1 }
-	if viewH < 1 { viewH=1 }
-	compact := viewH<460
+	viewW := int32(float64(r.Right-r.Left) / p.scale)
+	viewH := int32(float64(r.Bottom-r.Top) / p.scale)
+	if viewW < 1 {
+		viewW = 1
+	}
+	if viewH < 1 {
+		viewH = 1
+	}
+	compact := viewH < 460
 	footerTop := viewH - 82
 	bottom := int32(550)
 	bodyTop := int32(176)
-	if viewW < 640 { bottom=604 }
-	if compact { footerTop=viewH-66;bottom=514;bodyTop=179 }
-	maxScroll := bottom-footerTop
-	if maxScroll < 0 { maxScroll=0 }
-	p.scrollX=0
-	p.scrollY=uxScrollClamp(p.scrollY,maxScroll)
+	if viewW < 640 {
+		bottom = 604
+	}
+	if compact {
+		footerTop = viewH - 66
+		bottom = 514
+		bodyTop = 179
+	}
+	maxScroll := bottom - footerTop
+	if maxScroll < 0 {
+		maxScroll = 0
+	}
+	p.scrollX = 0
+	p.scrollY = uxScrollClamp(p.scrollY, maxScroll)
 	// Hide the native scrollbar on normal monitors; use it as an explicit
 	// accessibility fallback on vertically constrained high-DPI work areas.
 	if maxScroll > 0 {
-		info := uxScrollInfo{Size:uint32(unsafe.Sizeof(uxScrollInfo{})),Mask:uxSIFRange|uxSIFPage|uxSIFPos,
-			Min:0,Max:bottom-bodyTop,Page:uint32(footerTop-bodyTop),Pos:p.scrollY}
-		if footerTop<=bodyTop { info.Page=1 }
-		procSetScrollInfoUX.Call(p.window,uxSBVert,uintptr(unsafe.Pointer(&info)),1)
-	}
-	if maxScroll>0 {procShowScrollBarUX.Call(p.window,uxSBVert,1)} else {procShowScrollBarUX.Call(p.window,uxSBVert,0)}
-	px := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale+0.5)) }
-	for _, c := range p.controls {
-		x,y,w,h:=preferenceRect(c,viewW,viewH,p.scrollY)
-		if w<1 {w=1}
-		if h<1 {h=1}
-		procMoveWindow.Call(c.hwnd,px(x),px(y),px(w),px(h),1)
-		visible := c.tab<0 || c.tab==p.activeTab
-		if c.tab>=0 {
-			if c.role!=uxRolePageTitle && c.role!=uxRolePageDescription && (y<bodyTop || y+h>footerTop) {visible=false}
+		info := uxScrollInfo{Size: uint32(unsafe.Sizeof(uxScrollInfo{})), Mask: uxSIFRange | uxSIFPage | uxSIFPos,
+			Min: 0, Max: bottom - bodyTop, Page: uint32(footerTop - bodyTop), Pos: p.scrollY}
+		if footerTop <= bodyTop {
+			info.Page = 1
 		}
-		if compact && c.tab<0 && (c.y==65 || c.x>=510 || c.y>=600) {visible=false}
-		if visible { procShowWindow.Call(c.hwnd,SW_SHOW) } else {procShowWindow.Call(c.hwnd,0)}
+		procSetScrollInfoUX.Call(p.window, uxSBVert, uintptr(unsafe.Pointer(&info)), 1)
 	}
-	procInvalidateRectSettings.Call(p.window,0,1)
+	if maxScroll > 0 {
+		procShowScrollBarUX.Call(p.window, uxSBVert, 1)
+	} else {
+		procShowScrollBarUX.Call(p.window, uxSBVert, 0)
+	}
+	px := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
+	for _, c := range p.controls {
+		x, y, w, h := preferenceRect(c, viewW, viewH, p.scrollY)
+		if w < 1 {
+			w = 1
+		}
+		if h < 1 {
+			h = 1
+		}
+		procMoveWindow.Call(c.hwnd, px(x), px(y), px(w), px(h), 1)
+		visible := c.tab < 0 || c.tab == p.activeTab
+		if c.tab >= 0 {
+			if c.role != uxRolePageTitle && c.role != uxRolePageDescription && (y < bodyTop || y+h > footerTop) {
+				visible = false
+			}
+		}
+		if compact && c.tab < 0 && (c.y == 65 || c.x >= 510 || c.y >= 600) {
+			visible = false
+		}
+		if visible {
+			procShowWindow.Call(c.hwnd, SW_SHOW)
+		} else {
+			procShowWindow.Call(c.hwnd, 0)
+		}
+	}
+	procInvalidateRectSettings.Call(p.window, 0, 1)
 }
 func (p *uxSettings) scroll(axis, request uintptr) {
 	var rect rect32
 	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&rect)))
-	viewW := int32(float64(rect.Right-rect.Left)/p.scale)
-	viewH := int32(float64(rect.Bottom-rect.Top)/p.scale)
+	viewW := int32(float64(rect.Right-rect.Left) / p.scale)
+	viewH := int32(float64(rect.Bottom-rect.Top) / p.scale)
 	bottom := int32(550)
-	if viewW<640 {bottom=604}
-	footerTop:=viewH-82
-	if viewH<460 {bottom=514;footerTop=viewH-66}
-	max := bottom-footerTop
-	if max<0 {max=0}
-	view := viewH-258
-	if viewH<460 {view=viewH-245}
-	if view<36 {view=36}
+	if viewW < 640 {
+		bottom = 604
+	}
+	footerTop := viewH - 82
+	if viewH < 460 {
+		bottom = 514
+		footerTop = viewH - 66
+	}
+	max := bottom - footerTop
+	if max < 0 {
+		max = 0
+	}
+	view := viewH - 258
+	if viewH < 460 {
+		view = viewH - 245
+	}
+	if view < 36 {
+		view = 36
+	}
 	pos := &p.scrollY
-	if axis == uxSBHorz { return }
+	if axis == uxSBHorz {
+		return
+	}
 	var delta int32
 	switch request & 0xffff {
 	case 0:
@@ -470,45 +551,58 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				sc := func(v int32) int32 { return int32(float64(v)*p.scale + 0.5) }
 				var rc rect32
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
-				viewW:=int32(float64(rc.Right)/p.scale)
-				viewH:=int32(float64(rc.Bottom)/p.scale)
-				compact:=viewH<460
-				footerTop:=viewH-82
-				bodyTop:=int32(176)
-				cardTop:=int32(265)
-				cardBottom:=int32(548)
-				if viewW<640 {cardBottom=604}
-				if compact {footerTop=viewH-66;bodyTop=179;cardTop=186;cardBottom=515}
-				// The content surface scrolls under stable navigation and action bars.
-				saved,_,_:=procSaveDCPrefs.Call(hdc)
-				procClipPrefs.Call(hdc,0,uintptr(sc(bodyTop)),uintptr(rc.Right),uintptr(sc(footerTop)))
-				uiRoundSurface(hdc,rect32{sc(26),sc(cardTop-p.scrollY),rc.Right-sc(26),sc(cardBottom-p.scrollY)},
-					sc(18),p.palette.color(p.palette.surface),p.palette.color(p.palette.border))
-				contentW:=viewW
-				for _, field:=range p.fieldFrames {
-					if field.tab != p.activeTab {continue}
-					x,y,w,h:=preferenceRect(field,contentW,viewH,p.scrollY)
-					uiRoundSurface(hdc,rect32{sc(x),sc(y),sc(x+w),sc(y+h)},sc(10),
-						p.palette.color(p.palette.field),p.palette.color(p.palette.border))
+				viewW := int32(float64(rc.Right) / p.scale)
+				viewH := int32(float64(rc.Bottom) / p.scale)
+				compact := viewH < 460
+				footerTop := viewH - 82
+				bodyTop := int32(176)
+				cardTop := int32(265)
+				cardBottom := int32(548)
+				if viewW < 640 {
+					cardBottom = 604
 				}
-				if saved!=0 {procRestoreDCPrefs.Call(hdc,saved)}
+				if compact {
+					footerTop = viewH - 66
+					bodyTop = 179
+					cardTop = 186
+					cardBottom = 515
+				}
+				// The content surface scrolls under stable navigation and action bars.
+				saved, _, _ := procSaveDCPrefs.Call(hdc)
+				procClipPrefs.Call(hdc, 0, uintptr(sc(bodyTop)), uintptr(rc.Right), uintptr(sc(footerTop)))
+				uiRoundSurface(hdc, rect32{sc(26), sc(cardTop - p.scrollY), rc.Right - sc(26), sc(cardBottom - p.scrollY)},
+					sc(18), p.palette.color(p.palette.surface), p.palette.color(p.palette.border))
+				contentW := viewW
+				for _, field := range p.fieldFrames {
+					if field.tab != p.activeTab {
+						continue
+					}
+					x, y, w, h := preferenceRect(field, contentW, viewH, p.scrollY)
+					uiRoundSurface(hdc, rect32{sc(x), sc(y), sc(x + w), sc(y + h)}, sc(10),
+						p.palette.color(p.palette.field), p.palette.color(p.palette.border))
+				}
+				if saved != 0 {
+					procRestoreDCPrefs.Call(hdc, saved)
+				}
 				// One restrained accent mark anchors the brand; avoid decorating every group.
-				brandY:=int32(30)
-				if compact {brandY=13}
-				uiRoundSurface(hdc,rect32{sc(32),sc(brandY),sc(66),sc(brandY+34)},sc(11),
-					p.palette.color(p.palette.primary),p.palette.color(p.palette.primary))
-				uxSetBkMode.Call(hdc,TRANSPARENT)
-				uxSetTextColor.Call(hdc,p.palette.color(p.palette.primaryText))
-				oldFont,_,_:=uxSelectObject.Call(hdc,p.sectionFont)
-				monogram:=uxPtr("V")
-				brandRect:=rect32{sc(32),sc(brandY),sc(66),sc(brandY+34)}
-				procDrawText.Call(hdc,uintptr(unsafe.Pointer(monogram)),^uintptr(0),uintptr(unsafe.Pointer(&brandRect)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
-				uxSelectObject.Call(hdc,oldFont)
+				brandY := int32(30)
+				if compact {
+					brandY = 13
+				}
+				uiRoundSurface(hdc, rect32{sc(32), sc(brandY), sc(66), sc(brandY + 34)}, sc(11),
+					p.palette.color(p.palette.primary), p.palette.color(p.palette.primary))
+				uxSetBkMode.Call(hdc, TRANSPARENT)
+				uxSetTextColor.Call(hdc, p.palette.color(p.palette.primaryText))
+				oldFont, _, _ := uxSelectObject.Call(hdc, p.sectionFont)
+				monogram := uxPtr("V")
+				brandRect := rect32{sc(32), sc(brandY), sc(66), sc(brandY + 34)}
+				procDrawText.Call(hdc, uintptr(unsafe.Pointer(monogram)), ^uintptr(0), uintptr(unsafe.Pointer(&brandRect)), DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+				uxSelectObject.Call(hdc, oldFont)
 				// Hairline above stable footer: quiet, native macOS preferences rhythm.
-				lineBrush,_,_:=procCreateSolidBrush.Call(p.palette.color(p.palette.border))
-				if lineBrush!=0 {
-					line:=rect32{0,sc(footerTop),rc.Right,sc(footerTop+1)}
-					procFillRect.Call(hdc,uintptr(unsafe.Pointer(&line)),lineBrush)
+				lineBrush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.border))
+				if lineBrush != 0 {
+					line := rect32{0, sc(footerTop), rc.Right, sc(footerTop + 1)}
+					procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), lineBrush)
 					procDeleteObject.Call(lineBrush)
 				}
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
@@ -518,19 +612,23 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMDrawItem:
 		if p != nil && p.window == hwnd && lParam != 0 {
 			item := (*drawItemStruct)(unsafe.Pointer(lParam))
-			if item.CtlID>=uxTabSpeech && item.CtlID<=uxTabInput {
-				labels:=[3]string{"语音输入","AI 写作","快捷键"}
-				selected:=int(item.CtlID-uxTabSpeech)==p.activeTab
-				fill,border,ink:=p.palette.background,p.palette.background,p.palette.muted
-				if selected {fill,border,ink=p.palette.surface,p.palette.border,p.palette.text}
-				if item.ItemState&ODS_SELECTED!=0 {fill=p.palette.secondaryPressed}
-				uiRoundSurface(item.Hdc,item.Rect,13,p.palette.color(fill),p.palette.color(border))
-				uxSetBkMode.Call(item.Hdc,TRANSPARENT)
-				uxSetTextColor.Call(item.Hdc,p.palette.color(ink))
-				old,_,_:=uxSelectObject.Call(item.Hdc,p.font)
-				ptr:=uxPtr(labels[int(item.CtlID-uxTabSpeech)])
-				procDrawText.Call(item.Hdc,uintptr(unsafe.Pointer(ptr)),^uintptr(0),uintptr(unsafe.Pointer(&item.Rect)),DT_CENTER|DT_VCENTER|DT_SINGLELINE)
-				uxSelectObject.Call(item.Hdc,old)
+			if item.CtlID >= uxTabSpeech && item.CtlID <= uxTabInput {
+				labels := [3]string{"语音输入", "AI 写作", "快捷键"}
+				selected := int(item.CtlID-uxTabSpeech) == p.activeTab
+				fill, border, ink := p.palette.background, p.palette.background, p.palette.muted
+				if selected {
+					fill, border, ink = p.palette.surface, p.palette.border, p.palette.text
+				}
+				if item.ItemState&ODS_SELECTED != 0 {
+					fill = p.palette.secondaryPressed
+				}
+				uiRoundSurface(item.Hdc, item.Rect, 13, p.palette.color(fill), p.palette.color(border))
+				uxSetBkMode.Call(item.Hdc, TRANSPARENT)
+				uxSetTextColor.Call(item.Hdc, p.palette.color(ink))
+				old, _, _ := uxSelectObject.Call(item.Hdc, p.font)
+				ptr := uxPtr(labels[int(item.CtlID-uxTabSpeech)])
+				procDrawText.Call(item.Hdc, uintptr(unsafe.Pointer(ptr)), ^uintptr(0), uintptr(unsafe.Pointer(&item.Rect)), DT_CENTER|DT_VCENTER|DT_SINGLELINE)
+				uxSelectObject.Call(item.Hdc, old)
 				return 1
 			}
 			label := ""
@@ -596,9 +694,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 			}
 			switch wParam & 0xffff {
-			case uxTabSpeech,uxTabWriting,uxTabInput:
-				p.activeTab=int((wParam & 0xffff)-uxTabSpeech)
-				p.scrollY=0
+			case uxTabSpeech, uxTabWriting, uxTabInput:
+				p.activeTab = int((wParam & 0xffff) - uxTabSpeech)
+				p.scrollY = 0
 				p.layout()
 				return 0
 			case uxSaveButton:
@@ -764,10 +862,12 @@ func showNativeSettings(app *appState) error {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
 	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool), palette: systemPalette()}
-	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW")!="" {
+	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") != "" {
 		switch os.Getenv("VOICEREWRITE_VISUAL_TAB") {
-		case "1":p.activeTab=1
-		case "2":p.activeTab=2
+		case "1":
+			p.activeTab = 1
+		case "2":
+			p.activeTab = 2
 		}
 	}
 	uxActiveSettings = p
@@ -783,93 +883,111 @@ func showNativeSettings(app *appState) error {
 	// Three independent preferences pages avoid the former 700px wall of
 	// server fields. All controls remain real HWNDs and retain their values
 	// while their page is hidden.
-	tabGroup:=-1
+	tabGroup := -1
 	makeOne := func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr {
 		useFont := p.font
-		if head { useFont = p.sectionFont }
-		role,row:=uxRoleOther,0
-		if tabGroup>=0 {
+		if head {
+			useFont = p.sectionFont
+		}
+		role, row := uxRoleOther, 0
+		if tabGroup >= 0 {
 			switch {
-			case strings.HasPrefix(t,"●") || strings.HasPrefix(t,"修改快捷键"): role=uxRoleStatus
-			case cls=="EDIT" || cls=="COMBOBOX":role=uxRoleField
-			case id==uxProbeASRButton || id==uxProbeLLMButton:role=uxRoleProbe
-			case y<208:role=uxRolePageTitle
-			case y<260:role=uxRolePageDescription
-			default:role=uxRoleLabel
+			case strings.HasPrefix(t, "●") || strings.HasPrefix(t, "修改快捷键"):
+				role = uxRoleStatus
+			case cls == "EDIT" || cls == "COMBOBOX":
+				role = uxRoleField
+			case id == uxProbeASRButton || id == uxProbeLLMButton:
+				role = uxRoleProbe
+			case y < 208:
+				role = uxRolePageTitle
+			case y < 260:
+				role = uxRolePageDescription
+			default:
+				role = uxRoleLabel
 			}
-			if role==uxRoleLabel || role==uxRoleField {
-				if y>=410 {row=2} else if y>=345 {row=1}
+			if role == uxRoleLabel || role == uxRoleField {
+				if y >= 410 {
+					row = 2
+				} else if y >= 345 {
+					row = 1
+				}
 			}
 		}
-		inset:=cls=="EDIT"
+		inset := cls == "EDIT"
 		if inset {
-			p.fieldFrames=append(p.fieldFrames,uxControl{x:x,y:y,w:w,h:hh,tab:tabGroup,role:uxRoleField,row:row})
+			p.fieldFrames = append(p.fieldFrames, uxControl{x: x, y: y, w: w, h: hh, tab: tabGroup, role: uxRoleField, row: row})
 		}
-		control:=uxCreateControl(h,cls,t,style,int32(sc(x)),int32(sc(y)),int32(sc(w)),int32(sc(hh)),id,useFont)
-		if control==0 {return 0}
-		if inset {procSendMessage.Call(control,uxEMSetMargins,3,uintptr(7|(7<<16)))}
-		if role==uxRoleLabel || role==uxRoleStatus {p.cardStatics[control]=true}
-		p.controls=append(p.controls,uxControl{hwnd:control,x:x,y:y,w:w,h:hh,id:id,tab:tabGroup,role:role,row:row,inset:inset})
+		control := uxCreateControl(h, cls, t, style, int32(sc(x)), int32(sc(y)), int32(sc(w)), int32(sc(hh)), id, useFont)
+		if control == 0 {
+			return 0
+		}
+		if inset {
+			procSendMessage.Call(control, uxEMSetMargins, 3, uintptr(7|(7<<16)))
+		}
+		if role == uxRoleLabel || role == uxRoleStatus {
+			p.cardStatics[control] = true
+		}
+		p.controls = append(p.controls, uxControl{hwnd: control, x: x, y: y, w: w, h: hh, id: id, tab: tabGroup, role: role, row: row, inset: inset})
 		return control
 	}
-	stat:=uintptr(uxWSChild|uxWSVisible)
-	edit:=uintptr(uxWSChild|uxWSVisible|uxWSTabStop|uxESAutoScroll)
-	btn:=uintptr(uxWSChild|uxWSVisible|uxWSTabStop|uxBSOwnerDraw)
-	heading:=makeOne("STATIC","VoiceRewrite",stat,80,25,410,35,0,false)
-	setFont(heading,p.titleFont)
-	subtitle:=makeOne("STATIC","说话，文字就位。",stat,80,65,410,23,0,false)
-	setFont(subtitle,p.mutedFont)
-	badge:=makeOne("STATIC","专注写作 · 轻松表达",stat,552,41,184,22,0,false)
-	setFont(badge,p.mutedFont)
-	p.tabs[0]=makeOne("BUTTON","语音输入",btn,32,115,154,40,uxTabSpeech,false)
-	p.tabs[1]=makeOne("BUTTON","AI 写作",btn,195,115,154,40,uxTabWriting,false)
-	p.tabs[2]=makeOne("BUTTON","快捷键",btn,358,115,154,40,uxTabInput,false)
+	stat := uintptr(uxWSChild | uxWSVisible)
+	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxESAutoScroll)
+	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxBSOwnerDraw)
+	heading := makeOne("STATIC", "VoiceRewrite", stat, 80, 25, 410, 35, 0, false)
+	setFont(heading, p.titleFont)
+	subtitle := makeOne("STATIC", "说话，文字就位。", stat, 80, 65, 410, 23, 0, false)
+	setFont(subtitle, p.mutedFont)
+	badge := makeOne("STATIC", "专注写作 · 轻松表达", stat, 552, 41, 184, 22, 0, false)
+	setFont(badge, p.mutedFont)
+	p.tabs[0] = makeOne("BUTTON", "语音输入", btn, 32, 115, 154, 40, uxTabSpeech, false)
+	p.tabs[1] = makeOne("BUTTON", "AI 写作", btn, 195, 115, 154, 40, uxTabWriting, false)
+	p.tabs[2] = makeOne("BUTTON", "快捷键", btn, 358, 115, 154, 40, uxTabInput, false)
 
-	tabGroup=0
-	makeOne("STATIC","语音输入",stat,46,186,540,32,0,true)
-	desc:=makeOne("STATIC","选择识别服务，让每一句话自然成为文字。",stat,46,222,650,24,0,false)
-	setFont(desc,p.mutedFont)
-	makeOne("STATIC","服务地址",stat,48,297,100,24,0,false)
-	p.inputs[0]=makeOne("EDIT",app.cfg.ASRBaseURL,edit,164,287,440,38,0,false)
-	makeOne("BUTTON","测试连接",btn,612,287,112,38,uxProbeASRButton,false)
-	makeOne("STATIC","模型 ID",stat,48,365,100,24,0,false)
-	p.inputs[1]=makeOne("EDIT",app.cfg.ASRModel,edit,164,355,556,38,0,false)
-	makeOne("STATIC","API 密钥",stat,48,433,100,24,0,false)
-	p.inputs[2]=makeOne("EDIT",app.cfg.ASRAPIKey,edit|uxESPassword,164,423,556,38,0,false)
-	p.probeStatus[0]=makeOne("STATIC","● 尚未检测 · 配置好服务后测试连接",stat,48,502,660,26,0,false)
-	setFont(p.probeStatus[0],p.mutedFont)
+	tabGroup = 0
+	makeOne("STATIC", "语音输入", stat, 46, 186, 540, 32, 0, true)
+	desc := makeOne("STATIC", "选择识别服务，让每一句话自然成为文字。", stat, 46, 222, 650, 24, 0, false)
+	setFont(desc, p.mutedFont)
+	makeOne("STATIC", "服务地址", stat, 48, 297, 100, 24, 0, false)
+	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 164, 287, 440, 38, 0, false)
+	makeOne("BUTTON", "测试连接", btn, 612, 287, 112, 38, uxProbeASRButton, false)
+	makeOne("STATIC", "模型 ID", stat, 48, 365, 100, 24, 0, false)
+	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 164, 355, 556, 38, 0, false)
+	makeOne("STATIC", "API 密钥", stat, 48, 433, 100, 24, 0, false)
+	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 164, 423, 556, 38, 0, false)
+	p.probeStatus[0] = makeOne("STATIC", "● 尚未检测 · 配置好服务后测试连接", stat, 48, 502, 660, 26, 0, false)
+	setFont(p.probeStatus[0], p.mutedFont)
 
-	tabGroup=1
-	makeOne("STATIC","AI 写作",stat,46,186,540,32,0,true)
-	desc=makeOne("STATIC","让你的文字更准确、更流畅，也更符合表达意图。",stat,46,222,650,24,0,false)
-	setFont(desc,p.mutedFont)
-	makeOne("STATIC","服务地址",stat,48,297,100,24,0,false)
-	p.inputs[3]=makeOne("EDIT",app.cfg.LLMBaseURL,edit,164,287,440,38,0,false)
-	makeOne("BUTTON","测试连接",btn,612,287,112,38,uxProbeLLMButton,false)
-	makeOne("STATIC","模型 ID",stat,48,365,100,24,0,false)
-	p.inputs[4]=makeOne("EDIT",app.cfg.TextModel,edit,164,355,556,38,0,false)
-	makeOne("STATIC","API 密钥",stat,48,433,100,24,0,false)
-	p.inputs[5]=makeOne("EDIT",app.cfg.LLMAPIKey,edit|uxESPassword,164,423,556,38,0,false)
-	p.probeStatus[1]=makeOne("STATIC","● 尚未检测 · 支持改写、翻译与问答",stat,48,502,660,26,0,false)
-	setFont(p.probeStatus[1],p.mutedFont)
+	tabGroup = 1
+	makeOne("STATIC", "AI 写作", stat, 46, 186, 540, 32, 0, true)
+	desc = makeOne("STATIC", "让你的文字更准确、更流畅，也更符合表达意图。", stat, 46, 222, 650, 24, 0, false)
+	setFont(desc, p.mutedFont)
+	makeOne("STATIC", "服务地址", stat, 48, 297, 100, 24, 0, false)
+	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 164, 287, 440, 38, 0, false)
+	makeOne("BUTTON", "测试连接", btn, 612, 287, 112, 38, uxProbeLLMButton, false)
+	makeOne("STATIC", "模型 ID", stat, 48, 365, 100, 24, 0, false)
+	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 164, 355, 556, 38, 0, false)
+	makeOne("STATIC", "API 密钥", stat, 48, 433, 100, 24, 0, false)
+	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 164, 423, 556, 38, 0, false)
+	p.probeStatus[1] = makeOne("STATIC", "● 尚未检测 · 支持改写、翻译与问答", stat, 48, 502, 660, 26, 0, false)
+	setFont(p.probeStatus[1], p.mutedFont)
 
-	tabGroup=2
-	makeOne("STATIC","输入习惯",stat,46,186,540,32,0,true)
-	desc=makeOne("STATIC","让快捷键和麦克风配合你的工作方式。",stat,46,222,650,24,0,false)
-	setFont(desc,p.mutedFont)
-	makeOne("STATIC","按住说话",stat,48,297,110,24,0,false)
-	p.shortcut=makeOne("EDIT",app.cfg.DictationHotkey,edit,164,287,556,38,uxShortcutInput,false)
-	makeOne("STATIC","麦克风",stat,48,365,110,24,0,false)
-	p.microphone=makeOne("COMBOBOX","",uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL,164,355,556,200,uxMicrophoneInput,false)
+	tabGroup = 2
+	makeOne("STATIC", "输入习惯", stat, 46, 186, 540, 32, 0, true)
+	desc = makeOne("STATIC", "让快捷键和麦克风配合你的工作方式。", stat, 46, 222, 650, 24, 0, false)
+	setFont(desc, p.mutedFont)
+	makeOne("STATIC", "按住说话", stat, 48, 297, 110, 24, 0, false)
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 164, 287, 556, 38, uxShortcutInput, false)
+	makeOne("STATIC", "麦克风", stat, 48, 365, 110, 24, 0, false)
+	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 164, 355, 556, 200, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
-	makeOne("STATIC","修改快捷键后，重启 VoiceRewrite 即可生效。",stat,48,502,660,26,0,false)
+	makeOne("STATIC", "修改快捷键后，重启 VoiceRewrite 即可生效。", stat, 48, 502, 660, 26, 0, false)
 
-	tabGroup=-1
-	makeOne("BUTTON","高级设置",btn,32,578,130,36,uxAdvancedButton,false)
-	makeOne("BUTTON","关闭",btn,458,578,94,36,uxCloseButton,false)
-	makeOne("BUTTON","保存设置",btn,572,578,156,36,uxSaveButton,false)
-	p.hint=makeOne("STATIC","服务由你选择 · API 密钥已加密保护",stat,34,635,640,18,0,false)
-	setFont(p.hint,p.mutedFont)
+	tabGroup = -1
+	makeOne("BUTTON", "高级设置", btn, 32, 578, 130, 36, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 458, 578, 94, 36, uxCloseButton, false)
+	makeOne("BUTTON", "保存设置", btn, 572, 578, 156, 36, uxSaveButton, false)
+	p.hint = makeOne("STATIC", "服务由你选择 · API 密钥已加密保护", stat, 34, 635, 640, 18, 0, false)
+	setFont(p.hint, p.mutedFont)
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)
