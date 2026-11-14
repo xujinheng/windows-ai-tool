@@ -18,10 +18,19 @@ func runAnswerVisualPreview() {
 	if os.Getenv("VOICEREWRITE_VISUAL_LONG") == "1" {
 		body = strings.Repeat("这一段用于验证长文本滚动、换行、阅读区域和底部操作按钮。\n", 80)
 	}
+	// Render the real Apply/Copy action combinations without a target editor,
+	// model request or text replacement. Preview Apply is intentionally inert.
+	previewApply:=os.Getenv("VOICEREWRITE_VISUAL_APPLY")=="1"
+	var selection *selectedText
+	if previewApply {selection=&selectedText{}}
+	title:="AI 回答"
+	if previewApply {title="AI 改写结果"}
 	err := showAnswerPopup(popupMessage{
-		title:  "AI 回答",
-		body:   body,
+		title: title,
+		body: body,
 		anchor: trayPoint{X: 250, Y: 160},
+		selection:selection,
+		allowApply:previewApply,
 	})
 	if err != nil {
 		return
@@ -33,7 +42,6 @@ func runAnswerVisualPreview() {
 		if int32(rv) <= 0 {
 			return
 		}
-		procTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
-		procDispatchMessage.Call(uintptr(unsafe.Pointer(&msg)))
+		dispatchNativeMessage(&msg)
 	}
 }
