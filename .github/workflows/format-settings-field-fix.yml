@@ -1,0 +1,27 @@
+name: Format settings field alignment PR
+on:
+  push:
+    branches: ['fix/settings-native-field-alignment']
+    paths:
+      - '.github/workflows/format-settings-field-fix.yml'
+permissions:
+  contents: write
+jobs:
+  gofmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Format only changed Go files
+        shell: bash
+        run: |
+          set -euo pipefail
+          gofmt -w voice-rewrite/settings_windows.go voice-rewrite/settings_direct2d_windows.go voice-rewrite/settings_field_geometry.go voice-rewrite/settings_field_geometry_test.go
+          if git diff --quiet -- voice-rewrite; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add voice-rewrite/settings_windows.go voice-rewrite/settings_direct2d_windows.go voice-rewrite/settings_field_geometry.go voice-rewrite/settings_field_geometry_test.go
+          git commit -m "style(settings): gofmt compact input alignment"
+          git push origin HEAD:fix/settings-native-field-alignment
