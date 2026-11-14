@@ -1,4 +1,4 @@
-# VoiceRewrite v24 — Windows native voice writing assistant
+# VoiceRewrite v25 — Windows native voice writing assistant
 
 VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configure a standalone F-key in Settings, to dictate at the caret; hold **Mouse5** after selecting text to rewrite, translate, or ask a question. VoiceRewrite is a **client**, not a model installer: ASR and LLM endpoints are configured separately.
 
@@ -8,7 +8,7 @@ VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configur
 2. Set **ASR** endpoint (for example `http://127.0.0.1:8080/v1`), model ID (`whisper-1` for OneClick), and API Key when required.
 3. Set **LLM** endpoint (for example `http://127.0.0.1:1234/v1`), model ID and optional API Key.
 4. Test each service independently. The test reads the API model list and checks for your configured model ID where available. This is not an ASR transcription test; dictate into Notepad to confirm audio support.
-5. Set the dictation shortcut to Mouse4/Mouse5 or an F1–F24 key. Changes to the hotkey take effect after restarting VoiceRewrite. Click **Save**. API Keys are encrypted under the signed-in Windows account via DPAPI before being written to disk. A copied encrypted config cannot be decrypted by a different Windows account.
+5. Select the system-default or a specific microphone and configure Mouse4/Mouse5 or an F1–F24 dictation shortcut. Changes to the hotkey take effect after restarting VoiceRewrite. Click **Save**. API Keys are encrypted under the signed-in Windows account via DPAPI before being written to disk. A copied encrypted config cannot be decrypted by a different Windows account.
 
 ## Everyday use
 
@@ -48,3 +48,11 @@ See the repository root for the restored **Qwen3-ASR OneClick** launcher. The pr
 On every commit GitHub Actions builds a portable ZIP and an **unsigned per-user Inno Setup installer** with Start-menu shortcut and uninstaller. It preserves the private config and DPAPI secrets under the user profile when uninstalled. An installer is not equivalent to a signed or Microsoft Store-approved application; Windows SmartScreen may warn until the owner arranges code signing.
 
 See `../installer/README.md` and `EXPERIENCE-V24.md` for release boundaries. Tag-triggered GitHub releases are **pre-releases**, not automatically declared stable. Native password-style Win32 input controls are excluded from global dictation and selection operations; browser/Electron password controls still need separate native automation auditing. Technical logs rotate at 4 MiB with three backups; microphone content and selection text are not intentionally logged.
+
+## v25 additions
+
+- Settings allows choosing a Windows recording input by device name (changes require app restart). The `audio_device_id` config defaults to -1 (system default).
+- The tray's manual “检查更新” queries GitHub Releases only when clicked. No update package is silently downloaded or executed.
+- Password-sensitive focus detection uses Win32 and Microsoft UI Automation `IsPassword` on a separate COM worker. Missing accessibility support can cause browser-style surfaces to reject automatic input. This check is best effort, not a guarantee of detecting every sensitive field.
+
+See [v25 development notes](EXPERIENCE-V25.md). This is an **unsigned development build**, not a production-certified application.

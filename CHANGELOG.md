@@ -1,3 +1,13 @@
+## v0.25.0 — Windows interaction hardening (development)
+
+- Added microphone selection in Settings using Windows WinMM enumeration, persisting `audio_device_id` (-1 means system default).
+- Added UI Automation `CurrentIsPassword` checks on a separate COM worker, with conservative browser behavior when the provider is unavailable.
+- Added a user-triggered GitHub release check (SemVer, strict HTTPS, response limits, no unattended EXE downloads).
+- Guarded the installer upgrade using the process's existing named mutex.
+- Expanded tests for update ordering, Windows input structures and UI privacy; normal CI format/test/build still applies.
+
+**Not production certified:** no clean-machine Windows 11 accessibility/clipboard/device validation, no signed installer, no automatic signed updates, and the repository still needs an owner-approved LICENSE.
+
 # Changelog
 
 ## v24 — Clipboard fidelity, native theme refresh, packaging and privacy

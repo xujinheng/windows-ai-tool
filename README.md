@@ -35,3 +35,7 @@ VoiceRewrite sends audio and selected text only to the configured API services, 
 The native Go application is in [`voice-rewrite/`](voice-rewrite/); the independent launcher is in [`oneclick/`](oneclick/). See [`CONTRIBUTING.md`](CONTRIBUTING.md), [`CHANGELOG.md`](CHANGELOG.md), and [`installer/`](installer/). CI checks Go formatting, Linux race tests, Windows tests, vet and cross-builds, and generates portable ZIP and installer artifacts. Git tags beginning with `v` generate **preview releases**, not automatically stable releases.
 
 **Repository license is not decided.** Public availability of this source does not grant a redistribution license; the owner must choose one before presenting it as licensed open-source software.
+
+## v25 Windows usability & privacy
+
+The tray can check the GitHub Releases feed on demand (no silent installer downloads). The Settings window can select an input microphone, and a bounded Microsoft UI Automation worker checks the focused element's password status in addition to native password styles. See [v25 details](voice-rewrite/EXPERIENCE-V25.md).

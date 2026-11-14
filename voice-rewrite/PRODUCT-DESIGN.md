@@ -45,3 +45,9 @@ The Win32 Go app remains client-only for ASR and LLM, with explicit API base URL
 - [Windows 11 design resources](https://learn.microsoft.com/en-us/windows/apps/design/downloads/): typography, controls, focus and accessibility reference.
 
 References inform design direction, not evidence that any particular Windows UI flow has been tested in this app.
+
+## v25 product rules
+
+- Always expose a system-default microphone and allow a named input device; never silently choose another microphone when the Windows device index changes.
+- Update checking is manually requested and never runs arbitrary binaries. Display version results as text, not remote HTML.
+- The focused field's UI Automation password flag supplements Win32 password styles. Browser windows with unavailable accessibility inspection must not be assumed safe.

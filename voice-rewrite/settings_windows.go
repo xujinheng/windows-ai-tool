@@ -340,7 +340,7 @@ func (p *uxSettings) save() error {
 	changedShortcut := cfg.DictationHotkey != newShortcut
 	cfg.DictationHotkey = newShortcut
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
-	if p.microphone != 0 && int(selected) < len(p.microphoneIDs) {
+	if p.microphone != 0 && selected != ^uintptr(0) && selected < uintptr(len(p.microphoneIDs)) {
 		cfg.AudioDeviceID = p.microphoneIDs[selected]
 	}
 	changedAudioDevice := cfg.AudioDeviceID != p.app.cfg.AudioDeviceID
