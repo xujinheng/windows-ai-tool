@@ -50,8 +50,8 @@ type mouseHookReady struct {
 	err      error
 }
 
-func installSideMouseHook(hwnd uintptr, button uint16) (*sideMouseHook, error) {
-	if hwnd == 0 || (button != 1 && button != 2) {
+func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16) (*sideMouseHook, error) {
+	if hwnd == 0 || (rewriteButton == 0 && dictationButton == 0) || rewriteButton == dictationButton {
 		return nil, errors.New("鼠标侧键钩子参数无效")
 	}
 	ready := make(chan mouseHookReady, 1)
@@ -61,36 +61,37 @@ func installSideMouseHook(hwnd uintptr, button uint16) (*sideMouseHook, error) {
 		defer runtime.UnlockOSThread()
 		defer close(done)
 		tid, _, _ := procGetCurrentThreadID.Call()
-		pressed := false
+		var pressed [3]bool
 		hook := uintptr(0)
 		callback := syscall.NewCallback(func(code, message, data uintptr) uintptr {
 			if int32(code) >= 0 && data != 0 {
 				event := uint32(message)
 				if event == WM_XBUTTONDOWN || event == WM_XBUTTONUP || event == WM_XBUTTONDBLCLK {
 					info := (*lowLevelMouseData)(unsafe.Pointer(data))
-					if uint16(info.MouseData>>16) == button {
+					button := uint16(info.MouseData >> 16)
+					if sideButtonFlow(button, rewriteButton, dictationButton) != "ignore" {
 						notification := uintptr(0)
 						switch event {
 						case WM_XBUTTONDOWN:
-							if !pressed {
+							if !pressed[button] {
 								notification = WM_SIDE_DOWN
 							}
 						case WM_XBUTTONUP:
-							if pressed {
+							if pressed[button] {
 								notification = WM_SIDE_UP
 							}
 						}
 						if notification != 0 {
-							if ok, _, _ := procPostMessage.Call(hwnd, notification, 0, 0); ok == 0 {
+							if ok, _, _ := procPostMessage.Call(hwnd, notification, uintptr(button), 0); ok == 0 {
 								// Never block this callback or swallow an undeliverable click.
 								return callNextMouseHook(hook, code, message, data)
 							}
 						}
 						if event == WM_XBUTTONDOWN {
-							pressed = true
+							pressed[button] = true
 						}
 						if event == WM_XBUTTONUP {
-							pressed = false
+							pressed[button] = false
 						}
 						// Suppress the browser's back/forward action only for this button.
 						return 1

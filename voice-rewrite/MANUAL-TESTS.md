@@ -34,3 +34,40 @@
 8. Check the card on multi-monitor / different DPI, narrow or long result texts, and inspect `route=...` and `stage=paste` log entries.
 
 Do not assume successful go test or Windows cross-compilation verifies browser contenteditable behavior.
+
+## v10 Dual Side Buttons / Handy-style Dictation (MANUAL TESTS, NOT YET VERIFIED)
+
+1. In WeChat compose area, put the caret at the end with NO selected text. Hold Mouse4, speak "你好今天下午开会", release. Confirm ASR text is inserted at caret, with no LLM call or answer card.
+2. Repeat Mouse4 in VS Code and ChatGPT input field. Confirm no selection is needed and same target window remains active.
+3. Select a passage in WeChat, VS Code and browser; hold Mouse5 and say "翻译成英文". Confirm original selected text is replaced (v9 core regression check).
+4. Select a technical term in a web article; Mouse5 "这是什么意思". Confirm answer appears in card and web document is not modified.
+5. Hold Mouse4, speak, release; confirm pill shows waveform/timer and then spinner, then success or error, and auto-hides. Click X while recording to cancel.
+6. During Mouse4, try Mouse5: must not switch modes or stop current recording. Release the original Mouse4: completes Mouse4 only. Reverse test for Mouse5.
+7. During Mouse4 ASR processing, change foreground window: result must NOT automatically insert into new app (copy-to-clipboard fallback).
+8. Close all old VoiceRewrite/Handy instances before starting. Ensure only one low-level hook is active.
+9. Revisit image / rich clipboard limitation and verify whether current text-only clipboard preservation impacts your workflow.
+10. Review `%LOCALAPPDATA%\VoiceRewrite\VoiceRewrite.log` for `flow=dictation`, `stage=asr`, and `stage=paste` (unverified).
+
+Native status lifecycle test: `VOICE_REWRITE_NATIVE_STATUS_TEST=1 go test -run TestHandyStatusLifecycle` on an interactive Windows desktop.
+
+## v11 regression: unified Handy-style status bar
+
+- Mouse4: recording pill with 9 reactive bars/timer, ASR spinner, then sent/error and auto-dismiss.
+- Mouse5 edit: **same pill** from the first press, then selection, ASR instruction, AI, paste, sent/error; selected text still replaced in WeChat/VS Code/Chrome.
+- Mouse5 question: same pill, answer card appears, `已显示结果` then pill dismisses; card remains open and closable.
+- X while either key is recording / worker is processing: cancels the correct task without inserting stale text.
+- X after success / answer: closes only the pill, not the model answer card.
+- Press other side button while recording: no second recording / status overlay; only matching release finishes.
+- Switch focus mid-processing: must not paste into another app; status eventually dismisses with error.
+- Multi-monitor and DPI 125%/150%: bar stays within current work area and must not steal focus.
+
+## v12 smooth Status Bar acceptance (not yet executed on Windows 11)
+
+- **S01**: Mouse4 + Mouse5 show the **same** status bar while recording.
+- **S02**: 9 waveform bars have rounded anti-aliased edges; the capsule silhouette has no obvious stepped cutout.
+- **S03**: The `00:xx` timer is clearly separated from the X icon, including when elapsed time exceeds one minute.
+- **S04**: `识别指令…`, `AI 处理中…`, `正在替换…` states render readable Chinese glyphs rather than blanks/squares.
+- **S05**: At 100%, 125%, 150%, 200% scaling, pill/labels are crisp, correctly positioned, and not clipped.
+- **S06**: Overlay remains no-activate; typing and paste are still sent to the original editor.
+- **S07**: Clicking X while recording/processing cancels; X after completion only dismisses the status, not an answer card.
+- **S08**: Mouse5 auto-replace still works in WeChat, VS Code, Chrome and does not unexpectedly revert to popup-only.

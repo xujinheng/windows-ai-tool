@@ -29,6 +29,7 @@ type Config struct {
 	LLMAPIKey              string `json:"llm_api_key"`
 	ASRModel               string `json:"asr_model"`
 	HotkeyRecord           string `json:"hotkey_record"`
+	DictationHotkey        string `json:"dictation_hotkey"`
 	RecordMode             string `json:"record_mode"`
 	HotkeyExit             string `json:"hotkey_exit"`
 	SystemPrompt           string `json:"system_prompt"`
@@ -46,6 +47,7 @@ func defaults() Config {
 		TextModel:              "auto",
 		ASRModel:               "whisper-1",
 		HotkeyRecord:           "Mouse5",
+		DictationHotkey:        "Mouse4",
 		RecordMode:             "hold",
 		HotkeyExit:             "Ctrl+Alt+F10",
 		MaxRecordSeconds:       60,
@@ -100,6 +102,9 @@ func loadConfig() (Config, error) {
 	}
 	if cfg.HotkeyRecord == "" {
 		cfg.HotkeyRecord = "Mouse5"
+	}
+	if cfg.DictationHotkey == "" {
+		cfg.DictationHotkey = "Mouse4"
 	}
 	if cfg.RecordMode == "" {
 		cfg.RecordMode = "hold"

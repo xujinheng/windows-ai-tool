@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-13-reliability-v9"
+const buildID = "2026-11-14-status-align-v13"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -69,33 +69,35 @@ var (
 )
 
 const (
-	WM_HOTKEY       = 0x0312
-	WM_TIMER        = 0x0113
-	RECORD_TIMER_ID = 3001
-	WM_HOLD_RELEASE = 0x8000 + 50
-	WM_HOLD_TIMEOUT = 0x8000 + 51
-	WM_TOGGLE_READY = 0x8000 + 56
-	WM_SHOW_ANSWER  = 0x8000 + 61
-	WM_APPLY_RESULT = 0x8000 + 65
-	HOTKEY_RECORD   = 100
-	HOTKEY_EXIT     = 101
-	MOD_ALT         = 0x0001
-	MOD_CTRL        = 0x0002
-	MOD_NOREPEAT    = 0x4000
-	MOD_SHIFT       = 0x0004
-	VK_F9           = 0x78
-	VK_PAUSE        = 0x13
-	VK_F10          = 0x79
-	VK_CONTROL      = 0x11
-	VK_MENU         = 0x12
-	VK_SHIFT        = 0x10
-	INPUT_KEYBOARD  = 1
-	KEYEVENTF_KEYUP = 0x0002
-	CF_UNICODETEXT  = 13
-	GMEM_MOVEABLE   = 0x0002
-	WAVE_FORMAT_PCM = 1
-	WAVE_MAPPER     = ^uintptr(0)
-	WHDR_DONE       = 0x00000001
+	WM_HOTKEY        = 0x0312
+	WM_TIMER         = 0x0113
+	RECORD_TIMER_ID  = 3001
+	WM_HOLD_RELEASE  = 0x8000 + 50
+	WM_HOLD_TIMEOUT  = 0x8000 + 51
+	WM_TOGGLE_READY  = 0x8000 + 56
+	WM_SHOW_ANSWER   = 0x8000 + 61
+	WM_APPLY_RESULT  = 0x8000 + 65
+	WM_STATUS_UPDATE = 0x8000 + 70
+	WM_STATUS_CANCEL = 0x8000 + 71
+	HOTKEY_RECORD    = 100
+	HOTKEY_EXIT      = 101
+	MOD_ALT          = 0x0001
+	MOD_CTRL         = 0x0002
+	MOD_NOREPEAT     = 0x4000
+	MOD_SHIFT        = 0x0004
+	VK_F9            = 0x78
+	VK_PAUSE         = 0x13
+	VK_F10           = 0x79
+	VK_CONTROL       = 0x11
+	VK_MENU          = 0x12
+	VK_SHIFT         = 0x10
+	INPUT_KEYBOARD   = 1
+	KEYEVENTF_KEYUP  = 0x0002
+	CF_UNICODETEXT   = 13
+	GMEM_MOVEABLE    = 0x0002
+	WAVE_FORMAT_PCM  = 1
+	WAVE_MAPPER      = ^uintptr(0)
+	WHDR_DONE        = 0x00000001
 )
 
 type winMSG struct {
@@ -176,6 +178,14 @@ func (a *appState) setStatus(s trayState) {
 	a.logger.Printf("status=%s", trayInfo(s).label)
 	if ok, _, err := procPostMessage.Call(a.Window, WM_TRAY_UPDATE, 0, 0); ok == 0 {
 		a.logger.Printf("failed to queue tray update: %v", err)
+	}
+}
+
+// Worker threads never mutate native windows. All phase updates are owned by
+// the UI message pump and tagged with the recording epoch to discard late events.
+func (a *appState) postHandyPhase(phase uintptr, generation uint64) {
+	if a.epoch.valid(generation) {
+		procPostMessage.Call(a.Window, WM_STATUS_UPDATE, phase, uintptr(generation))
 	}
 }
 
@@ -297,7 +307,14 @@ func runApp() {
 	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4)}
 	defer app.epoch.shutdown()
 	defer closeActiveAnswer()
+	defer closeHandyStatus()
+	activeHandyAppWindow = hwnd
 	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
+	dictationButton, dictationMouse := mouseSideButton(cfg.DictationHotkey)
+	if !dictationMouse || dictationButton == selectedMouseButton {
+		winErr("dictation_hotkey 必须是未被改写占用的 Mouse4 或 Mouse5")
+		return
+	}
 	var recordMods, recordVK uintptr
 	if usingMouse {
 		if cfg.RecordMode != "hold" {
@@ -352,19 +369,21 @@ func runApp() {
 	l.Printf("started; build=%s mode=%s hotkey=%s ASR=%s LLM=%s (model=%s)", buildID, cfg.RecordMode, cfg.HotkeyRecord, cfg.ASRBaseURL, cfg.LLMBaseURL, cfg.TextModel)
 	// The tray icon is the UI. Do not steal focus with an instructional MessageBox.
 	// Install the hook on its own locked OS thread; the UI remains independent.
-	if usingMouse {
-		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton)
+	if usingMouse || dictationMouse {
+		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton)
 		if hookErr != nil {
 			winErr(hookErr.Error())
 			return
 		}
 		defer mouseHook.close()
-		l.Printf("mouse hook installed: button=%d", selectedMouseButton)
+		l.Printf("mouse hook installed: rewrite=%d dictation=%d", selectedMouseButton, dictationButton)
 	}
 	var active *audioRecorder
 	var selected selectedText
 	toggleResult := make(chan togglePrepareResult, 1)
 	var holdTargetWindow uintptr
+	var holdButton uint16
+	var holdIsDictation bool
 	var holdGeneration uint64
 	var selectedGeneration uint64
 	var holdSession uintptr
@@ -389,7 +408,11 @@ func runApp() {
 		app.busy.Store(true) // no second operation until the worker is finished
 		app.setStatus(trayTranscribing)
 		l.Print("recording stop requested; selection/model processing moved to worker")
-		if cfg.RecordMode == "hold" {
+		if cfg.RecordMode == "hold" && holdIsDictation {
+			app.postHandyPhase(statusProcessing, holdGeneration)
+			go processDictationHold(app, rec, holdTargetWindow, holdGeneration)
+		} else if cfg.RecordMode == "hold" {
+			app.postHandyPhase(statusSelection, holdGeneration)
 			go processRecordedHold(app, rec, holdTargetWindow, currentCursorPoint(), holdGeneration)
 		} else {
 			sel := selected
@@ -398,11 +421,77 @@ func runApp() {
 		}
 	}
 
+	// One capture engine, two explicitly chosen workflows. Never infer dictation
+	// from Ctrl+C: VS Code may copy an entire line without any selection.
+	startHold := func(dictation bool, button uint16) {
+		if app.busy.Load() || active != nil {
+			beep(320, 90)
+			return
+		}
+		win, _, _ := procGetForegroundWindow.Call()
+		if win == 0 {
+			app.fail(errors.New("没有可用的目标窗口"))
+			return
+		}
+		rec, e := startRecorder(cfg.MaxRecordSeconds)
+		if e != nil {
+			app.fail(e)
+			return
+		}
+		holdTargetWindow = win
+		holdButton = button
+		holdIsDictation = dictation
+		holdGeneration = app.epoch.start()
+		active = rec
+		app.setStatus(trayRecording)
+		holdSession++
+		holdWatch = make(chan struct{})
+		if button != 0 { // mouse button release delivered by low level hook
+			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+		} else {
+			go watchHoldRelease(hwnd, recordVK, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+		}
+		// Identical Handy-style pill for both flows; label/phase is mode-specific.
+		statusMode := "改写"
+		if dictation {
+			statusMode = "听写"
+		}
+		showHandyStatus(rec, statusMode, statusRecording, holdGeneration)
+		beep(900, 60)
+		l.Printf("recording started, mode=hold flow=%s button=%d", map[bool]string{true: "dictation", false: "rewrite"}[dictation], button)
+	}
+
 	for {
 		var msg winMSG
 		rv, _, _ := procGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
 		if int32(rv) <= 0 {
 			break
+		}
+		if msg.Message == WM_STATUS_UPDATE {
+			if app.epoch.valid(uint64(msg.LParam)) && activeHandyStatus != nil && activeHandyStatus.owner == uint64(msg.LParam) {
+				updateHandyStatus(msg.WParam)
+			}
+			continue
+		}
+		if msg.Message == WM_STATUS_CANCEL {
+			if !app.epoch.valid(uint64(msg.WParam)) || activeHandyStatus == nil || activeHandyStatus.owner != uint64(msg.WParam) {
+				continue // a cancel click queued by a previous session
+			}
+			if isHandyTerminalPhase(activeHandyStatus.phase) {
+				closeHandyStatus() // close a completed status, not the answer card
+				continue
+			}
+			app.epoch.start() // cancel either Mouse4 or Mouse5 before paste
+			if active != nil {
+				stopHoldWatch()
+				rec := active
+				active = nil
+				rec.Stop()
+				go func() { <-rec.result }()
+			}
+			closeHandyStatus()
+			app.setStatus(trayIdle)
+			continue
 		}
 		if msg.Message == WM_APPLY_RESULT {
 			if activeAnswer != nil && activeAnswer.window != 0 && msg.WParam == activeAnswer.window {
@@ -434,6 +523,7 @@ func runApp() {
 					l.Printf("popup window: %v", err)
 					app.fail(err)
 				} else {
+					app.postHandyPhase(statusAnswer, answer.generation)
 					l.Printf("popup native window displayed; chars=%d", utf8.RuneCountInString(answer.body))
 				}
 			default:
@@ -457,6 +547,9 @@ func runApp() {
 		}
 		if msg.Message == WM_TRAY_UPDATE {
 			state := trayState(app.status.Load())
+			if state == trayError && activeHandyStatus != nil && !isHandyTerminalPhase(activeHandyStatus.phase) && app.epoch.valid(activeHandyStatus.owner) {
+				updateHandyStatus(statusError)
+			}
 			// Always run Shell_NotifyIconW on the thread that owns the tray window.
 			if err := indicator.notify(state, false); err != nil {
 				l.Printf("tray state update failed: %v", err)
@@ -512,6 +605,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_EXIT || (msg.Message == WM_HOTKEY && msg.WParam == HOTKEY_EXIT) {
+			closeHandyStatus()
 			if active != nil {
 				stopHoldWatch()
 				active.Stop()
@@ -535,20 +629,27 @@ func runApp() {
 				rec.Stop()
 				go func() { <-rec.result }()
 				l.Print("ERROR: hold watcher exceeded maximum duration without observing key release")
+				app.postHandyPhase(statusError, holdGeneration)
 				app.fail(errors.New("未收到录音按键或鼠标侧键的松开事件，已自动结束。请检查是否有鼠标驱动将侧键映射为其他按键。"))
 			}
 			continue
 		}
-		if usingMouse && msg.Message == WM_SIDE_UP {
-			if cfg.RecordMode == "hold" && active != nil {
-				l.Print("mouse side button released; completing recording")
+		if msg.Message == WM_SIDE_UP {
+			if cfg.RecordMode == "hold" && active != nil && uint16(msg.WParam) == holdButton {
+				l.Printf("mouse button %d released; completing recording", holdButton)
 				finish()
 			}
 			continue
 		}
-		if usingMouse && msg.Message == WM_SIDE_DOWN {
-			msg.Message = WM_HOTKEY
-			msg.WParam = HOTKEY_RECORD
+		if msg.Message == WM_SIDE_DOWN {
+			button := uint16(msg.WParam)
+			switch sideButtonFlow(button, selectedMouseButton, dictationButton) {
+			case "dictation":
+				startHold(true, button)
+			case "rewrite":
+				startHold(false, button)
+			}
+			continue
 		}
 		if msg.Message != WM_HOTKEY {
 			// All popup paint, close, mouse, keyboard and child WM_COMMAND
@@ -581,31 +682,7 @@ func runApp() {
 			// Hold mode records immediately and does NOT touch the clipboard
 			// while the hotkey is physically held. Capture is performed on release.
 			if cfg.RecordMode == "hold" {
-				win, _, _ := procGetForegroundWindow.Call()
-				if win == 0 {
-					app.fail(errors.New("没有可用的编辑窗口"))
-					continue
-				}
-				rec, e := startRecorder(cfg.MaxRecordSeconds)
-				if e != nil {
-					app.fail(e)
-					continue
-				}
-				holdTargetWindow = win
-				holdGeneration = app.epoch.start()
-				active = rec
-				app.setStatus(trayRecording)
-				holdSession++
-				holdWatch = make(chan struct{})
-				if usingMouse {
-					// Mouse release is delivered by the low-level hook. Only the
-					// deadline guard is necessary (no F-key polling).
-					go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
-				} else {
-					go watchHoldRelease(hwnd, recordVK, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
-				}
-				beep(900, 60)
-				l.Printf("recording started, mode=hold hotkey=%s", cfg.HotkeyRecord)
+				startHold(false, selectedMouseButton)
 				continue
 			}
 			// Legacy toggle mode also prepares its selection on a worker.
@@ -719,6 +796,104 @@ func restoreSelectionClipboardIfOwned(hwnd uintptr, sel selectedText) {
 	}
 }
 
+// Mouse4 never performs Ctrl+C or model-based intent routing. Handy-style
+// dictation inserts raw ASR output at the captured window's current caret.
+func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uintptr, generation uint64) {
+	defer app.busy.Store(false)
+	defer func() {
+		if x := recover(); x != nil {
+			app.logger.Printf("dictation panic: %v", x)
+			app.fail(fmt.Errorf("听写处理失败: %v", x))
+			app.postHandyPhase(statusError, generation)
+		}
+	}()
+	r := <-rec.result
+	if !app.epoch.valid(generation) {
+		return
+	}
+	if r.err != nil || len(r.pcm) < 3200 {
+		if r.err == nil {
+			r.err = errors.New("语音太短，无法转写")
+		}
+		app.fail(r.err)
+		app.postHandyPhase(statusError, generation)
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 95*time.Second)
+	defer cancel()
+	start := time.Now()
+	text, err := transcribe(ctx, app.cfg, r.pcm)
+	if !app.epoch.valid(generation) {
+		return
+	}
+	app.logger.Printf("stage=asr flow=dictation ms=%d", time.Since(start).Milliseconds())
+	if err != nil {
+		app.fail(err)
+		app.postHandyPhase(statusError, generation)
+		return
+	}
+	if !app.epoch.valid(generation) {
+		return
+	}
+	// Focus may have changed while ASR ran: never insert in another app.
+	if !isSameForegroundWindow(expectedWindow) {
+		_ = setClipboardText(app.Window, text)
+		app.fail(errors.New("原窗口已切换：听写结果已复制到剪贴板，请手动粘贴"))
+		app.postHandyPhase(statusError, generation)
+		return
+	}
+	start = time.Now()
+	if err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.valid(generation) }); err != nil {
+		app.fail(err)
+		app.postHandyPhase(statusError, generation)
+		return
+	}
+	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
+	app.setStatus(traySuccess)
+	app.postHandyPhase(statusSuccess, generation)
+}
+
+// Dictation does not require a selected text. Restore only clipboard text we
+// still own; previous rich formats are not yet preserved by the v9 backend.
+func insertDictationText(hwnd, target uintptr, text string, valid func() bool) error {
+	if strings.TrimSpace(text) == "" {
+		return errors.New("听写结果为空")
+	}
+	if !waitKeysReleased(2 * time.Second) {
+		return errors.New("请松开快捷键后重试")
+	}
+	if !valid() || !isSameForegroundWindow(target) {
+		return errors.New("写入前窗口已变化，已取消听写")
+	}
+	old, existed, err := getClipboardText(hwnd)
+	if err != nil {
+		return err
+	}
+	if err = setClipboardText(hwnd, text); err != nil {
+		return err
+	}
+	owned := clipboardSeq()
+	if !valid() || !isSameForegroundWindow(target) {
+		if mayRestoreTextClipboard(existed, owned, clipboardSeq()) {
+			_ = setClipboardText(hwnd, old)
+		}
+		return errors.New("写入前窗口已变化，已取消听写")
+	}
+	if err = sendCombo('V'); err != nil {
+		if mayRestoreTextClipboard(existed, owned, clipboardSeq()) {
+			_ = setClipboardText(hwnd, old)
+		}
+		return err
+	}
+	time.Sleep(250 * time.Millisecond)
+	if mayRestoreTextClipboard(existed, owned, clipboardSeq()) {
+		if err = setClipboardText(hwnd, old); err != nil {
+			return fmt.Errorf("已触发粘贴，但剪贴板恢复失败: %w", err)
+		}
+	}
+	return nil // SendInput accepted; insertion cannot be proven in all editors.
+}
+
 // The selection must be copied AFTER releasing the held shortcut. This function
 // runs off the UI and low-level mouse-hook threads, and enforces a small time budget.
 func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintptr, anchor trayPoint, generation uint64) {
@@ -757,6 +932,7 @@ func processRecordedHold(app *appState, rec *audioRecorder, expectedWindow uintp
 		return
 	}
 	app.logger.Printf("selection captured; chars=%d", utf8.RuneCountInString(sel.Text))
+	app.postHandyPhase(statusProcessing, generation)
 	if !app.epoch.valid(generation) {
 		return
 	}
@@ -807,6 +983,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 		return
 	}
 	app.setStatus(trayRewriting)
+	app.postHandyPhase(statusRewriting, generation)
 	app.logger.Printf("ASR instruction decoded; chars=%d", utf8.RuneCountInString(instruction))
 	startedLLM := time.Now()
 	answer, e := completeSelectedTask(ctx, app.cfg, sel.Text, instruction)
@@ -842,12 +1019,14 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t voice_edit=%t voice_translate=%t", action, answer.Intent, editable, browserSurface, clearlyRequestsEdit(instruction), clearlyRequestsTranslation(instruction))
 	allowApply := action == "replace" || action == "try_replace" || answer.Intent == "edit" || answer.Intent == "translate"
 	if action == "replace" || action == "try_replace" {
+		app.postHandyPhase(statusApplying, generation)
 		startedPaste := time.Now()
 		// All unknown controls receive the same pre/post paste checks as a browser.
 		e = replaceSelectionWithGuard(app.Window, sel, answer.Result, app.cfg, action == "try_replace", func() bool { return app.epoch.valid(generation) })
 		app.logger.Printf("stage=paste ms=%d", time.Since(startedPaste).Milliseconds())
 		if e == nil {
 			app.setStatus(traySuccess)
+			app.postHandyPhase(statusSuccess, generation)
 			beep(1050, 110)
 			app.logger.Printf("paste_status=unverified intent=%s result_chars=%d (SendInput accepted, editor insertion not provable)", answer.Intent, utf8.RuneCountInString(answer.Result))
 			return
@@ -1166,6 +1345,7 @@ type audioRecorder struct {
 	result     chan audioResult
 	once       sync.Once
 	maxSeconds int
+	level      atomic.Uint32 // latest captured PCM RMS, scaled 0-1000
 }
 
 func winmmCheck(rc uintptr, op string) error {
@@ -1258,6 +1438,7 @@ func (r *audioRecorder) collect() {
 				n = len(r.bufs[i])
 			}
 			if n > 0 {
+				r.level.Store(pcmRMSLevel(r.bufs[i][:n]))
 				pcm.Write(r.bufs[i][:n])
 			}
 			atomic.StoreUint32(&hdr.BytesRecorded, 0)

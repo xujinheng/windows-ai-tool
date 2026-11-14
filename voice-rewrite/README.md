@@ -1,3 +1,12 @@
+# VoiceRewrite v10: 双侧键语音输入和改写
+
+- **Mouse4 按住说话、松开听写**：无需选区，ASR 结果直接插入光标处；配备 Handy 风格底部状态条。
+- **Mouse5 保留原有行为**：选中文字后按住说话，执行 AI 改写／翻译（优先替换）或问答解释（结果卡片）。
+- 继续使用 Qwen3-ASR 本地接口和 LM Studio，不需要启动两个 GUI。
+- 详见 [`README-V10.md`](README-V10.md)。
+
+---
+
 # v9 · Reliability checkpoint (2026-11-13)
 
 - **No change to edit-first default:** WeChat, VS Code, browser inputs and Notepad

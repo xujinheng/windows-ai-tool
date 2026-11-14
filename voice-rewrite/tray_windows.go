@@ -74,7 +74,7 @@ func trayInfo(s trayState) trayStateInfo {
 	case trayError:
 		return trayStateInfo{"操作失败 · 查看错误提示", 0xed8438}
 	default:
-		return trayStateInfo{"待机 · 选中文字后按录音快捷键", 0x7c8794}
+		return trayStateInfo{"待机 · Mouse4 听写 / Mouse5 选区改写", 0x7c8794}
 	}
 }
 
