@@ -88,6 +88,15 @@ const (
 	handyOutroDuration     = 240 * time.Millisecond
 )
 
+// A physical side-button press should have visible feedback on the first
+// UpdateLayeredWindow, rather than after the hold threshold plus fade-in.
+func handyStatusOpacity(started, changed, now time.Time, phase uintptr, pending bool) uint8 {
+	if pending {
+		return 255
+	}
+	return handyOpacity(started, changed, now, phase)
+}
+
 func handyOpacity(started, changed, now time.Time, phase uintptr) uint8 {
 	if now.Before(started) {
 		return 0

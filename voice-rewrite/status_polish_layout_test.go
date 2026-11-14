@@ -75,3 +75,15 @@ func TestStatusResponsiveWidths(t *testing.T) {
 		t.Fatal("working label too narrow")
 	}
 }
+
+// The provisional mouse-down status is visible immediately; ordinary status
+// windows retain their fade-in animation.
+func TestSideButtonPreviewIsVisibleAtMouseDown(t *testing.T) {
+	start := time.Unix(100, 0)
+	if alpha := handyStatusOpacity(start, start, start, statusRecording, true); alpha != 255 {
+		t.Fatalf("pending mouse status alpha=%d, want 255", alpha)
+	}
+	if alpha := handyStatusOpacity(start, start, start, statusRecording, false); alpha != 0 {
+		t.Fatalf("ordinary status alpha=%d, want 0 for fade-in", alpha)
+	}
+}
