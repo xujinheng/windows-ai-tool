@@ -37,7 +37,7 @@ func TestPolishBarsRoundedAndBounded(t *testing.T) {
 	for i := 0; i < 9; i++ {
 		for _, l := range []float64{-1, 0, 0.1, 0.5, 1, 3} {
 			h := handyWaveHeight(i, l, 120)
-			if h < 4 || h > 21 {
+			if h < 4 || h > 18 {
 				t.Fatalf("bar %d height %d", i, h)
 			}
 		}

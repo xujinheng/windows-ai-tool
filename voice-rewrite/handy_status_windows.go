@@ -17,15 +17,6 @@ import (
 // (MIT, copyright 2025 CJ Pais). All controls below are implemented in Go and
 // the Windows system GDI+ renderer; Tauri and WebView2 are not required.
 const (
-	statusRecording  uintptr = 1
-	statusProcessing uintptr = 2
-	statusSuccess    uintptr = 3
-	statusError      uintptr = 4
-	statusRewriting  uintptr = 5
-	statusApplying   uintptr = 6
-	statusAnswer     uintptr = 7
-	statusSelection  uintptr = 8
-
 	handyPulseTimer          uintptr = 7331
 	WM_PAINT                         = 0x000F
 	WM_LBUTTONUP                     = 0x0202
@@ -34,23 +25,24 @@ const (
 	MONITOR_DEFAULTTONEAREST         = 2
 
 	handyBodyTop               = 5
-	handyBodyHeight            = 46
+	handyBodyHeight            = 40
 	handyPillInset             = 5
 	handyPixelFormat32bppPARGB = 0x000E200B
 	handyULW_ALPHA             = 0x00000002
 )
 
 type handyStatus struct {
-	window  uintptr
-	phase   uintptr
-	mode    string
-	owner   uint64
-	mic     *audioRecorder
-	started time.Time
-	changed time.Time
-	tick    uint32
-	x, y    int32
-	scale   float64
+	window        uintptr
+	phase         uintptr
+	mode          string
+	owner         uint64
+	mic           *audioRecorder
+	started       time.Time
+	changed       time.Time
+	tick          uint32
+	smoothedLevel float64
+	x, y          int32
+	scale         float64
 }
 
 var activeHandyStatus *handyStatus
@@ -153,7 +145,7 @@ func handyStatusWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 	case WM_TIMER:
 		if wParam == handyPulseTimer && activeHandyStatus != nil && activeHandyStatus.window == hwnd {
 			s := activeHandyStatus
-			if isHandyTerminalPhase(s.phase) && time.Since(s.changed) > 1500*time.Millisecond {
+			if isHandyTerminalPhase(s.phase) && time.Since(s.changed) > handyTerminalDuration {
 				closeHandyStatus()
 				return 0
 			}
@@ -191,13 +183,13 @@ func handyStatusWidth(phase uintptr) int {
 
 func handyPhaseAllowed(phase uintptr) bool {
 	switch phase {
-	case statusRecording, statusProcessing, statusSuccess, statusError, statusRewriting, statusApplying, statusAnswer, statusSelection:
+	case statusRecording, statusProcessing, statusSuccess, statusError, statusRewriting, statusApplying, statusAnswer, statusSelection, statusFallback:
 		return true
 	}
 	return false
 }
 func isHandyTerminalPhase(phase uintptr) bool {
-	return phase == statusSuccess || phase == statusError || phase == statusAnswer
+	return phase == statusSuccess || phase == statusError || phase == statusAnswer || phase == statusFallback
 }
 func handyStatusLabel(phase uintptr, mode string) string {
 	switch phase {
@@ -214,13 +206,15 @@ func handyStatusLabel(phase uintptr, mode string) string {
 		return "正在替换…"
 	case statusSuccess:
 		if mode == "改写" {
-			return "已发送改写"
+			return "已发送粘贴指令"
 		}
-		return "已发送文字"
+		return "已发送粘贴指令"
 	case statusAnswer:
 		return "已显示结果"
 	case statusError:
-		return "处理失败 · 查看日志"
+		return "操作未完成 · 查看日志"
+	case statusFallback:
+		return "已复制 · 请手动粘贴"
 	}
 	return ""
 }
@@ -410,42 +404,54 @@ func drawHandyStatus(s *handyStatus) {
 	// Soft shadow extends into the transparent canvas; a hard region is never used.
 	// Critical: all rectangles here are logical units. Never pass the scaled
 	// DIB width to a painter which itself multiplies by s.scale.
-	p.pill(0x12000000, 3, 8, logicalWidth-6, handyBodyHeight)
-	p.pill(0x24000000, 4, 7, logicalWidth-8, handyBodyHeight)
+	p.pill(0x11000000, 3, 8, logicalWidth-6, handyBodyHeight)
+	p.pill(0x22000000, 4, 7, logicalWidth-8, handyBodyHeight)
 	p.pill(0xFF24212D, handyPillInset, handyBodyTop, logicalWidth-2*handyPillInset, handyBodyHeight)
 	// Avoid a translucent full-size second fill: it makes a faint double edge
 	// and reduces color consistency around anti-aliased corners.
 
-	accent := uint32(0xFFF58AAD)
+	accent := uint32(0xFFF58AAD) // Mouse4 dictation: Handy rose
+	if s.mode == "改写" {
+		accent = 0xFFBBA1FF // Mouse5 rewrite: soft lavender for clear mode feedback
+	}
 	if s.phase == statusError {
 		accent = 0xFFFF818A
 	}
 	if s.phase == statusRecording {
 		// Left pink live indicator + nine equal-width capsule bars.
-		p.fill(accent, 24, 24, 9, 9, true)
+		p.fill(accent, 23, handyIconCenterY-4, 8, 8, true)
 		level := 0.0
 		if s.mic != nil {
 			level = float64(s.mic.level.Load()) / 1000.0
 		}
+		s.smoothedLevel = handySmoothedLevel(s.smoothedLevel, level)
 		for i := 0; i < 9; i++ {
-			h := handyWaveHeight(i, level, s.tick)
+			h := handyWaveHeight(i, s.smoothedLevel, s.tick)
 			p.roundBar(accent, handyWaveformX(i), handyIconCenterY-h/2, handyWaveBarWidth, h)
 		}
 		// Non-overlapping time and close-button lanes.
-		p.text(handyDurationText(s.started, time.Now()), handyClockX, 12, handyClockWidth, 32, 15, 500, 0xFFE8E2EB)
+		p.text(handyDurationText(s.started, time.Now()), handyClockX, 10, handyClockWidth, 30, 14, 500, 0xFFE8E2EB)
 	} else {
 		if isHandyTerminalPhase(s.phase) {
-			col := uint32(0xFF78D9AD)
+			// Sending Ctrl+V is not proof that the target accepted the text.
+			// Keep the sent state neutral-blue; mint is reserved for visible answers.
+			col := uint32(0xFF8DBDE8)
+			if s.phase == statusAnswer {
+				col = 0xFF78D9AD
+			}
 			if s.phase == statusError {
 				col = 0xFFFF818A
+			} else if s.phase == statusFallback {
+				col = 0xFFF5C56B
 			}
-			p.fill(col, 22, 20, 16, 16, true)
-			if s.phase != statusError {
+			p.fill(col, 22, handyIconCenterY-8, 16, 16, true)
+			if s.phase != statusError && s.phase != statusFallback {
 				p.checkGlyph(30, handyIconCenterY)
 			} else {
-				// A small dark bar + dot stays legible at every DPI.
-				p.roundBar(0xFF38191D, 29, 23, 2, 7)
-				p.fill(0xFF38191D, 29, 32, 2, 2, true)
+				// Amber fallback and red error use an exclamation instead of
+				// a green success check: copying is not insertion.
+				p.roundBar(0xFF38191D, 29, handyIconCenterY-5, 2, 7)
+				p.fill(0xFF38191D, 29, handyIconCenterY+4, 2, 2, true)
 			}
 		} else {
 			// Non-blocking animated dots that form a smooth circular progress wheel.
@@ -457,17 +463,17 @@ func drawHandyStatus(s *handyStatus) {
 				if alpha > 255 {
 					alpha = 255
 				}
-				p.fill((alpha<<24)|0x00F58AAD, x-2, y-2, 4, 4, true)
+				p.fill((alpha<<24)|(accent&0x00FFFFFF), x-2, y-2, 4, 4, true)
 			}
 		}
-		p.text(handyStatusLabel(s.phase, s.mode), handyWorkingTextX, 11, logicalWidth-handyWorkingTextX-handyWorkingTextRightGap, 34, 14, 500, 0xFFECE8F0)
+		p.text(handyStatusLabel(s.phase, s.mode), handyWorkingTextX, 10, logicalWidth-handyWorkingTextX-handyWorkingTextRightGap, 30, 13, 500, 0xFFECE8F0)
 	}
 	// Crisp anti-aliased vector X; no separate text glyph competing with the timer.
 	p.closeGlyph(logicalWidth-handyCancelGlyphInset, handyIconCenterY)
 	target := handyPoint{s.x, s.y}
 	size := handySize{int32(width), int32(height)}
 	source := handyPoint{}
-	blend := handyBlend{Op: 0, Flags: 0, Alpha: 255, Format: 1}
+	blend := handyBlend{Op: 0, Flags: 0, Alpha: handyOpacity(s.started, s.changed, time.Now(), s.phase), Format: 1}
 	screen, _, _ := procGetDCScreenHandy.Call(0)
 	if screen != 0 {
 		procUpdateLayeredHandy.Call(s.window, screen, uintptr(unsafe.Pointer(&target)), uintptr(unsafe.Pointer(&size)), dc, uintptr(unsafe.Pointer(&source)), 0, uintptr(unsafe.Pointer(&blend)), handyULW_ALPHA)
@@ -519,7 +525,7 @@ func showHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint6
 	restore := handyAwareWindowThread()
 	defer restore()
 	closeHandyStatus()
-	classname, _ := syscall.UTF16PtrFromString("VoiceRewrite.HandySmoothStatus.v13")
+	classname, _ := syscall.UTF16PtrFromString("VoiceRewrite.HandySmoothStatus.v14")
 	title, _ := syscall.UTF16PtrFromString("VoiceRewrite status")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: handyStatusWndProcCallback, Instance: instance, ClassName: classname}

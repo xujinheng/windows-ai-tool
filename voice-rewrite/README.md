@@ -1,110 +1,69 @@
-> **Current repository snapshot:** v13 runtime; default ASR URL was changed to `http://127.0.0.1:8080/v1`. The retired OneClick proxy is no longer required to strip ASR language tags. You must start a compatible ASR server separately when building from this branch. Newer v14–v16 experiments are not yet synced to the repository.\n\n# VoiceRewrite v10: 双侧键语音输入和改写
+# VoiceRewrite · Windows 本地语音听写 / AI 改写
 
-- **Mouse4 按住说话、松开听写**：无需选区，ASR 结果直接插入光标处；配备 Handy 风格底部状态条。
-- **Mouse5 保留原有行为**：选中文字后按住说话，执行 AI 改写／翻译（优先替换）或问答解释（结果卡片）。
-- 继续使用 Qwen3-ASR 本地接口和 LM Studio，不需要启动两个 GUI。
-- 详见 [`README-V10.md`](README-V10.md)。
+**一个桌面程序，两颗鼠标侧键，两个工作流。** Windows 11 x64，原生 Go，无 Electron/WebView2/Python 依赖。
 
----
+> 当前阶段：**Public Beta / 开源准备中**。已通过 Go 单元测试、race 检查、Windows x64 编译；尚未完成干净 Windows 机器安装、微信/VS Code/Chrome 的完整实机验收。
 
-# v9 · Reliability checkpoint (2026-11-13)
+## 30 秒看懂
 
-- **No change to edit-first default:** WeChat, VS Code, browser inputs and Notepad
-  still use explicit rewrite/translation -> guarded Ctrl+V; questions use the card.
-- **Single-instance mutex** prevents multiple new VoiceRewrite processes from
-  intercepting Mouse5 together (close old pre-v9 instances manually before start).
-- **Task generation fencing:** generated results and popup Apply actions must
-  belong to the active session. Exiting invalidates all sessions. Older requests
-  are still not actively canceled; recording while busy remains blocked.
-- **Plain-text clipboard recovery:** if an ASR/LLM step fails, restore the
-  previous text **only if** the clipboard sequence hasn't changed since the
-  application's selection copy. Post-paste Ctrl+C now tracks its sequence
-  instead of silently breaking restoration.
-- **Honest paste status:** a successful SendInput logs
-  `paste_status=unverified` (paste was sent; insertion is not proven).
-  This is not a test of success in every external editor.
-
-**Known limitation:** Non-text clipboard formats (images, HTML/RTF, files and
-custom formats) are not snapshotted by this implementation. Never rely on it
-for preservation of non-text clipboard history. A future version needs proper
-Windows OLE IDataObject support plus real desktop tests; this version does not
-claim to solve that problem.
-
-**Validation:** Go unit tests and Windows cross-compile are not equivalent to
-Windows 11 UI tests. Acceptance matrix: [CROSS_APP_ACCEPTANCE.md](CROSS_APP_ACCEPTANCE.md).
-
----
-
-## v8: edit-first cross-application behavior (2026-11-13)
-
-**Direct replacement is the primary feature.** For clear rewrite, polish,
-correction, abbreviation or translation commands, the app attempts the original
-cross-application Ctrl+C -> LLM -> verify selected text -> Ctrl+V workflow,
-including WeChat, VS Code, Chrome/Edge and other desktop editors. It must NOT
-require a native Win32 EDIT class, since browser/Electron controls lack one.
-
-Questions and explanations ("这是什么意思", "为什么") and summaries still display
-an answer card. An explicit transformation incorrectly labeled as an answer by
-the model triggers an edit-only LLM retry rather than pasting an explanation.
-Unknown controls receive an additional post-paste no-op probe; this is best-effort,
-not a 100% reliable read-only check. If selection changed or paste appears to do
-nothing, the result is displayed in a copyable card instead of overwriting a
-potentially unrelated window.
-
-Build ID: `2026-11-13-edit-first-v8`. Config remains unchanged. **Close all
-older VoiceRewrite processes before starting**: multiple mouse hooks will fight.
-
-# VoiceRewrite v6 — 语音改写 + 划词问答
-
-Windows 11 x64 / Go 标准库 / 离线优先。默认 **Mouse5 按住录音、松开提交**，使用现有 Qwen3-ASR OneClick 与 LM Studio 文本模型。
-
-### v6 相比 v5 修复了什么
-
-- **弹窗空白/不能关闭**：主 Windows 消息队列现在会调用 `TranslateMessage` / `DispatchMessageW`，确保 `WM_PAINT`、`WM_CLOSE` 与按钮 `WM_COMMAND` 能送达窗口过程。编辑框的内容长度还会在创建后校验。
-- **关闭方式**：窗口右上角 ×、底部「关闭」、`Esc`（当结果窗口获得焦点）、「复制并关闭」、托盘右键「关闭 AI 结果窗口」。
-- **翻译误路由**：用户说「写成英文」「翻译成中文」，模型一次返回 `intent=translate` + 完整译文；可确认是原生可编辑控件时自动替换。网页正文及无法确认可编辑的应用只显示译文预览，不会尝试危险的粘贴。
-- **结果卡片**：短回答采用更小的窗口，长回答增高；可复制，不抢走输入焦点。
-
-### 示例
-
-| 用户口令 | 目标 | 结果 |
+| 按键 | 怎样使用 | 结果 |
 |---|---|---|
-| 改得更简洁 | 可确认可编辑的 Win32 Edit/RichEdit | 替换原文 |
-| 请写成英文 | 可确认可编辑的 Win32 Edit/RichEdit | 替换为英文 |
-| 请写成英文 | 浏览器正文、只读内容、无法确认可编辑的控件 | 弹出翻译并提供复制 |
-| 这是什么意思 | 任意选中文字 | 弹出解释，不改原文 |
-| 总结这段话 | 任意选中文字 | 弹出摘要，不改原文 |
+| Mouse4 | 把光标放在输入框，按住 Mouse4 讲话、松开 | 原样识别语音，插入光标处 |
+| Mouse5 | 选中已有文字，按住 Mouse5 说“翻译成英文”或“润色一下” | 本地 LLM 生成并尝试替换选区 |
+| Mouse5 | 选中内容，按住 Mouse5 问“这是什么意思” | 鼠标附近显示解释卡片 |
 
-现阶段为了避免在网页正文误粘贴，自动替换仅支持能够确认的原生可编辑控件。**浏览器输入框和部分第三方编辑器仍可能只能获得弹窗预览**，这是有意保留的安全限制，不是承诺支持所有编辑器。
+录音和处理会在屏幕底部显示状态条。两个按键可以取消；退出请右键系统托盘图标。
 
-### 安装和日志
+## 第一次使用
 
-退出旧版 VoiceRewrite，把新版 EXE 和原来的 `config.json` 放在同一文件夹。保留 `record_mode=hold`、`hotkey_record=Mouse5`；默认本地 ASR 地址 `http://127.0.0.1:8081/v1`，本地文本模型 `http://127.0.0.1:1234/v1`。原有 `config.json` 不会被自动覆盖；自定义 `system_prompt` 会覆盖统一意图提示词，想使用新版统一 Prompt 请留空。
+1. 运行 `VoiceRewrite-v16-Windows-x64.exe`。第一次启动自动弹出**设置与连接检测**窗口。以后可在托盘菜单打开。
+2. 准备一个 OpenAI 兼容的本地 ASR 服务器，默认 `http://127.0.0.1:8080/v1`，支持 `POST /v1/audio/transcriptions`。推荐 Qwen3-ASR + llama.cpp CUDA 构建。**没有自带 CUDA 二进制、模型文件或安装程序。**
+3. 准备 LM Studio 或其他 OpenAI 兼容文本模型服务，默认 `http://127.0.0.1:1234/v1`，加载一个**可处理文本对话**的模型。
+4. 在设置中点 ASR 与 LLM 的**测试连接**；确认服务启动后，再尝试 Mouse4，最后测试 Mouse5。
+5. 若模型没启动：把对应 CUDA 版 `llama-server.exe`、Qwen3-ASR 主 GGUF、**配套版本**的 `mmproj` GGUF 放在 EXE 同目录或 `models/`，VoiceRewrite 会在端口空闲时尝试启动它，并在退出时只关闭自己启动的进程。需要相应 CUDA DLL 可用。也可继续用已经运行的服务器。
 
-启动日志版本 `build=2026-11-13-intent-popup-v6`。PowerShell：
+**提示：** `/health` 不存在的 ASR 服务可能仍可转写；设置界面的连接检测不能替代实际听写测试。默认只允许自动启动本机 `127.0.0.1` 服务；不自动启动局域网服务器。
 
-```powershell
-Get-Content "$env:LOCALAPPDATA\VoiceRewrite\VoiceRewrite.log" -Encoding UTF8 -Tail 45
+## 模型与设置
+
+GUI 设置支持修改 ASR/LLM API 地址及模型名称、检测连接并保存配置。更多选项通过托盘 → **高级配置 JSON** 打开，配置文件默认位于 EXE 同目录。
+
+```json
+{
+  "asr_base_url": "http://127.0.0.1:8080/v1",
+  "llm_base_url": "http://127.0.0.1:1234/v1",
+  "asr_model": "whisper-1",
+  "text_model": "auto",
+  "dictation_hotkey": "Mouse4",
+  "hotkey_record": "Mouse5",
+  "auto_start_asr": true,
+  "llama_server_path": "",
+  "asr_model_path": "",
+  "asr_mmproj_path": "",
+  "asr_gpu_layers": 99,
+  "asr_context_size": 8192
+}
 ```
 
-#### 测试
+`llama_server_path`、`asr_model_path`、`asr_mmproj_path` 可指定相对 EXE 目录的文件或绝对路径。留空时在 EXE 同目录及 `models/` 自动查找常见 1.7B/0.6B 文件名。配对错误的 `mmproj` 可能导致转写失败。端口默认 **8080**，无需 OneClick 8081 代理。检测到旧版默认的 `127.0.0.1:8081/v1` 时，程序会自动改成 8080 并尝试保存配置。`auto_start_asr=false` 禁止自动启动。
 
-- Linux Go tests: `go test ./...`, `go test -race ./...`, `go vet ./...`。
-- Windows x64: `GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build`。
-- 真正窗口关闭/绘制需在 Windows 交互桌面验证：
+**OneClick 的语言前缀清理已整合在 VoiceRewrite**，例如 `language English<asr_text>Hello` 自动变成 `Hello`，支持重复标记和 JSON / text/plain ASR 响应。
 
-```powershell
-$env:VOICE_REWRITE_NATIVE_POPUP_TEST='1'
-go test -run TestNativePopupPaintAndClose -v
-```
+## 安全、隐私和已知限制
 
-此版本没有在用户的真实 Windows 11 桌面进行测试，Windows 交互行为需本机验收。
+- 录音发送到配置中的 ASR HTTP 端点；选中的文字和识别出的改写指令发送到配置中的 LLM 端点。**这取决于所填服务地址是否为本机或远程，不是无条件的离线保证。**
+- 跨应用插入使用系统剪贴板和键盘模拟。未知应用中“已发送粘贴指令”**不等于已确认编辑器成功插入**；写入失败时可从结果卡片复制。
+- 原始剪贴板的图片、HTML、RTF 和自定义格式还不能完全恢复；重要剪贴板内容请谨慎使用。
+- 使用普通用户权限启动；以管理员权限运行的目标程序可能拒绝模拟输入。
+- 请不要在密码框或其他敏感输入框使用该工具。
+- 不上传日志或语音的内置云服务；日志在 `%LOCALAPPDATA%\VoiceRewrite\VoiceRewrite.log`。
 
-## v7: modern result card and browser text transformations
+## 开发
 
-- Build ID: `2026-11-13-modern-card-v7`; default Mouse5 hold-to-talk is unchanged.
-- Explicit editing/translating instructions in verified native Win32 Edit/RichEdit controls use the existing checked replacement path.
-- For Chromium/Firefox/Electron rendering windows, an explicit edit/translate instruction can try a **guarded browser replacement**. The originally selected text and foreground window are verified before pasting. A second clipboard check detects unchanged selections (a common sign of a read-only page); then the result is shown as a preview. **This is a heuristic, not a guaranteed browser editability detector.** Use it on non-sensitive text and keep undo available.
-- For questions, explanations, summaries, uncertain instructions, and any unsuccessful replacement, show a near-cursor card with white background, a Windows 11 rounded frame, readable typography, scrollable text and custom-drawn buttons.
-- The card shows `应用到原文` only for transformations. Clicking it restores focus to the original window, rechecks the original selection on a worker and tries to apply; failure leaves the preview visible. Other actions: `复制结果`, `关闭`, `Esc`, and the tray's `关闭 AI 结果窗口`.
-- DWM rounding uses native Windows 11 APIs. Windows desktop tests are still required for Chrome rich editors, monitor DPI variations, and mouse focus changes. No browser extension or WebView2 is installed.
+`cd voice-rewrite && go test ./... && go test -race ./... && go vet ./...`
+
+交叉编译：`GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags='-H windowsgui -s -w' -o VoiceRewrite.exe .`
+
+更早的开发过程见 `README-V10.md` ～ `README-V16.md`。设计参考 Handy Remote（MIT）及 OpenLess（AGPL，**未复制 OpenLess 源码**），见 `THIRD_PARTY_NOTICES.md`。
+
+**许可证：** 当前仓库的完整开源许可证尚未确定。正式对外宣传为可自由改编/再发布的开源软件前，需要由仓库所有者选择并添加明确的 `LICENSE` 文件。

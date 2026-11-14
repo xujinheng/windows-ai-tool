@@ -38,6 +38,12 @@ type Config struct {
 	MaxSelectedRunes       int    `json:"max_selected_characters"`
 	SelectionCopyAttempts  int    `json:"selection_copy_attempts"`
 	SelectionCopyTimeoutMS int    `json:"selection_copy_timeout_ms"`
+	AutoStartASR           bool   `json:"auto_start_asr"`
+	LLAMAServerPath        string `json:"llama_server_path,omitempty"`
+	ASRModelPath           string `json:"asr_model_path,omitempty"`
+	ASRMMProjPath          string `json:"asr_mmproj_path,omitempty"`
+	ASRGPULayers           int    `json:"asr_gpu_layers"`
+	ASRContextSize         int    `json:"asr_context_size"`
 }
 
 func defaults() Config {
@@ -53,6 +59,9 @@ func defaults() Config {
 		MaxRecordSeconds:       60,
 		MaxSelectedRunes:       12000,
 		MaxResponseTokens:      1200,
+		AutoStartASR:           true,
+		ASRGPULayers:           99,
+		ASRContextSize:         8192,
 		SelectionCopyAttempts:  2,
 		SelectionCopyTimeoutMS: 750,
 	}
@@ -97,6 +106,20 @@ func loadConfig() (Config, error) {
 	if err = json.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("配置文件 JSON 错误: %w", err)
 	}
+	// The 8081 OneClick proxy has been retired. This was the old default;
+	// switch it to the direct llama-server port, including existing local configs.
+	if cfg.ASRBaseURL == "http://127.0.0.1:8081/v1" {
+		cfg.ASRBaseURL = defaults().ASRBaseURL
+		if updated, e := json.MarshalIndent(cfg, "", "  "); e == nil {
+			_ = os.WriteFile(p, append(updated, '\n'), 0600)
+		}
+	}
+	if cfg.ASRContextSize < 1024 || cfg.ASRContextSize > 131072 {
+		cfg.ASRContextSize = 8192
+	}
+	if cfg.ASRGPULayers < 0 || cfg.ASRGPULayers > 1000 {
+		cfg.ASRGPULayers = 99
+	}
 	if cfg.ASRModel == "" {
 		cfg.ASRModel = "whisper-1"
 	}
@@ -139,8 +162,10 @@ func loadConfig() (Config, error) {
 	return cfg, nil
 }
 
-var asrMarker = regexp.MustCompile(`(?i)language\s+[^<\r\n]{1,64}<asr_text>\s*`)
-var standaloneMarker = regexp.MustCompile(`(?i)<asr_text>\s*`)
+// Match OneClick's metadata delimiter, not arbitrary characters between "language"
+// and <asr_text>. Multiple delimiters may occur in one transcript.
+var asrMarker = regexp.MustCompile(`(?i)language[ \t]+[a-z][a-z0-9 ,_+\-/]{0,79}[ \t]*<asr_text>`)
+var standaloneMarker = regexp.MustCompile(`(?i)^\s*<asr_text>\s*`)
 var thinkingTag = regexp.MustCompile(`(?s)<think>.*?</think>\s*`)
 
 func cleanASR(s string) string {
@@ -148,6 +173,29 @@ func cleanASR(s string) string {
 	s = standaloneMarker.ReplaceAllString(s, "")
 	s = strings.ReplaceAll(s, "<|endoftext|>", "")
 	return strings.TrimSpace(s)
+}
+
+// OneClick and some llama.cpp/faster-whisper endpoints return JSON, while
+// other OpenAI-compatible servers return plain text. Never silently treat
+// malformed JSON as a dictated sentence.
+func parseASRResponse(data []byte, contentType string) (string, error) {
+	var payload struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(data, &payload); err == nil {
+		return payload.Text, nil
+	}
+	var rawText string
+	if err := json.Unmarshal(data, &rawText); err == nil {
+		return rawText, nil
+	}
+	trimmed := strings.TrimSpace(string(data))
+	if strings.HasPrefix(strings.ToLower(contentType), "text/plain") &&
+		!strings.HasPrefix(trimmed, "{") && !strings.HasPrefix(trimmed, "[") &&
+		len(data) <= (3<<20)-1 {
+		return trimmed, nil
+	}
+	return "", errors.New("ASR 响应不是有效的 JSON {text:...} 或 text/plain")
 }
 
 func encodeWAV(pcm []byte) ([]byte, error) {
@@ -216,19 +264,21 @@ func transcribe(ctx context.Context, cfg Config, pcm []byte) (string, error) {
 	}
 	resp, e := requestClient(90 * time.Second).Do(req)
 	if e != nil {
-		return "", fmt.Errorf("语音转写请求失败（确认 ASR 服务在 8080 运行）: %w", e)
+		return "", fmt.Errorf("语音转写请求失败（请在设置中检测 ASR 连接；默认服务端口 8080）: %w", e)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {
 		return "", fmt.Errorf("ASR HTTP %d: %s", resp.StatusCode, bodyString(resp.Body))
 	}
-	var v struct {
-		Text string `json:"text"`
+	response, e := io.ReadAll(io.LimitReader(resp.Body, 3<<20))
+	if e != nil {
+		return "", fmt.Errorf("读取 ASR 响应失败: %w", e)
 	}
-	if e = json.NewDecoder(io.LimitReader(resp.Body, 3<<20)).Decode(&v); e != nil {
-		return "", fmt.Errorf("ASR 返回格式错误: %w", e)
+	transcript, e := parseASRResponse(response, resp.Header.Get("Content-Type"))
+	if e != nil {
+		return "", e
 	}
-	result := cleanASR(v.Text)
+	result := cleanASR(transcript)
 	if result == "" {
 		return "", errors.New("ASR 没有识别到语音，请检查麦克风输入设备")
 	}

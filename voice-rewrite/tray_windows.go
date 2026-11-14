@@ -283,7 +283,7 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 		return 0, errors.New("CreatePopupMenu failed")
 	}
 	defer procDestroyMenu.Call(m)
-	configLabel, _ := syscall.UTF16PtrFromString("编辑 config.json")
+	configLabel, _ := syscall.UTF16PtrFromString("设置与连接检测…")
 	logLabel, _ := syscall.UTF16PtrFromString("查看日志")
 	closeLabel, _ := syscall.UTF16PtrFromString("关闭 AI 结果窗口")
 	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")

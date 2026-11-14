@@ -15,10 +15,11 @@ func TestUnifiedStatusPhases(t *testing.T) {
 		{statusSelection, "改写", "读取选区…"},
 		{statusRewriting, "改写", "AI 处理中…"},
 		{statusApplying, "改写", "正在替换…"},
-		{statusSuccess, "改写", "已发送改写"},
-		{statusSuccess, "听写", "已发送文字"},
+		{statusSuccess, "改写", "已发送粘贴指令"},
+		{statusSuccess, "听写", "已发送粘贴指令"},
 		{statusAnswer, "改写", "已显示结果"},
-		{statusError, "改写", "处理失败 · 查看日志"},
+		{statusFallback, "听写", "已复制 · 请手动粘贴"},
+		{statusError, "改写", "操作未完成 · 查看日志"},
 	} {
 		if !handyPhaseAllowed(tt.phase) {
 			t.Errorf("phase=%d should be allowed", tt.phase)
@@ -48,7 +49,7 @@ func TestPolishedStatusNoOverlappingLanes(t *testing.T) {
 	if got := handyWaveHeight(4, -1, 0); got < 4 {
 		t.Fatalf("height %d", got)
 	}
-	if got := handyWaveHeight(4, 2, 70); got > 21 {
+	if got := handyWaveHeight(4, 2, 70); got > 18 {
 		t.Fatalf("height %d", got)
 	}
 }

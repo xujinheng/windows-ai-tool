@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-14-status-align-v13"
+const buildID = "2026-11-14-public-beta-v16"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -293,6 +293,8 @@ func runApp() {
 			winErr(fmt.Sprint("程序错误: ", rec))
 		}
 	}()
+	_, configBefore := os.Stat(configPath())
+	firstRun := os.IsNotExist(configBefore)
 	cfg, e := loadConfig()
 	if e != nil {
 		winErr(e.Error())
@@ -307,6 +309,7 @@ func runApp() {
 	app := &appState{Window: hwnd, logger: l, cfg: cfg, popups: make(chan popupMessage, 4)}
 	defer app.epoch.shutdown()
 	defer closeActiveAnswer()
+	defer closeNativeSettings()
 	defer closeHandyStatus()
 	activeHandyAppWindow = hwnd
 	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
@@ -360,6 +363,8 @@ func runApp() {
 		return
 	}
 	app.tray = indicator
+	stopASR := startManagedASR(app.cfg, l)
+	defer stopASR()
 	defer func() {
 		app.trayMu.Lock()
 		indicator.close()
@@ -367,6 +372,12 @@ func runApp() {
 		app.trayMu.Unlock()
 	}()
 	l.Printf("started; build=%s mode=%s hotkey=%s ASR=%s LLM=%s (model=%s)", buildID, cfg.RecordMode, cfg.HotkeyRecord, cfg.ASRBaseURL, cfg.LLMBaseURL, cfg.TextModel)
+	if firstRun {
+		l.Print("first start: opening setup and service checks")
+		if err := showNativeSettings(app); err != nil {
+			l.Printf("first start settings: %v", err)
+		}
+	}
 	// The tray icon is the UI. Do not steal focus with an instructional MessageBox.
 	// Install the hook on its own locked OS thread; the UI remains independent.
 	if usingMouse || dictationMouse {
@@ -582,7 +593,7 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_CONFIG {
-			if err := shellOpenLocalFile(configPath()); err != nil {
+			if err := showNativeSettings(app); err != nil {
 				app.fail(err)
 			}
 			continue
@@ -837,9 +848,13 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	}
 	// Focus may have changed while ASR ran: never insert in another app.
 	if !isSameForegroundWindow(expectedWindow) {
-		_ = setClipboardText(app.Window, text)
-		app.fail(errors.New("原窗口已切换：听写结果已复制到剪贴板，请手动粘贴"))
-		app.postHandyPhase(statusError, generation)
+		if copyErr := setClipboardText(app.Window, text); copyErr != nil {
+			app.fail(fmt.Errorf("原窗口已切换，听写结果复制失败：%w", copyErr))
+			app.postHandyPhase(statusError, generation)
+		} else {
+			app.fail(errors.New("原窗口已切换：听写结果已复制到剪贴板，请手动粘贴"))
+			app.postHandyPhase(statusFallback, generation)
+		}
 		return
 	}
 	start = time.Now()

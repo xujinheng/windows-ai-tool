@@ -14,5 +14,11 @@
   "selection_copy_attempts": 2,
   "selection_copy_timeout_ms": 750,
   "record_mode": "hold",
-  "max_response_tokens": 1200
+  "max_response_tokens": 1200,
+  "auto_start_asr": true,
+  "llama_server_path": "",
+  "asr_model_path": "",
+  "asr_mmproj_path": "",
+  "asr_gpu_layers": 99,
+  "asr_context_size": 8192
 }

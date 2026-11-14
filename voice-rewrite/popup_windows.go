@@ -308,17 +308,17 @@ func drawCardButton(item *drawItemStruct) bool {
 	primary := item.CtlID == BUTTON_APPLY
 	var fill, border, ink uintptr
 	if primary {
-		fill = colorRGB(48, 103, 221)
+		fill = colorRGB(190, 75, 123)
 		border = fill
 		ink = colorRGB(255, 255, 255)
 	} else {
-		fill = colorRGB(244, 246, 250)
-		border = colorRGB(225, 231, 240)
+		fill = colorRGB(247, 246, 250)
+		border = colorRGB(232, 228, 236)
 		ink = colorRGB(45, 56, 75)
 	}
 	if item.ItemState&ODS_SELECTED != 0 {
 		if primary {
-			fill = colorRGB(34, 80, 181)
+			fill = colorRGB(155, 51, 99)
 		} else {
 			fill = colorRGB(227, 232, 241)
 		}
@@ -409,18 +409,8 @@ func showAnswerPopup(msg popupMessage) error {
 		r := []rune(msg.body)
 		msg.body = string(r[:5500]) + "\n\n（内容过长，显示已截断）"
 	}
-	const width int32 = 510
-	height := int32(242)
 	n := utf8.RuneCountInString(msg.body)
-	if n > 115 {
-		height = 307
-	}
-	if n > 350 {
-		height = 390
-	}
-	if n > 900 {
-		height = 465
-	}
+	width, height := v14PopupSize(n)
 	x, y := msg.anchor.X+18, msg.anchor.Y+22
 	left, _, _ := procGetSystemMetrics.Call(SM_XVIRTUALSCREEN)
 	top, _, _ := procGetSystemMetrics.Call(SM_YVIRTUALSCREEN)
@@ -439,7 +429,7 @@ func showAnswerPopup(msg popupMessage) error {
 	if y < vy {
 		y = vy
 	}
-	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ModernCard.v7")
+	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ModernCard.v14")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
 	atom, _, regErr := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
@@ -461,7 +451,7 @@ func showAnswerPopup(msg popupMessage) error {
 	var bounds rect32
 	procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 	cw, ch := bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
-	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, 22, 20, cw-44, 28, hwnd, 0)
+	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, 22, 16, cw-44, 28, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -470,7 +460,7 @@ func showAnswerPopup(msg popupMessage) error {
 	if !msg.allowApply {
 		summary = "基于选中文字 · AI 回答"
 	}
-	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, 23, 50, cw-46, 21, hwnd, 0)
+	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, 23, 46, cw-46, 21, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -481,7 +471,7 @@ func showAnswerPopup(msg popupMessage) error {
 		bodyStyle |= WS_VSCROLL
 	}
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", editorText, bodyStyle, 22, 84, cw-44, ch-148, hwnd, 0)
+	editor, err := makeChild("EDIT", editorText, bodyStyle, 22, 77, cw-44, ch-132, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -491,18 +481,18 @@ func showAnswerPopup(msg popupMessage) error {
 		closeActiveAnswer()
 		return errors.New("卡片正文控件未收到模型结果")
 	}
-	bottom := ch - 47
+	bottom := ch - 43
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-342, bottom, 122, 36, hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-342, bottom, 122, 34, hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-209, bottom, 102, 36, hwnd, BUTTON_COPY); err != nil {
+	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-209, bottom, 102, 34, hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-96, bottom, 74, 36, hwnd, BUTTON_CLOSE); err != nil {
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-96, bottom, 74, 34, hwnd, BUTTON_CLOSE); err != nil {
 		closeActiveAnswer()
 		return err
 	}
@@ -512,7 +502,7 @@ func showAnswerPopup(msg popupMessage) error {
 	setFont(note, popup.fonts[3])
 	rounded := uint32(2)
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, uintptr(unsafe.Pointer(&rounded)), unsafe.Sizeof(rounded))
-	captionColor := uint32(colorRGB(250, 251, 254))
+	captionColor := uint32(colorRGB(250, 249, 251))
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_CAPTION_COLOR, uintptr(unsafe.Pointer(&captionColor)), unsafe.Sizeof(captionColor))
 	captionText := uint32(colorRGB(45, 56, 73))
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_TEXT_COLOR, uintptr(unsafe.Pointer(&captionText)), unsafe.Sizeof(captionText))
