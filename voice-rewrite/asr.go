@@ -98,36 +98,44 @@ func transcribe(ctx context.Context, cfg Config, pcm []byte) (string, error) {
 
 // transcribeChunk is one HTTP request; taskEpoch cancellation propagates
 // through the request context to stop outstanding network I/O immediately.
-func transcribeChunk(ctx context.Context, cfg Config, pcm []byte) (string, error) {
+func newASRRequest(ctx context.Context, cfg Config, pcm []byte) (*http.Request, error) {
 	wav, err := encodeWAV(pcm)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	var out bytes.Buffer
 	w := multipart.NewWriter(&out)
 	f, e := w.CreateFormFile("file", "voice.wav")
 	if e != nil {
-		return "", e
+		return nil, e
 	}
 	if _, e = f.Write(wav); e != nil {
-		return "", e
+		return nil, e
 	}
 	if e = w.WriteField("model", cfg.ASRModel); e != nil {
-		return "", e
+		return nil, e
 	}
 	if e = w.WriteField("response_format", "json"); e != nil {
-		return "", e
+		return nil, e
 	}
 	if e = w.Close(); e != nil {
-		return "", e
+		return nil, e
 	}
 	req, e := http.NewRequestWithContext(ctx, "POST", endpoint(cfg.ASRBaseURL, "/audio/transcriptions"), &out)
 	if e != nil {
-		return "", e
+		return nil, e
 	}
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	if cfg.ASRAPIKey != "" {
 		req.Header.Set("Authorization", "Bearer "+cfg.ASRAPIKey)
+	}
+	return req, nil
+}
+
+func transcribeChunk(ctx context.Context, cfg Config, pcm []byte) (string, error) {
+	req, err := newASRRequest(ctx, cfg, pcm)
+	if err != nil {
+		return "", err
 	}
 	resp, e := requestClient(90 * time.Second).Do(req)
 	if e != nil {

@@ -23,6 +23,10 @@ jobs:
         run: go test -race -count=1 ./...
   build:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -52,7 +56,7 @@ jobs:
           CGO_ENABLED: '0'
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.25.0-dev' }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.26.0-dev' }
           go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
       - name: Package portable Windows build
         working-directory: voice-rewrite
@@ -85,7 +89,7 @@ jobs:
       - name: Build per-user installer
         shell: pwsh
         run: |
-          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.25.0' }
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.26.0' }
           $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
           if (-not (Test-Path -LiteralPath $compiler)) { throw "Inno Setup compiler not found: $compiler" }
           & $compiler "/DAppVersion=$version" 'installer\VoiceRewrite.iss'
@@ -94,6 +98,18 @@ jobs:
           if ($packages.Count -ne 1) { throw 'Expected exactly one installer output' }
           $hash = (Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash *$($packages[0].Name)" | Set-Content -LiteralPath 'installer/output/INSTALLER-SHA256SUMS.txt' -Encoding ascii
+      # On version tags, GitHub signs provenance for the built artifacts via
+      # short-lived OIDC credentials. This is NOT Authenticode publisher signing.
+      - name: Attest portable archive provenance
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: voice-rewrite/VoiceRewrite-windows-x64.zip
+      - name: Attest installer provenance
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: installer/output/VoiceRewrite-Setup-*-x64.exe
       - name: Upload installer and checksum
         uses: actions/upload-artifact@v4
         with:
@@ -102,6 +118,10 @@ jobs:
           if-no-files-found: error
   build-oneclick:
     runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -117,6 +137,11 @@ jobs:
         working-directory: oneclick
         shell: pwsh
         run: go build -trimpath -ldflags '-s -w' -o Qwen3-ASR-OneClick-Windows-x64.exe .
+      - name: Attest OneClick provenance
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
       - name: Upload Qwen3-ASR OneClick executable
         uses: actions/upload-artifact@v4
         with:

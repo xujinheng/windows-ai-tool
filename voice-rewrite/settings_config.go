@@ -56,6 +56,9 @@ func uxProbeWithKey(ctx context.Context, kind, base, apiKey string) string {
 // A service health response and a compatible model are two separate facts.
 // This probe never uploads microphone audio or sends text prompts.
 func uxProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
+	if kind == "ASR" && strings.TrimSpace(configuredModel) != "" {
+		return uxProbeASRAudio(ctx, base, apiKey, configuredModel)
+	}
 	if !uxValidURL(base) {
 		return kind + "：服务地址无效"
 	}
@@ -109,5 +112,49 @@ func uxProbeModel(ctx context.Context, kind, base, apiKey, configuredModel strin
 		return kind + "：服务暂时不可用（503）"
 	default:
 		return fmt.Sprintf("%s：API 返回 HTTP %d", kind, res.StatusCode)
+	}
+}
+
+// uxProbeASRAudio exercises the actual endpoint and request format used by
+// VoiceRewrite. A models-list success cannot establish support for uploading
+// multipart WAV, as some text-only OpenAI-compatible APIs demonstrate.
+// The probe sends only locally generated silence, never microphone recordings.
+func uxProbeASRAudio(ctx context.Context, base, apiKey, model string) string {
+	const prefix = "ASR："
+	if !uxValidURL(base) || strings.TrimSpace(model) == "" {
+		return prefix + "请填写有效的服务地址和模型 ID"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	cfg := Config{ASRBaseURL: strings.TrimRight(strings.TrimSpace(base), "/"), ASRModel: strings.TrimSpace(model), ASRAPIKey: apiKey}
+	// Exactly one second of 16-kHz 16-bit mono silence. Valid WAV and multipart
+	// headers, but contains no actual voice or private information.
+	req, err := newASRRequest(ctx, cfg, make([]byte, 16000*2))
+	if err != nil {
+		return prefix + "无法生成测试音频请求"
+	}
+	res, err := requestClient(15 * time.Second).Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return prefix + "音频接口检测超时；请检查模型是否加载完成"
+		}
+		return prefix + "无法连接音频接口；请检查服务地址及网络"
+	}
+	defer res.Body.Close()
+	switch res.StatusCode {
+	case http.StatusOK, http.StatusCreated, http.StatusAccepted:
+		return prefix + "音频转写接口接受 WAV 上传（静音测试成功；请试录真实语音）"
+	case http.StatusBadRequest, http.StatusUnprocessableEntity:
+		return fmt.Sprintf("%s音频接口收到请求但拒绝测试音频（HTTP %d）；请试录真实语音", prefix, res.StatusCode)
+	case http.StatusUnsupportedMediaType:
+		return prefix + "HTTP 415：服务不接受当前 WAV 音频上传格式，无法直接用于听写"
+	case http.StatusNotFound, http.StatusMethodNotAllowed:
+		return fmt.Sprintf("%s服务不支持 POST /v1/audio/transcriptions（HTTP %d）", prefix, res.StatusCode)
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return prefix + "认证失败：API Key 无效或无访问权限"
+	case http.StatusServiceUnavailable, http.StatusBadGateway, http.StatusGatewayTimeout:
+		return fmt.Sprintf("%s模型服务尚未就绪（HTTP %d）", prefix, res.StatusCode)
+	default:
+		return fmt.Sprintf("%s音频接口返回 HTTP %d；请检查服务器日志", prefix, res.StatusCode)
 	}
 }

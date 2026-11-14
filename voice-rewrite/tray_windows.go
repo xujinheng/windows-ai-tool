@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"syscall"
 	"unsafe"
@@ -14,41 +15,45 @@ import (
 // Windows notification-area (system tray) indicator. The icon is painted in
 // memory; no icon files, third-party dependencies, or background services.
 const (
-	WM_TRAY_NOTIFY       = 0x8000 + 47 // Shell callback to our registered window procedure
-	WM_TRAY_EVENT        = 0x8000 + 58 // Queued notification forwarded by WndProc
-	WM_TRAY_UPDATE       = 0x8000 + 48
-	WM_TRAY_EXIT         = 0x8000 + 49
-	WM_TRAY_CONFIG       = 0x8000 + 54
-	WM_TRAY_LOG          = 0x8000 + 55
-	WM_TRAY_CLOSE_POPUP  = 0x8000 + 62
-	WM_TRAY_LAST_ERROR   = 0x8000 + 63
-	WM_TRAY_TOGGLE_PAUSE = 0x8000 + 64
-	WM_TRAY_LAST_RESULT  = 0x8000 + 65
-	WM_TRAY_CHECK_UPDATE = 0x8000 + 66
-	WM_TRAY_UPDATE_READY = 0x8000 + 67
-	TRAY_RESET_TIMER_ID  = 3002
-	WM_RBUTTONUP         = 0x0205
-	WM_CONTEXTMENU       = 0x007B
-	NIM_ADD              = 0
-	NIM_MODIFY           = 1
-	NIM_DELETE           = 2
-	NIM_SETVERSION       = 4
-	NOTIFYICON_VERSION_4 = 4
-	NIF_MESSAGE          = 1
-	NIF_ICON             = 2
-	NIF_TIP              = 4
-	TPM_RETURNCMD        = 0x0100
-	TPM_RIGHTBUTTON      = 0x0002
-	MF_STRING            = 0
-	MF_SEPARATOR         = 0x0800
-	DIB_RGB_COLORS       = 0
-	BI_RGB               = 0
-	TRAY_ICON_ID         = 1
-	WS_POPUP             = 0x80000000
-	WS_EX_TOOLWINDOW     = 0x00000080
-	SW_SHOW              = 5
-	SW_HIDE              = 0
-	WM_NULL              = 0
+	WM_TRAY_NOTIFY        = 0x8000 + 47 // Shell callback to our registered window procedure
+	WM_TRAY_EVENT         = 0x8000 + 58 // Queued notification forwarded by WndProc
+	WM_TRAY_UPDATE        = 0x8000 + 48
+	WM_TRAY_EXIT          = 0x8000 + 49
+	WM_TRAY_CONFIG        = 0x8000 + 54
+	WM_TRAY_LOG           = 0x8000 + 55
+	WM_TRAY_CLOSE_POPUP   = 0x8000 + 62
+	WM_TRAY_LAST_ERROR    = 0x8000 + 63
+	WM_TRAY_TOGGLE_PAUSE  = 0x8000 + 64
+	WM_TRAY_LAST_RESULT   = 0x8000 + 65
+	WM_TRAY_CHECK_UPDATE  = 0x8000 + 66
+	WM_TRAY_UPDATE_READY  = 0x8000 + 67
+	WM_TRAY_HISTORY_ITEM  = 0x8000 + 68
+	WM_TRAY_CLEAR_HISTORY = 0x8000 + 69
+	TRAY_RESET_TIMER_ID   = 3002
+	WM_RBUTTONUP          = 0x0205
+	WM_CONTEXTMENU        = 0x007B
+	NIM_ADD               = 0
+	NIM_MODIFY            = 1
+	NIM_DELETE            = 2
+	NIM_SETVERSION        = 4
+	NOTIFYICON_VERSION_4  = 4
+	NIF_MESSAGE           = 1
+	NIF_ICON              = 2
+	NIF_TIP               = 4
+	TPM_RETURNCMD         = 0x0100
+	TPM_RIGHTBUTTON       = 0x0002
+	MF_STRING             = 0
+	MF_SEPARATOR          = 0x0800
+	MF_POPUP              = 0x0010
+	MF_GRAYED             = 0x0001
+	DIB_RGB_COLORS        = 0
+	BI_RGB                = 0
+	TRAY_ICON_ID          = 1
+	WS_POPUP              = 0x80000000
+	WS_EX_TOOLWINDOW      = 0x00000080
+	SW_SHOW               = 5
+	SW_HIDE               = 0
+	WM_NULL               = 0
 )
 
 type trayState int32
@@ -154,6 +159,7 @@ type trayIndicator struct {
 	menuOwner      uintptr
 	icons          [7]uintptr
 	paused         *atomic.Bool
+	history        *resultHistory
 	taskbarCreated uint32
 	created        bool
 }
@@ -208,8 +214,8 @@ func colorIcon(rgb uint32) (uintptr, error) {
 	return h, nil
 }
 
-func newTrayIndicator(hwnd uintptr, paused *atomic.Bool) (*trayIndicator, error) {
-	t := &trayIndicator{hwnd: hwnd, paused: paused}
+func newTrayIndicator(hwnd uintptr, paused *atomic.Bool, history *resultHistory) (*trayIndicator, error) {
+	t := &trayIndicator{hwnd: hwnd, paused: paused, history: history}
 	class, _ := syscall.UTF16PtrFromString("STATIC")
 	title, _ := syscall.UTF16PtrFromString("VoiceRewriteMenuOwner")
 	owner, _, _ := procCreateWindow.Call(WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), WS_POPUP, 0, 0, 1, 1, 0, 0, 0, 0)
@@ -310,6 +316,34 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	procAppendMenu.Call(m, MF_STRING, 3, uintptr(unsafe.Pointer(logLabel)))
 	procAppendMenu.Call(m, MF_STRING, 5, uintptr(unsafe.Pointer(errorLabel)))
 	procAppendMenu.Call(m, MF_STRING, 7, uintptr(unsafe.Pointer(resultLabel)))
+	// A bounded, in-memory history. Never put any transcript words in the
+	// system menu, which can be observed by other applications/screenshots.
+	var recent []resultEntry
+	if t.history != nil {
+		recent = t.history.snapshot()
+	}
+	if len(recent) != 0 {
+		submenu, _, _ := procCreatePopupMenu.Call()
+		if submenu != 0 {
+			for i, entry := range recent {
+				kind := "AI 结果"
+				if strings.Contains(entry.Title, "听写") {
+					kind = "听写"
+				}
+				label, _ := syscall.UTF16PtrFromString(fmt.Sprintf("%d. %s · %s", i+1, kind, entry.CreatedAt.Format("15:04")))
+				procAppendMenu.Call(submenu, MF_STRING, uintptr(1000+i), uintptr(unsafe.Pointer(label)))
+				runtime.KeepAlive(label)
+			}
+			historyLabel, _ := syscall.UTF16PtrFromString("最近 10 次结果（仅当前会话）")
+			if ok, _, _ := procAppendMenu.Call(m, MF_POPUP, submenu, uintptr(unsafe.Pointer(historyLabel))); ok == 0 {
+				procDestroyMenu.Call(submenu)
+			}
+			runtime.KeepAlive(historyLabel)
+		}
+		clearLabel, _ := syscall.UTF16PtrFromString("清空本次会话历史")
+		procAppendMenu.Call(m, MF_STRING, 9, uintptr(unsafe.Pointer(clearLabel)))
+		runtime.KeepAlive(clearLabel)
+	}
 	procAppendMenu.Call(m, MF_STRING, 4, uintptr(unsafe.Pointer(closeLabel)))
 	procAppendMenu.Call(m, MF_STRING, 8, uintptr(unsafe.Pointer(updateLabel)))
 	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
@@ -337,7 +371,14 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	// Required workaround for repeated notification-icon popup menus.
 	procPostMessage.Call(t.menuOwner, WM_NULL, 0, 0)
 	procShowWindow.Call(t.menuOwner, SW_HIDE)
+	if selected >= 1000 && selected < 1000+uintptr(len(recent)) {
+		entry := recent[int(selected-1000)]
+		procPostMessage.Call(t.hwnd, WM_TRAY_HISTORY_ITEM, uintptr(entry.ID), 0)
+		return selected, nil
+	}
 	switch selected {
+	case 9:
+		procPostMessage.Call(t.hwnd, WM_TRAY_CLEAR_HISTORY, 0, 0)
 	case 1:
 		procPostMessage.Call(t.hwnd, WM_TRAY_EXIT, 0, 0)
 	case 2:

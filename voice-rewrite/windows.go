@@ -21,7 +21,7 @@ import (
 	"unsafe"
 )
 
-var buildID = "0.25.0-dev" // overwritten by -ldflags -X at build time
+var buildID = "0.26.0-dev" // overwritten by -ldflags -X at build time
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -160,23 +160,21 @@ type selectedText struct {
 	Anchor               trayPoint
 }
 type appState struct {
-	Window          uintptr
-	logger          *log.Logger
-	cfg             Config
-	busy            atomic.Bool
-	epoch           taskEpoch
-	status          atomic.Int32
-	trayMu          sync.Mutex
-	tray            *trayIndicator
-	popups          chan popupMessage
-	lastErrorMu     sync.Mutex
-	lastError       string
-	lastResultMu    sync.Mutex
-	lastResult      string
-	lastResultTitle string
-	paused          atomic.Bool
-	updateBusy      atomic.Bool
-	updateReady     chan updateNotice
+	Window      uintptr
+	logger      *log.Logger
+	cfg         Config
+	busy        atomic.Bool
+	epoch       taskEpoch
+	status      atomic.Int32
+	trayMu      sync.Mutex
+	tray        *trayIndicator
+	popups      chan popupMessage
+	lastErrorMu sync.Mutex
+	lastError   string
+	history     resultHistory
+	paused      atomic.Bool
+	updateBusy  atomic.Bool
+	updateReady chan updateNotice
 }
 
 // Shell notification APIs and icon lifetime are owned by the Windows UI thread.
@@ -218,9 +216,7 @@ func (a *appState) rememberResult(title, value string) {
 	if strings.TrimSpace(value) == "" {
 		return
 	}
-	a.lastResultMu.Lock()
-	a.lastResultTitle, a.lastResult = title, value
-	a.lastResultMu.Unlock()
+	a.history.remember(title, value)
 }
 
 func winErr(msg string) {
@@ -402,7 +398,7 @@ func runApp() {
 		return
 	}
 	defer procUnregisterHotKey.Call(0, HOTKEY_EXIT)
-	indicator, err := newTrayIndicator(hwnd, &app.paused)
+	indicator, err := newTrayIndicator(hwnd, &app.paused, &app.history)
 	if err != nil {
 		winErr("无法创建系统托盘图标: " + err.Error())
 		return
@@ -708,14 +704,25 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_TRAY_LAST_RESULT {
-			app.lastResultMu.Lock()
-			title, value := app.lastResultTitle, app.lastResult
-			app.lastResultMu.Unlock()
-			if value == "" {
+			history := app.history.snapshot()
+			if len(history) == 0 {
 				winErr("当前会话还没有可恢复的语音结果。")
 			} else {
-				app.showAnswer(title+" · 历史结果", value, currentCursorPoint(), nil, false, app.epoch.current())
+				app.showAnswer(history[0].Title+" · 历史结果", history[0].Text, currentCursorPoint(), nil, false, app.epoch.current())
 			}
+			continue
+		}
+		if msg.Message == WM_TRAY_HISTORY_ITEM {
+			if entry, ok := app.history.get(uint64(msg.WParam)); ok {
+				app.showAnswer(entry.Title+" · 历史结果", entry.Text, currentCursorPoint(), nil, false, app.epoch.current())
+			} else {
+				winErr("该结果已从本次会话历史中清除。")
+			}
+			continue
+		}
+		if msg.Message == WM_TRAY_CLEAR_HISTORY {
+			app.history.clear()
+			closeActiveAnswer()
 			continue
 		}
 		if msg.Message == WM_TRAY_LAST_ERROR {
