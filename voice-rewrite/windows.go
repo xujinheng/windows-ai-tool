@@ -916,6 +916,14 @@ func dispatchNativeMessage(msg *winMSG) {
 		closeActiveAnswer()
 		return
 	}
+	// The result card is an ordinary top-level HWND, not a dialog. Explicit
+	// dialog-key translation is required for Tab/Shift+Tab and Space/Enter
+	// navigation between its real native EDIT and BUTTON children.
+	if activeAnswer != nil && activeAnswer.window != 0 {
+		if handled, _, _ := procIsDialogMessage.Call(activeAnswer.window, uintptr(unsafe.Pointer(msg))); handled != 0 {
+			return
+		}
+	}
 	procTranslateMessage.Call(uintptr(unsafe.Pointer(msg)))
 	procDispatchMessage.Call(uintptr(unsafe.Pointer(msg)))
 }
