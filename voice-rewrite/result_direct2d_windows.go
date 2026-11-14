@@ -32,8 +32,8 @@ var (
 // A one-bit HWND diagnostic replaces the old brand-color pixel assertion in
 // Windows CI: it is set only after Direct2D EndDraw succeeds.
 var (
-	resultReadyProperty, _ = syscall.UTF16PtrFromString("VoiceRewrite.Direct2D.FrameReady")
-	resultSetReadyProperty = user32.NewProc("SetPropW")
+	resultReadyProperty, _    = syscall.UTF16PtrFromString("VoiceRewrite.Direct2D.FrameReady")
+	resultSetReadyProperty    = user32.NewProc("SetPropW")
 	resultRemoveReadyProperty = user32.NewProc("RemovePropW")
 )
 

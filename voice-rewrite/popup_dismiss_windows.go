@@ -11,8 +11,8 @@ import (
 // focus or consuming the click. The user can continue working in the editor
 // they clicked; the result card only receives an asynchronous WM_CLOSE.
 const (
-	popupWHMouseLL  = 14
-	popupHcAction   = 0
+	popupWHMouseLL   = 14
+	popupHcAction    = 0
 	popupLButtonDown = 0x0201
 	popupRButtonDown = 0x0204
 	popupMButtonDown = 0x0207
@@ -20,21 +20,21 @@ const (
 
 type popupMousePoint struct{ X, Y int32 }
 type popupMouseEvent struct {
-	Point popupMousePoint
+	Point     popupMousePoint
 	MouseData uint32
-	Flags uint32
-	Time uint32
+	Flags     uint32
+	Time      uint32
 	ExtraInfo uintptr
 }
 
 var (
-	popupSetWindowsHookEx = user32.NewProc("SetWindowsHookExW")
+	popupSetWindowsHookEx    = user32.NewProc("SetWindowsHookExW")
 	popupUnhookWindowsHookEx = user32.NewProc("UnhookWindowsHookEx")
-	popupCallNextHookEx = user32.NewProc("CallNextHookEx")
-	popupGetWindowRect = user32.NewProc("GetWindowRect")
-	popupGetDlgItem = user32.NewProc("GetDlgItem")
-	popupMouseHook uintptr
-	popupMouseCallback = syscall.NewCallback(func(code, event, data uintptr) uintptr {
+	popupCallNextHookEx      = user32.NewProc("CallNextHookEx")
+	popupGetWindowRect       = user32.NewProc("GetWindowRect")
+	popupGetDlgItem          = user32.NewProc("GetDlgItem")
+	popupMouseHook           uintptr
+	popupMouseCallback       = syscall.NewCallback(func(code, event, data uintptr) uintptr {
 		if code == popupHcAction && data != 0 &&
 			(event == popupLButtonDown || event == popupRButtonDown || event == popupMButtonDown) {
 			if p := activeAnswer; p != nil && p.window != 0 {

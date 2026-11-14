@@ -19,8 +19,8 @@ func TestPopupClickDismissesExceptResponseAndActions(t *testing.T) {
 	editor := popupHitRect{30, 66, 466, 202}
 	buttons := []popupHitRect{{258, 214, 375, 252}, {383, 214, 468, 252}}
 	for _, tc := range []struct {
-		name string
-		x, y int32
+		name    string
+		x, y    int32
 		dismiss bool
 	}{
 		{"outside left", 9, 125, true},
