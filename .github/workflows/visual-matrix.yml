@@ -6,6 +6,8 @@ on:
       - 'voice-rewrite/visual_skin_windows.go'
       - 'voice-rewrite/settings_layout.go'
       - 'voice-rewrite/settings_direct2d_windows.go'
+      - 'voice-rewrite/settings_field_geometry.go'
+      - 'voice-rewrite/settings_field_geometry_test.go'
       - 'voice-rewrite/result_direct2d_windows.go'
       - 'voice-rewrite/popup_layout.go'
       - 'voice-rewrite/desktop_geometry.go'
@@ -68,11 +70,22 @@ jobs:
             public static extern bool IsWindowVisible(IntPtr hwnd);
             [DllImport("user32.dll",CharSet=CharSet.Unicode)]
             public static extern IntPtr GetProp(IntPtr hwnd,string name);
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)]
+            public static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
+            [DllImport("user32.dll")]
+            public static extern bool ClientToScreen(IntPtr hwnd,ref POINT p);
+            [StructLayout(LayoutKind.Sequential)]
+            public struct POINT { public int X,Y; }
+            [DllImport("user32.dll")]
+            public static extern bool SetCursorPos(int x,int y);
+            [DllImport("user32.dll")]
+            public static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
           }
           '@
           $exe=Join-Path (Get-Location) 'voice-rewrite/VoiceRewrite.exe'
           $cases=@(
             @{id='settings-light';kind='settings';theme='light';scale='1'},
+            @{id='settings-focus-light';kind='settings';theme='light';scale='1';focus='1'},
             @{id='settings-dark';kind='settings';theme='dark';scale='1'},
             @{id='settings-ai-dark';kind='settings';theme='dark';scale='1';page=1},
             @{id='settings-input-dark';kind='settings';theme='dark';scale='1';page=2},
@@ -141,6 +154,20 @@ jobs:
                   if($visible[$idx] -ne ($idx -eq $page)){throw "Sidebar selection $page has incorrect native page visibility: $($visible -join ',')"}
                 }
               }
+              if($case.kind -eq 'settings' -and $case.focus -eq '1') {
+                # Stable real Win32 child IDs avoid unreliable child Z-order.
+                $second=[MatrixWin]::GetDlgItem($hwnd,9131)
+                if($second -eq [IntPtr]::Zero -or -not [MatrixWin]::IsWindowVisible($second)){throw "missing visible native ASR model ID editor"}
+                $editRect=New-Object MatrixWin+RECT
+                if(-not [MatrixWin]::GetWindowRect($second,[ref]$editRect)){throw "model edit rect unavailable"}
+                [MatrixWin]::SetCursorPos($editRect.Left+25,[int](($editRect.Top+$editRect.Bottom)/2)) | Out-Null
+                [MatrixWin]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+                [MatrixWin]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+                # CI's synthetic desktop sometimes refuses cross-process focus.
+                # Explicitly deliver the same native EN_SETFOCUS event to verify paint.
+                [void][MatrixWin]::SendMessage($hwnd,0x0111,[IntPtr]0x01000000,$second)
+                Start-Sleep -Milliseconds 220
+              }
               $rect=New-Object MatrixWin+RECT
               if(-not [MatrixWin]::GetWindowRect($hwnd,[ref]$rect)){throw "No window rect"}
               $w=$rect.Right-$rect.Left
@@ -173,6 +200,41 @@ jobs:
                 $g=[System.Drawing.Graphics]::FromImage($bitmap)
                 try{
                   $g.CopyFromScreen($rect.Left,$rect.Top,0,0,[System.Drawing.Size]::new($w,$h))
+                  if($case.focus -eq '1') {
+                    # Assert a continuous purple focus border on actual screen
+                    # pixels, including the left edge previously hidden by EDIT.
+                    $origin=New-Object MatrixWin+POINT
+                    if(-not [MatrixWin]::ClientToScreen($hwnd,[ref]$origin)){throw "client origin unavailable"}
+                    $fx=$origin.X-$rect.Left+345
+                    $fy=$origin.Y-$rect.Top+223
+                    $samples=@(
+                      [pscustomobject]@{x=$fx;y=($fy+17)},
+                      [pscustomobject]@{x=($fx+447);y=($fy+17)},
+                      [pscustomobject]@{x=($fx+60);y=$fy},
+                      [pscustomobject]@{x=($fx+60);y=($fy+34)}
+                    )
+                    $edges=@('left','right','top','bottom')
+                    $missingEdges=@()
+                    for($edge=0;$edge -lt 4;$edge++){
+                      $match=$false
+                      for($dx=-2;$dx -le 2 -and -not $match;$dx++){
+                        for($dy=-2;$dy -le 2;$dy++){
+                          $px=[int]($samples[$edge].x+$dx)
+                          $py=[int]($samples[$edge].y+$dy)
+                          if($px -lt 0 -or $py -lt 0 -or $px -ge $w -or $py -ge $h){continue}
+                          $color=$bitmap.GetPixel($px,$py)
+                          if($color.B -gt 155 -and $color.B-$color.G -gt 45 -and $color.B-$color.R -gt 35){$match=$true;break}
+                        }
+                      }
+                      Write-Host "FOCUS EDGE $($edges[$edge]): $match"
+                      if(-not $match){$missingEdges+= $edges[$edge]}
+                    }
+                    $focused=Join-Path (Get-Location) 'visual-matrix/settings-focus-debug.png'
+                    $bitmap.Save($focused,[System.Drawing.Imaging.ImageFormat]::Png)
+                    Write-Host "FOCUS FRAME SCREEN RECT x=$fx y=$fy; screenshot $focused"
+                    if($missingEdges.Count -gt 0){throw "model focus outline missing lilac: $($missingEdges -join ',')"}
+                    Write-Host 'CONFIRMED: all four sides of selected native model field have lilac focus outline'
+                  }
                   $file=Join-Path (Get-Location) "visual-matrix/$($case.id)-$suffix.png"
                   $bitmap.Save($file,[System.Drawing.Imaging.ImageFormat]::Png)
                 } finally {$g.Dispose();$bitmap.Dispose()}
@@ -191,7 +253,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $folder = 'visual-matrix'
-          $expected = @('settings-light-top','settings-dark-top','settings-ai-dark-top','settings-input-dark-top','settings-125-top','settings-150-top','settings-200-top','settings-200-bottom','answer-light-top','answer-dark-long-top','recording-200-top')
+          $expected = @('settings-light-top','settings-focus-light-top','settings-dark-top','settings-ai-dark-top','settings-input-dark-top','settings-125-top','settings-150-top','settings-200-top','settings-200-bottom','answer-light-top','answer-dark-long-top','recording-200-top')
           foreach ($name in $expected) {
             $path = Join-Path $folder ($name + '.png')
             if (!(Test-Path -LiteralPath $path)) { throw "Missing actual capture: $name" }
@@ -202,7 +264,7 @@ jobs:
             $second = (Get-FileHash (Join-Path $folder ($pair[1] + '.png')) -Algorithm SHA256).Hash
             if ($first -eq $second) { throw "Visual states rendered identically: $($pair -join ' vs ')" }
           }
-          Write-Host 'Eleven real Win32 captures: dark/light, sidebar sections, Direct2D, scrolling and high DPI validated.'
+          Write-Host 'Twelve Windows captures, including four-sided focus outline and native page visibility.'
       - name: Publish verified screenshots to README (main branch only)
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         shell: pwsh

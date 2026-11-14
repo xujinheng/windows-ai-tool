@@ -16,58 +16,64 @@ import (
 // A small, native settings surface; it does not host a browser or intercept
 // the editor focus until deliberately opened from the tray menu.
 const (
-	uxWMCommand               = 0x0111
-	uxWMSize                  = 0x0005
-	uxWMVScroll               = 0x0115
-	uxWMHScroll               = 0x0114
-	uxWMMouseWheel            = 0x020A
-	uxSIFRange                = 1
-	uxSIFPage                 = 2
-	uxSIFPos                  = 4
-	uxSIFTrackPos             = 16
-	uxSBHorz                  = 0
-	uxSBVert                  = 1
-	uxWMGetMinMaxInfo         = 0x0024
-	uxWSThickFrame            = 0x00040000
-	uxWMSettingChange         = 0x001A
-	uxWMThemeChanged          = 0x031A
-	uxWMClose                 = 0x0010
-	uxWMEraseBkgnd            = 0x0014
-	uxWMPaint                 = 0x000F
-	uxWMNCDestroy             = 0x0082
-	uxWMColorStatic           = 0x0138
-	uxWMColorEdit             = 0x0133
-	uxWMDrawItem              = 0x002B
-	uxBSOwnerDraw             = 0x000B
-	uxEMSetMargins            = 0x00D3
-	uxWMProbeDone             = 0x8000 + 104
-	uxSaveButton              = 9101
-	uxCloseButton             = 9102
-	uxAdvancedButton          = 9103
-	uxProbeASRButton          = 9104
-	uxProbeLLMButton          = 9105
-	uxShortcutInput           = 9106
-	uxRewriteInput            = 9108
-	uxCaptureRewrite          = 9130
-	uxCaptureDictation        = 9131
+	uxWMCommand       = 0x0111
+	uxWMSize          = 0x0005
+	uxWMVScroll       = 0x0115
+	uxWMHScroll       = 0x0114
+	uxWMMouseWheel    = 0x020A
+	uxSIFRange        = 1
+	uxSIFPage         = 2
+	uxSIFPos          = 4
+	uxSIFTrackPos     = 16
+	uxSBHorz          = 0
+	uxSBVert          = 1
+	uxWMGetMinMaxInfo = 0x0024
+	uxWSThickFrame    = 0x00040000
+	uxWMSettingChange = 0x001A
+	uxWMThemeChanged  = 0x031A
+	uxWMClose         = 0x0010
+	uxWMEraseBkgnd    = 0x0014
+	uxWMPaint         = 0x000F
+	uxWMNCDestroy     = 0x0082
+	uxWMColorStatic   = 0x0138
+	uxWMColorEdit     = 0x0133
+	uxWMDrawItem      = 0x002B
+	uxBSOwnerDraw     = 0x000B
+	uxEMSetMargins    = 0x00D3
+	uxWMProbeDone     = 0x8000 + 104
+	uxSaveButton      = 9101
+	uxCloseButton     = 9102
+	uxAdvancedButton  = 9103
+	uxProbeASRButton  = 9104
+	uxProbeLLMButton  = 9105
+	uxShortcutInput   = 9106
+	uxRewriteInput    = 9108
+	uxCaptureRewrite  = 9140
+	uxCaptureDictation = 9141
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
-	uxMicrophoneInput         = 9107
-	uxNavSpeech               = 9120
-	uxNavAI                   = 9121
-	uxNavInput                = 9122
-	uxCBAddString             = 0x0143
-	uxCBSetCurSel             = 0x014E
-	uxCBGetCurSel             = 0x0147
-	uxCBSDropDownList         = 0x0003
-	uxWSChild                 = 0x40000000
-	uxWSVisible               = 0x10000000
-	uxWSTabStop               = 0x00010000
-	uxESAutoScroll            = 0x0080
-	uxESPassword              = 0x0020
-	uxWSBorder                = 0x00800000
-	uxWSCaption               = 0x00C00000
-	uxWSSysMenu               = 0x00080000
-	uxWSMinimizeBox           = 0x00020000
+	uxMicrophoneInput = 9107
+	uxNavSpeech       = 9120
+	uxNavAI           = 9121
+	uxNavInput        = 9122
+	uxASRURLInput     = 9130
+	uxASRModelInput   = 9131
+	uxASRKeyInput     = 9132
+	uxLLMURLInput     = 9133
+	uxLLMModelInput   = 9134
+	uxLLMKeyInput     = 9135
+	uxCBAddString     = 0x0143
+	uxCBSetCurSel     = 0x014E
+	uxCBGetCurSel     = 0x0147
+	uxCBSDropDownList = 0x0003
+	uxWSChild         = 0x40000000
+	uxWSVisible       = 0x10000000
+	uxWSTabStop       = 0x00010000
+	uxESAutoScroll    = 0x0080
+	uxESPassword      = 0x0020
+	uxWSBorder        = 0x00800000
+	uxWSCaption       = 0x00C00000
+	uxWSSysMenu       = 0x00080000
+	uxWSMinimizeBox   = 0x00020000
 )
 
 var (
@@ -128,7 +134,7 @@ func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
 
 // 96-DPI logical coordinate scrolling avoids inaccessible buttons on small
 // work areas and 125%–200% display scaling.
-const uxContentWidth, uxContentHeight int32 = 816, 532
+const uxContentWidth, uxContentHeight int32 = 816, 484
 
 type uxScrollInfo struct {
 	Size, Mask    uint32
@@ -232,9 +238,7 @@ func (p *uxSettings) switchPage(next int) {
 	if p == nil || next < 0 || next >= len(p.pages) {
 		return
 	}
-	if next != p.page {
-		p.stopShortcutCapture()
-	}
+	if next != p.page { p.stopShortcutCapture() }
 	p.page = next
 	p.focusRow = -1
 	for page, windows := range p.pages {
@@ -585,9 +589,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				label = "测试连接"
 			case uxCaptureRewrite, uxCaptureDictation:
 				label = "录入按键"
-				if p.capturingShortcut == uintptr(item.CtlID) {
-					label = "等待按键…"
-				}
+				if p.capturingShortcut == uintptr(item.CtlID) { label = "等待按键…" }
 			}
 			if label != "" && uiDrawActionButton(item, p.palette, p.font, label, primary) {
 				return 1
@@ -638,12 +640,8 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 							p.focusRow = idx % 3
 						}
 					}
-					if p.rewriteShortcut == lParam {
-						p.focusRow = 0
-					}
-					if p.shortcut == lParam {
-						p.focusRow = 1
-					}
+					if p.rewriteShortcut == lParam { p.focusRow = 0 }
+                    if p.shortcut == lParam { p.focusRow = 1 }
 				}
 				refreshNativeWindow(hwnd)
 			}
@@ -830,7 +828,7 @@ func showNativeSettings(app *appState) error {
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
-	winW, winH := desktopFitSize(int32(sc(860)), int32(sc(590)), work, 12)
+	winW, winH := desktopFitSize(int32(sc(860)), int32(sc(530)), work, 12)
 	x, y := uxCenteredWindow(winW, winH)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
@@ -848,7 +846,9 @@ func showNativeSettings(app *appState) error {
 	} else if app != nil && app.logger != nil {
 		app.logger.Printf("settings Direct2D unavailable; using GDI: %v", renderErr)
 	}
-	fontName := uxPtr("Segoe UI Variable")
+	// Match the DirectWrite Chinese UI face; Segoe UI Variable can fall back
+	// to a serif CJK face in Win32 EDIT/STATIC controls on some systems.
+	fontName := uxPtr("Microsoft YaHei UI")
 	p.font, _, _ = procCreateFont.Call(sc(-16), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.titleFont, _, _ = procCreateFont.Call(sc(-24), 0, 0, 0, 650, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.sectionFont, _, _ = procCreateFont.Call(sc(-18), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
@@ -887,49 +887,56 @@ func showNativeSettings(app *appState) error {
 	head := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
 	setFont(head, p.titleFont)
 	start := len(p.controls)
-	makeOne("STATIC", "API 地址", stat, 224, 181, 122, 24, 0, false)
-	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 350, 173, 437, 34, 0, false)
-	makeOne("STATIC", "模型 ID", stat, 224, 251, 122, 24, 0, false)
-	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 350, 243, 437, 34, 0, false)
-	makeOne("STATIC", "API Key", stat, 224, 321, 122, 24, 0, false)
-	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 350, 313, 437, 34, 0, false)
-	p.probeStatus[0] = makeOne("STATIC", "尚未检测连接", stat, 352, 375, 435, 60, 0, false)
-	makeOne("BUTTON", "测试连接", btn, 696, 138, 92, 31, uxProbeASRButton, false)
+	firstLabel, firstEdit := settingsFieldLabel(0), settingsFieldEdit(0)
+	secondLabel, secondEdit := settingsFieldLabel(1), settingsFieldEdit(1)
+	thirdLabel, thirdEdit := settingsFieldLabel(2), settingsFieldEdit(2)
+	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
+	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxASRURLInput, false)
+	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
+	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxASRModelInput, false)
+	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
+	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxASRKeyInput, false)
+	p.probeStatus[0] = makeOne("STATIC", "尚未检测连接", stat, 352, 324, 435, 48, 0, false)
+	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeASRButton, false)
 	for _, c := range p.controls[start:] {
 		p.pages[0] = append(p.pages[0], c.hwnd)
 	}
 	start = len(p.controls)
-	makeOne("STATIC", "API 地址", stat, 224, 181, 122, 24, 0, false)
-	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 350, 173, 437, 34, 0, false)
-	makeOne("STATIC", "模型 ID", stat, 224, 251, 122, 24, 0, false)
-	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 350, 243, 437, 34, 0, false)
-	makeOne("STATIC", "API Key", stat, 224, 321, 122, 24, 0, false)
-	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 350, 313, 437, 34, 0, false)
-	p.probeStatus[1] = makeOne("STATIC", "尚未检测连接", stat, 352, 375, 435, 60, 0, false)
-	makeOne("BUTTON", "测试连接", btn, 696, 138, 92, 31, uxProbeLLMButton, false)
+	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
+	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxLLMURLInput, false)
+	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
+	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxLLMModelInput, false)
+	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
+	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxLLMKeyInput, false)
+	p.probeStatus[1] = makeOne("STATIC", "尚未检测连接", stat, 352, 324, 435, 48, 0, false)
+	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeLLMButton, false)
 	for _, c := range p.controls[start:] {
 		p.pages[1] = append(p.pages[1], c.hwnd)
 	}
 	start = len(p.controls)
-	makeOne("STATIC", "语音指令", stat, 224, 181, 124, 24, 0, false)
-	p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, 350, 173, 226, 34, uxRewriteInput, false) // ES_READONLY
-	p.captureButtons[0] = makeOne("BUTTON", "录入按键", btn, 593, 173, 194, 34, uxCaptureRewrite, false)
-	makeOne("STATIC", "听写快捷键", stat, 224, 251, 124, 24, 0, false)
-	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, 350, 243, 226, 34, uxShortcutInput, false)
-	p.captureButtons[1] = makeOne("BUTTON", "录入按键", btn, 593, 243, 194, 34, uxCaptureDictation, false)
-	makeOne("STATIC", "麦克风", stat, 224, 321, 124, 24, 0, false)
-	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 313, 437, 190, uxMicrophoneInput, false)
+    // Shortcut displays are read-only; the recorder button captures physical events.
+    short0 := settingsShortcutEdit()
+    short1 := short0
+    short1.Y += settingsFieldRowStep
+    makeOne("STATIC", "语音指令", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
+    p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, short0.X, short0.Y, short0.W, short0.H, uxRewriteInput, false)
+    p.captureButtons[0] = makeOne("BUTTON", "录入按键", btn, 593, 169, 194, 34, uxCaptureRewrite, false)
+    makeOne("STATIC", "听写快捷键", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
+    p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, short1.X, short1.Y, short1.W, short1.H, uxShortcutInput, false)
+    p.captureButtons[1] = makeOne("BUTTON", "录入按键", btn, 593, 223, 194, 34, uxCaptureDictation, false)
+    makeOne("STATIC", "麦克风", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
+    p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 281, 437, 190, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
 	resultStyleNativeEdit(p.microphone, p.palette.dark)
-	info := makeOne("STATIC", "语音指令：改写/解释/问答。点击录入后按键；修改后需重启软件。", stat, 226, 385, 565, 44, 0, false)
+	info := makeOne("STATIC", "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", stat, 226, 345, 565, 44, 0, false)
 	setFont(info, p.mutedFont)
 	for _, c := range p.controls[start:] {
 		p.pages[2] = append(p.pages[2], c.hwnd)
 	}
-	makeOne("BUTTON", "保存设置", btn, 220, 472, 124, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级配置", btn, 358, 472, 112, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 710, 472, 94, 34, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "", stat, 223, 509, 560, 22, 0, false)
+	makeOne("BUTTON", "保存设置", btn, 220, 418, 124, 34, uxSaveButton, false)
+	makeOne("BUTTON", "高级配置", btn, 358, 418, 112, 34, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 710, 418, 94, 34, uxCloseButton, false)
+	p.hint = makeOne("STATIC", "", stat, 223, 457, 560, 22, 0, false)
 	setFont(p.hint, p.mutedFont)
 	setFont(p.probeStatus[0], p.mutedFont)
 	setFont(p.probeStatus[1], p.mutedFont)
