@@ -503,12 +503,19 @@ func uxSettingsFeedbackColor(p uiPalette, status string) uint32 {
 
 // markDirty is shared by the real edit notifications and preview fixture.
 func (p *uxSettings) markDirty() {
-	if p==nil || p.window==0 || p.initializing {return}
-	p.dirty=true
-	if p.hint!=0 {uxSetText(p.hint,"● 有未保存的更改 · 点击右侧保存")}
+	if p == nil || p.window == 0 || p.initializing {
+		return
+	}
+	p.dirty = true
+	if p.hint != 0 {
+		uxSetText(p.hint, "● 有未保存的更改 · 点击右侧保存")
+	}
 	refreshNativeWindow(p.window)
-	for _,ctrl:=range p.controls {
-		if ctrl.id==uxSaveButton {refreshNativeWindow(ctrl.hwnd);break}
+	for _, ctrl := range p.controls {
+		if ctrl.id == uxSaveButton {
+			refreshNativeWindow(ctrl.hwnd)
+			break
+		}
 	}
 }
 
@@ -743,8 +750,12 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				color = p.palette.muted
 				if p.dirty {
 					color = p.palette.primary
-				} else if status:=uxWinText(p.hint); strings.HasPrefix(status,"✓") || strings.HasPrefix(status,"设置已保存") {
-					if p.palette.dark {color=0x7BD6B1} else {color=0x237A58}
+				} else if status := uxWinText(p.hint); strings.HasPrefix(status, "✓") || strings.HasPrefix(status, "设置已保存") {
+					if p.palette.dark {
+						color = 0x7BD6B1
+					} else {
+						color = 0x237A58
+					}
 				}
 			} else if lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
 				color = uxSettingsFeedbackColor(p.palette, uxWinText(lParam))
@@ -1097,7 +1108,7 @@ func showNativeSettings(app *appState) error {
 	p.initializing = false
 	// CI uses this preview-only knob to render the same dirty state reached
 	// through real EN_CHANGE/CBN_SELCHANGE notifications, without a provider.
-	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW")!="" && os.Getenv("VOICEREWRITE_VISUAL_DIRTY")=="1" {
+	if os.Getenv("VOICEREWRITE_VISUAL_PREVIEW") != "" && os.Getenv("VOICEREWRITE_VISUAL_DIRTY") == "1" {
 		p.markDirty()
 	}
 	p.layout()

@@ -29,10 +29,10 @@ const (
 	WM_DRAWITEM                    = 0x002B
 	VK_ESCAPE                      = 0x1b
 	WS_OVERLAPPED                  = 0
-	popupWSPopup                  = 0x80000000
-	popupWMNCHitTest              = 0x0084
-	popupHTCaption                = 2
-	popupHTClient                 = 1
+	popupWSPopup                   = 0x80000000
+	popupWMNCHitTest               = 0x0084
+	popupHTCaption                 = 2
+	popupHTClient                  = 1
 	WS_CAPTION                     = 0x00c00000
 	WS_SYSMENU                     = 0x00080000
 	WS_CHILD                       = 0x40000000
@@ -304,16 +304,16 @@ func (p *answerPopup) refreshTheme() {
 func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch uint32(msg) {
 	case popupWMNCHitTest:
-		if activeAnswer != nil && activeAnswer.window==hwnd {
+		if activeAnswer != nil && activeAnswer.window == hwnd {
 			// Return HTCAPTION only inside the safe drag strip, leaving the
 			// explicit top-right Close button and other native children clickable.
 			var bounds rect32
-			if ok,_,_:=user32.NewProc("GetWindowRect").Call(hwnd,uintptr(unsafe.Pointer(&bounds)));ok!=0 {
-				screenX:=int32(int16(uint16(lParam&0xffff)))
-				screenY:=int32(int16(uint16((lParam>>16)&0xffff)))
-				stripBottom:=bounds.Top+int32(64*activeAnswer.scale)
-				closeLeft:=bounds.Right-int32(74*activeAnswer.scale)
-				if screenY>=bounds.Top && screenY<stripBottom && screenX<closeLeft {
+			if ok, _, _ := user32.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok != 0 {
+				screenX := int32(int16(uint16(lParam & 0xffff)))
+				screenY := int32(int16(uint16((lParam >> 16) & 0xffff)))
+				stripBottom := bounds.Top + int32(64*activeAnswer.scale)
+				closeLeft := bounds.Right - int32(74*activeAnswer.scale)
+				if screenY >= bounds.Top && screenY < stripBottom && screenX < closeLeft {
 					return popupHTCaption
 				}
 				return popupHTClient
@@ -544,8 +544,8 @@ func showAnswerPopup(msg popupMessage) error {
 	popup.eyebrow = eyebrow
 	// A full native HWND button replaces the old Windows dialog title-bar X.
 	// It remains keyboard reachable and can be clicked independently of dragging.
-	if _,err=makeChild("BUTTON","关闭",WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW,
-		cw-px(58),px(24),px(30),px(30),hwnd,BUTTON_CLOSE);err!=nil {
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW,
+		cw-px(58), px(24), px(30), px(30), hwnd, BUTTON_CLOSE); err != nil {
 		closeActiveAnswer()
 		return err
 	}
