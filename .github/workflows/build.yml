@@ -14,32 +14,39 @@ concurrency:
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
-  # One-time refresh of v0.1.0 to include the selected-text stability fix.
-  refresh-v0_1_0:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[refresh-v0.1.0]')
+  # One-time verification and release note refresh, removed after success.
+  finalize-v0_1_0:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[finalize-v0.1.0]')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: write
-      actions: write
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Replace existing version tag and dispatch tagged build
+      - name: Verify refreshed tag/assets and update notes
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          old=$(git ls-remote --tags origin refs/tags/v0.1.0 | cut -f1)
-          if [ "$old" != '05ea82e6a9f991a3872b22423385f1897a8ad5af' ]; then
-            echo "Refusing to move a tag changed by another actor: $old" >&2
-            exit 1
+          actual=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v0.1.0" --jq .object.sha)
+          test "$actual" = '4133461a7332725fc0e1af89adf04a7bebcc9c0d'
+          release="repos/$GITHUB_REPOSITORY/releases/tags/v0.1.0"
+          asset_names=$(gh api "$release" --jq '[.assets[].name] | sort | join(",")')
+          expected='INSTALLER-SHA256SUMS.txt,SHA256SUMS.txt,VoiceRewrite-Setup-0.1.0-x64.exe,VoiceRewrite-windows-x64.zip,VoiceRewrite.exe'
+          test "$asset_names" = "$expected"
+          old=$(gh api "$release" --jq .body)
+          marker='Refreshed with selection-copy reliability fix (PR #14)'
+          if [[ "$old" != *"$marker"* ]]; then
+            {
+              printf '## Updated Windows binaries\n\n'
+              printf '%s\n' "$marker"
+              printf 'Built from commit: %s. Existing v0.1.0 assets were replaced.\n\n' "$actual"
+              printf '%s\n' "$old"
+            } >/tmp/v0.1.0-notes.md
+            release_id=$(gh api "$release" --jq .id)
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/releases/$release_id" -f body="$(cat /tmp/v0.1.0-notes.md)" >/dev/null
           fi
-          git tag --force v0.1.0 "$GITHUB_SHA"
-          git push --force origin refs/tags/v0.1.0
-          gh workflow run build.yml --ref v0.1.0
+          gh api "$release" --jq .body | grep -Fq "$marker"
   test-core:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -215,21 +222,3 @@ jobs:
           overwrite_files: true
           files: release/*
           fail_on_unmatched_files: true
-      - name: Record v0.1.0 rebuild in release notes
-        if: github.ref == 'refs/tags/v0.1.0'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          current=$(gh release view v0.1.0 --json body --jq .body)
-          marker='Refreshed with selection-copy reliability fix (PR #14)'
-          if [[ "$current" != *"$marker"* ]]; then
-            {
-              printf '## Updated Windows binaries\n\n'
-              printf '%s\n' "$marker"
-              printf 'Built from commit: `%s`. Existing v0.1.0 assets were replaced.\n\n' "$GITHUB_SHA"
-              printf '%s\n' "$current"
-            } > /tmp/v0.1.0-notes.md
-            gh release edit v0.1.0 --notes-file /tmp/v0.1.0-notes.md
-          fi
