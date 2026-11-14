@@ -46,32 +46,27 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 	d.text(settingsHeadings[page], 220, 35, w-245, 39, 2, 4)
 	d.text(settingsSubtitles[page], 222, 79, w-244, 23, 0, 5)
 	d.fill(219, 121, w-239, 1, 6)
-	d.text(settingsSectionNames[page], 224, 140, 235, 30, 3, 4)
-	// Horizontal rules align with the three native field rows.
-	if page == 0 || page == 1 {
-		for i, y := range []float32{169, 239, 309} {
-			rectY := y - float32(scrollY)
-			rectX := float32(345) - float32(scrollX)
-			d.round(rectX, rectY, 447, 42, 8, 2)
-			outline := 6
-			if i == focusRow {
-				outline = 7
-			}
-			d.outline(rectX, rectY, 447, 42, 8, outline)
+	d.text(settingsSectionNames[page], 224, 132, 235, 26, 3, 4)
+	// Shared geometry puts the real EDIT fully inside the painted rounded
+	// field, including its left edge. Fields are now 34px tall, with a compact
+	// 54px row pitch; native text has its own 24px vertically centered HWND.
+	rows := 3
+	if page == 2 {
+		rows = 1
+	}
+	for i := 0; i < rows; i++ {
+		frame := settingsFieldFrame(i)
+		if page == 2 {
+			frame = settingsShortcutFrame()
 		}
-		for _, y := range []float32{213, 283, 353} {
-			d.fill(224-float32(scrollX), y-float32(scrollY), w-253, 1, 6)
-		}
-	} else {
-		rectX, rectY := float32(345)-float32(scrollX), float32(169)-float32(scrollY)
-		d.round(rectX, rectY, 226, 42, 8, 2)
+		x := float32(frame.X - scrollX)
+		y := float32(frame.Y - scrollY)
 		outline := 6
-		if focusRow == 0 {
+		if i == focusRow {
 			outline = 7
 		}
-		d.outline(rectX, rectY, 226, 42, 8, outline)
-		d.fill(224-float32(scrollX), 216-float32(scrollY), w-253, 1, 6)
-		d.fill(224-float32(scrollX), 290-float32(scrollY), w-253, 1, 6)
+		d.round(x, y, float32(frame.W), float32(frame.H), 8, 2)
+		d.outline(x, y, float32(frame.W), float32(frame.H), 8, outline)
 	}
 	d.fill(194, h-77, w-194, 1, 6)
 	hr := resultCOM(d.target, 49, 0, 0)
@@ -91,21 +86,21 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&side)), p.cardBrush)
 	line := rect32{sc(193), 0, sc(194), rc.Bottom}
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), p.editBrush)
-	for i, y := range []int32{169, 239, 309} {
-		if p.page == 2 && i > 0 {
-			break
-		}
-		w := int32(447)
+	rows := 3
+	if p.page == 2 {
+		rows = 1
+	}
+	for i := 0; i < rows; i++ {
+		frame := settingsFieldFrame(i)
 		if p.page == 2 {
-			w = 226
+			frame = settingsShortcutFrame()
 		}
-		x := int32(345)
 		outline := p.palette.color(p.palette.border)
 		if p.focusRow == i {
 			outline = p.palette.color(p.palette.primary)
 		}
-		uiRoundSurface(hdc, rect32{sc(x - p.scrollX), sc(y - p.scrollY),
-			sc(x + w - p.scrollX), sc(y + 42 - p.scrollY)}, sc(9), p.palette.color(p.palette.field), outline)
+		uiRoundSurface(hdc, rect32{sc(frame.X - p.scrollX), sc(frame.Y - p.scrollY),
+			sc(frame.X + frame.W - p.scrollX), sc(frame.Y + frame.H - p.scrollY)}, sc(9), p.palette.color(p.palette.field), outline)
 	}
 	procSetBkMode.Call(hdc, TRANSPARENT)
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.text))

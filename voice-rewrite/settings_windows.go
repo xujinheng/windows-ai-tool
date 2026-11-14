@@ -51,6 +51,12 @@ const (
 	uxNavSpeech       = 9120
 	uxNavAI           = 9121
 	uxNavInput        = 9122
+	uxASRURLInput     = 9130
+	uxASRModelInput   = 9131
+	uxASRKeyInput     = 9132
+	uxLLMURLInput     = 9133
+	uxLLMModelInput   = 9134
+	uxLLMKeyInput     = 9135
 	uxCBAddString     = 0x0143
 	uxCBSetCurSel     = 0x014E
 	uxCBGetCurSel     = 0x0147
@@ -121,7 +127,7 @@ func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
 
 // 96-DPI logical coordinate scrolling avoids inaccessible buttons on small
 // work areas and 125%–200% display scaling.
-const uxContentWidth, uxContentHeight int32 = 816, 532
+const uxContentWidth, uxContentHeight int32 = 816, 484
 
 type uxScrollInfo struct {
 	Size, Mask    uint32
@@ -707,7 +713,7 @@ func showNativeSettings(app *appState) error {
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
-	winW, winH := desktopFitSize(int32(sc(860)), int32(sc(590)), work, 12)
+	winW, winH := desktopFitSize(int32(sc(860)), int32(sc(530)), work, 12)
 	x, y := uxCenteredWindow(winW, winH)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
@@ -725,7 +731,9 @@ func showNativeSettings(app *appState) error {
 	} else if app != nil && app.logger != nil {
 		app.logger.Printf("settings Direct2D unavailable; using GDI: %v", renderErr)
 	}
-	fontName := uxPtr("Segoe UI Variable")
+	// Match the DirectWrite Chinese UI face; Segoe UI Variable can fall back
+	// to a serif CJK face in Win32 EDIT/STATIC controls on some systems.
+	fontName := uxPtr("Microsoft YaHei UI")
 	p.font, _, _ = procCreateFont.Call(sc(-16), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.titleFont, _, _ = procCreateFont.Call(sc(-24), 0, 0, 0, 650, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.sectionFont, _, _ = procCreateFont.Call(sc(-18), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
@@ -764,45 +772,49 @@ func showNativeSettings(app *appState) error {
 	head := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
 	setFont(head, p.titleFont)
 	start := len(p.controls)
-	makeOne("STATIC", "API 地址", stat, 224, 181, 122, 24, 0, false)
-	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 350, 173, 437, 34, 0, false)
-	makeOne("STATIC", "模型 ID", stat, 224, 251, 122, 24, 0, false)
-	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 350, 243, 437, 34, 0, false)
-	makeOne("STATIC", "API Key", stat, 224, 321, 122, 24, 0, false)
-	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 350, 313, 437, 34, 0, false)
-	p.probeStatus[0] = makeOne("STATIC", "尚未检测连接", stat, 352, 375, 435, 60, 0, false)
-	makeOne("BUTTON", "测试连接", btn, 696, 138, 92, 31, uxProbeASRButton, false)
+	firstLabel, firstEdit := settingsFieldLabel(0), settingsFieldEdit(0)
+	secondLabel, secondEdit := settingsFieldLabel(1), settingsFieldEdit(1)
+	thirdLabel, thirdEdit := settingsFieldLabel(2), settingsFieldEdit(2)
+	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
+	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxASRURLInput, false)
+	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
+	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxASRModelInput, false)
+	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
+	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxASRKeyInput, false)
+	p.probeStatus[0] = makeOne("STATIC", "尚未检测连接", stat, 352, 324, 435, 48, 0, false)
+	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeASRButton, false)
 	for _, c := range p.controls[start:] {
 		p.pages[0] = append(p.pages[0], c.hwnd)
 	}
 	start = len(p.controls)
-	makeOne("STATIC", "API 地址", stat, 224, 181, 122, 24, 0, false)
-	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 350, 173, 437, 34, 0, false)
-	makeOne("STATIC", "模型 ID", stat, 224, 251, 122, 24, 0, false)
-	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 350, 243, 437, 34, 0, false)
-	makeOne("STATIC", "API Key", stat, 224, 321, 122, 24, 0, false)
-	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 350, 313, 437, 34, 0, false)
-	p.probeStatus[1] = makeOne("STATIC", "尚未检测连接", stat, 352, 375, 435, 60, 0, false)
-	makeOne("BUTTON", "测试连接", btn, 696, 138, 92, 31, uxProbeLLMButton, false)
+	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
+	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxLLMURLInput, false)
+	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
+	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxLLMModelInput, false)
+	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
+	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxLLMKeyInput, false)
+	p.probeStatus[1] = makeOne("STATIC", "尚未检测连接", stat, 352, 324, 435, 48, 0, false)
+	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeLLMButton, false)
 	for _, c := range p.controls[start:] {
 		p.pages[1] = append(p.pages[1], c.hwnd)
 	}
 	start = len(p.controls)
-	makeOne("STATIC", "听写快捷键", stat, 224, 181, 124, 24, 0, false)
-	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 350, 173, 216, 34, uxShortcutInput, false)
-	makeOne("STATIC", "麦克风", stat, 224, 251, 124, 24, 0, false)
-	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 243, 437, 190, uxMicrophoneInput, false)
+	makeOne("STATIC", "听写快捷键", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
+	shortcutEdit := settingsShortcutEdit()
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, shortcutEdit.X, shortcutEdit.Y, shortcutEdit.W, shortcutEdit.H, uxShortcutInput, false)
+	makeOne("STATIC", "麦克风", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
+	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 227, 437, 190, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
 	resultStyleNativeEdit(p.microphone, p.palette.dark)
-	info := makeOne("STATIC", "更换快捷键或录音设备后，需要重启 VoiceRewrite 生效。", stat, 226, 326, 565, 44, 0, false)
+	info := makeOne("STATIC", "更换快捷键或录音设备后，需要重启 VoiceRewrite 生效。", stat, 226, 296, 565, 44, 0, false)
 	setFont(info, p.mutedFont)
 	for _, c := range p.controls[start:] {
 		p.pages[2] = append(p.pages[2], c.hwnd)
 	}
-	makeOne("BUTTON", "保存设置", btn, 220, 472, 124, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级配置", btn, 358, 472, 112, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 710, 472, 94, 34, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "", stat, 223, 509, 560, 22, 0, false)
+	makeOne("BUTTON", "保存设置", btn, 220, 418, 124, 34, uxSaveButton, false)
+	makeOne("BUTTON", "高级配置", btn, 358, 418, 112, 34, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 710, 418, 94, 34, uxCloseButton, false)
+	p.hint = makeOne("STATIC", "", stat, 223, 457, 560, 22, 0, false)
 	setFont(p.hint, p.mutedFont)
 	setFont(p.probeStatus[0], p.mutedFont)
 	setFont(p.probeStatus[1], p.mutedFont)
