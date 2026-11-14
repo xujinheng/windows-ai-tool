@@ -1,0 +1,88 @@
+name: VoiceRewrite real Windows screenshot experiment
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/visual-smoke.yml'
+permissions:
+  contents: read
+jobs:
+  visual-smoke:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build real native Windows executable
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
+      - name: Launch real application and capture desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path visual-evidence | Out-Null
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class VisualNative {
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+            [DllImport("user32.dll")] public static extern IntPtr GetDesktopWindow();
+          }
+          '@
+          $exe = Join-Path (Get-Location) 'voice-rewrite/VoiceRewrite.exe'
+          $proc = Start-Process -FilePath $exe -PassThru
+          try {
+            Start-Sleep -Seconds 7
+            $proc.Refresh()
+            $screens = [System.Windows.Forms.Screen]::AllScreens | ForEach-Object {
+              [pscustomobject]@{name=$_.DeviceName; bounds=$_.Bounds.ToString(); primary=$_.Primary}
+            }
+            $windows = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 50 ProcessName, MainWindowTitle, MainWindowHandle
+            [pscustomobject]@{
+              processId=$proc.Id
+              exited=$proc.HasExited
+              sessionId=$proc.SessionId
+              interactive=[Environment]::UserInteractive
+              sessionName=$env:SESSIONNAME
+              screens=$screens
+              windows=$windows
+            } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 visual-evidence/diagnostics.json
+            $proc.Refresh()
+            if ($proc.HasExited) { throw "VoiceRewrite exited before screenshot; inspect diagnostics" }
+            $hwnd = $proc.MainWindowHandle
+            if ($hwnd -eq [IntPtr]::Zero) {
+              $candidates = Get-Process -Id $proc.Id
+              $hwnd = $candidates.MainWindowHandle
+            }
+            if ($hwnd -eq [IntPtr]::Zero) { throw "No visible main window; GUI runner may not have a usable interactive desktop" }
+            $rect = New-Object VisualNative+RECT
+            if (-not [VisualNative]::GetWindowRect($hwnd,[ref]$rect)) { throw "GetWindowRect failed" }
+            $w=$rect.Right-$rect.Left; $h=$rect.Bottom-$rect.Top
+            if ($w -lt 100 -or $h -lt 100) { throw "Invalid window bounds: $w x $h" }
+            $bitmap = New-Object System.Drawing.Bitmap($w,$h)
+            $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+            try {
+              $graphics.CopyFromScreen($rect.Left,$rect.Top,0,0,[System.Drawing.Size]::new($w,$h))
+              $bitmap.Save((Join-Path (Get-Location) 'visual-evidence/settings-real.png'),[System.Drawing.Imaging.ImageFormat]::Png)
+            } finally {
+              $graphics.Dispose()
+              $bitmap.Dispose()
+            }
+            Write-Host "Captured real Windows window: $w x $h"
+          } finally {
+            if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue }
+          }
+      - name: Upload screenshot and diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceRewrite-real-windows-visual-evidence
+          path: visual-evidence/
+          if-no-files-found: warn
