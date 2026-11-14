@@ -5,6 +5,10 @@ on:
       - '.github/workflows/format-v29.yml'
       - 'voice-rewrite/settings_windows.go'
   workflow_dispatch:
+# Avoid competing formatter commits when multiple UI edits land rapidly.
+concurrency:
+  group: native-ui-format-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: write
 jobs:
