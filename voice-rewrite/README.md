@@ -1,21 +1,21 @@
-# VoiceRewrite v21 — Windows native voice writing assistant
+# VoiceRewrite v22 — Windows native voice writing assistant
 
-VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4** to dictate at the caret; hold **Mouse5** after selecting text to rewrite, translate, or ask a question. VoiceRewrite is a **client**, not a model installer: ASR and LLM endpoints are configured separately.
+VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configure a standalone F-key in Settings, to dictate at the caret; hold **Mouse5** after selecting text to rewrite, translate, or ask a question. VoiceRewrite is a **client**, not a model installer: ASR and LLM endpoints are configured separately.
 
 ## First run
 
 1. Run `VoiceRewrite.exe`. The settings center opens on first launch; later open it from the tray.
 2. Set **ASR** endpoint (for example `http://127.0.0.1:8080/v1`), model ID (`whisper-1` for OneClick), and API Key when required.
 3. Set **LLM** endpoint (for example `http://127.0.0.1:1234/v1`), model ID and optional API Key.
-4. Test each service independently. The test probes API connectivity only. To confirm audio transcription, dictate into Notepad.
-5. Click **Save**. API Keys are encrypted under the signed-in Windows account via DPAPI before being written to disk. A copied encrypted config cannot be decrypted by a different Windows account.
+4. Test each service independently. The test reads the API model list and checks for your configured model ID where available. This is not an ASR transcription test; dictate into Notepad to confirm audio support.
+5. Set the dictation shortcut to Mouse4/Mouse5 or an F1–F24 key. Changes to the hotkey take effect after restarting VoiceRewrite. Click **Save**. API Keys are encrypted under the signed-in Windows account via DPAPI before being written to disk. A copied encrypted config cannot be decrypted by a different Windows account.
 
 ## Everyday use
 
-- **Mouse4** held: record, release to transcribe and attempt to insert. If the target changes or paste fails, the complete recognized text appears in a copyable result card instead of writing into another app.
+- **Mouse4** or your configured **F-key** held: record, release to transcribe and attempt to insert. If the target changes or paste fails, the complete recognized text appears in a copyable result card instead of writing into another app.
 - **Mouse5** held with selected text: a clear edit command attempts a guarded replacement; explanation and ambiguous commands open a preview.
 - **Result card**: copy the complete result; optionally apply it back to the original selection after validation. Long results are scrollable and not truncated.
-- **Tray**: pause/resume background mouse interception, settings, recent error and recovery guidance, diagnostic log, close answer, exit. Pausing returns Mouse4/Mouse5 to normal browser/OS behavior.
+- **Tray**: pause/resume background interception, recover the most recent result (memory only, never saved to disk), settings, recent error and recovery guidance, diagnostic log, close answer, exit. Pausing returns Mouse4/Mouse5 to normal browser/OS behavior.
 
 ## Architecture
 
@@ -24,7 +24,7 @@ VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4** to dictate a
 - LLM: OpenAI-compatible `POST /chat/completions`. ASR and LLM may use different remote/local servers.
 - Selected text is untrusted model input, not a source of instructions.
 - Clipboard/SendInput insertion is **best effort**; sending Ctrl+V does not prove that a third-party application accepted it. Rich clipboard formats are not fully preserved yet.
-- `EXPERIENCE-V20.md` documents interaction behavior, privacy, limitations and follow-up work.
+- `PRODUCT-DESIGN.md` describes the product interaction contract, and `EXPERIENCE-V22.md` records this release.
 
 ## Build
 

@@ -1,8 +1,8 @@
-# VoiceRewrite v21 — Everyday-use refinement
+# VoiceRewrite v22 — Native Windows experience overhaul
 
 Windows 11 x64 native Go desktop voice dictation and AI rewrite tool.
 
-VoiceRewrite v21 improves the v20 desktop UX: pause/resume native mouse interception and preserve full dictation text when focus changes or pasting fails. See [v21 engineering notes](voice-rewrite/EXPERIENCE-V21.md) for implementation details and current limitations.
+VoiceRewrite v22 extends the native Windows UI with configurable F-key dictation, keyboard-accessible settings, session-only result recovery, model-ID-aware connection diagnostics, and safer configuration/logging. See [the v22 release notes](voice-rewrite/EXPERIENCE-V22.md) and [product design contract](voice-rewrite/PRODUCT-DESIGN.md).
 
 Read [the detailed README](voice-rewrite/README.md) for usage, API configuration, privacy and limitations.
 
@@ -12,7 +12,7 @@ The original [Qwen3-ASR OneClick](oneclick/README.md) source (previously deleted
 
 OneClick is a small launcher + proxy, **not** an all-in-one model/runtime installer. Supply a compatible `llama-server.exe`, CUDA DLLs and matching Qwen3-ASR model/MMProj GGUF locally. Do not upload model weights, credentials, or user-specific config.
 
-**Port compatibility:** Original OneClick defaults to proxy `127.0.0.1:8081`, backend `127.0.0.1:8080`. VoiceRewrite v20 expects ASR at `127.0.0.1:8080/v1`. To keep VoiceRewrite unchanged, copy [config.voicerewrite-v19.example.json](oneclick/config.voicerewrite-v19.example.json) next to the OneClick executable as `config.json` and edit GGUF and llama-server paths. That preset uses a proxy at 8080 and backend at 8082. Alternatively keep original OneClick ports and configure VoiceRewrite's ASR URL as `http://127.0.0.1:8081/v1`.
+**Port compatibility:** Original OneClick defaults to proxy `127.0.0.1:8081`, backend `127.0.0.1:8080`. VoiceRewrite v22 expects ASR at `127.0.0.1:8080/v1`. To keep VoiceRewrite unchanged, copy [config.voicerewrite-v19.example.json](oneclick/config.voicerewrite-v19.example.json) next to the OneClick executable as `config.json` and edit GGUF and llama-server paths. That preset uses a proxy at 8080 and backend at 8082. Alternatively keep original OneClick ports and configure VoiceRewrite's ASR URL as `http://127.0.0.1:8081/v1`.
 
 Qwen3.5 text generation may continue using LM Studio or a separate compatible llama-server on port 1234; the optional [two-server script](scripts/local-models/README.md) is not required for OneClick.
 

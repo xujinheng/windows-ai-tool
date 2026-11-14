@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
 	"unsafe"
@@ -31,6 +32,7 @@ const (
 	uxAdvancedButton  = 9103
 	uxProbeASRButton  = 9104
 	uxProbeLLMButton  = 9105
+	uxShortcutInput   = 9106
 	uxWSChild         = 0x40000000
 	uxWSVisible       = 0x10000000
 	uxWSTabStop       = 0x00010000
@@ -57,6 +59,7 @@ type uxSettings struct {
 	window          uintptr
 	app             *appState
 	inputs          [6]uintptr
+	shortcut        uintptr
 	hint            uintptr
 	font, titleFont uintptr
 	background      uintptr
@@ -124,6 +127,24 @@ func uxSetText(hwnd uintptr, text string) {
 	runtime.KeepAlive(ptr)
 }
 
+func uxSettingsKeyMessage(msg winMSG) bool {
+	p := uxActiveSettings
+	if p == nil || p.window == 0 {
+		return false
+	}
+	if msg.Message != WM_KEYDOWN || msg.WParam != VK_ESCAPE {
+		return false
+	}
+	if msg.Hwnd != p.window {
+		child, _, _ := procIsChild.Call(p.window, msg.Hwnd)
+		if child == 0 {
+			return false
+		}
+	}
+	procDestroyWindow.Call(p.window)
+	return true
+}
+
 func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	p := uxActiveSettings
 	switch uint32(msg) {
@@ -135,7 +156,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMGetMinMaxInfo:
 		if p != nil && lParam != 0 {
 			bounds := (*uxMinMaxInfo)(unsafe.Pointer(lParam))
-			bounds.MinSize = trayPoint{X: int32(680 * p.scale), Y: int32(680 * p.scale)}
+			bounds.MinSize = trayPoint{X: int32(680 * p.scale), Y: int32(740 * p.scale)}
 		}
 		return 0
 	case uxWMClose:
@@ -179,6 +200,10 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 					uxRoundRect.Call(hdc, sc(17), sc(top), uintptr(rc.Right)-sc(17), sc(top+218), sc(18), sc(18))
 				}
+				sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
+				var rc rect32
+				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+				uxRoundRect.Call(hdc, sc(17), sc(560), uintptr(rc.Right)-sc(17), sc(659), sc(18), sc(18))
 				uxSelectObject.Call(hdc, old)
 				uxSelectObject.Call(hdc, oldPen)
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
@@ -210,12 +235,25 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case uxWMCommand:
 		if p != nil && p.window == hwnd {
+			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
+				for idx, controls := range [2][3]uintptr{{p.inputs[0], p.inputs[1], p.inputs[2]}, {p.inputs[3], p.inputs[4], p.inputs[5]}} {
+					for _, edit := range controls {
+						if lParam == edit {
+							p.probeMu.Lock()
+							p.probeSerial[idx]++ // reject in-flight stale response
+							p.probeMu.Unlock()
+							uxSetText(p.probeStatus[idx], "连接配置已修改 · 请重新检测")
+							break
+						}
+					}
+				}
+			}
 			switch wParam & 0xffff {
 			case uxSaveButton:
 				if err := p.save(); err != nil {
 					uxSetText(p.hint, "保存失败："+err.Error())
 				} else {
-					uxSetText(p.hint, "✓ 已保存，模型地址和名称立即生效")
+					// save() provides the precise message, including restart notices.
 				}
 				return 0
 			case uxCloseButton:
@@ -227,10 +265,10 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 				return 0
 			case uxProbeASRButton:
-				p.check("ASR", uxWinText(p.inputs[0]), uxWinText(p.inputs[2]))
+				p.check("ASR", uxWinText(p.inputs[0]), uxWinText(p.inputs[2]), uxWinText(p.inputs[1]))
 				return 0
 			case uxProbeLLMButton:
-				p.check("LLM", uxWinText(p.inputs[3]), uxWinText(p.inputs[5]))
+				p.check("LLM", uxWinText(p.inputs[3]), uxWinText(p.inputs[5]), uxWinText(p.inputs[4]))
 				return 0
 			}
 		}
@@ -251,15 +289,28 @@ func (p *uxSettings) save() error {
 	if err != nil {
 		return err
 	}
+	newShortcut := strings.TrimSpace(uxWinText(p.shortcut))
+	var shortcutErr error
+	newShortcut, shortcutErr = uxDictationShortcut(newShortcut, cfg.HotkeyRecord, cfg.HotkeyExit)
+	if shortcutErr != nil {
+		return shortcutErr
+	}
+	changedShortcut := cfg.DictationHotkey != newShortcut
+	cfg.DictationHotkey = newShortcut
 	if err = saveConfig(cfg); err != nil {
 		return err
 	}
 	p.app.cfg = cfg
-	p.app.logger.Printf("settings updated: ASR=%s LLM=%s asr_model=%s text_model=%s", cfg.ASRBaseURL, cfg.LLMBaseURL, cfg.ASRModel, cfg.TextModel)
+	if changedShortcut {
+		uxSetText(p.hint, "设置已保存。听写快捷键将在重新启动 VoiceRewrite 后生效。")
+	} else {
+		uxSetText(p.hint, "✓ 已保存，API 地址和模型立即生效")
+	}
+	p.app.logger.Print("settings updated: connection configuration saved (endpoint/key values redacted)")
 	return nil
 }
 
-func (p *uxSettings) check(kind, base, key string) {
+func (p *uxSettings) check(kind, base, key, model string) {
 	if p == nil || p.window == 0 {
 		return
 	}
@@ -274,7 +325,7 @@ func (p *uxSettings) check(kind, base, key string) {
 	uxSetText(p.probeStatus[idx], "正在检测服务…")
 	h := p.window
 	go func() {
-		result := uxProbeWithKey(context.Background(), kind, base, key)
+		result := uxProbeModel(context.Background(), kind, base, key, model)
 		p.probeMu.Lock()
 		if serial == p.probeSerial[idx] {
 			p.probeResult[idx] = result
@@ -345,12 +396,12 @@ func showNativeSettings(app *appState) error {
 		scale = 1
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
-	x, y := uxCenteredWindow(int32(sc(714)), int32(sc(714)))
+	x, y := uxCenteredWindow(int32(sc(714)), int32(sc(790)))
 	if y < 0 {
 		y = 60
 	}
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
-		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame, uintptr(x), uintptr(y), sc(714), sc(714), 0, 0, module, 0)
+		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame, uintptr(x), uintptr(y), sc(714), sc(790), 0, 0, module, 0)
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
@@ -370,7 +421,7 @@ func showNativeSettings(app *appState) error {
 		if control == 0 {
 			return 0
 		}
-		if cls == "STATIC" && y >= 99 && y < 553 {
+		if cls == "STATIC" && y >= 99 && y < 659 {
 			p.cardStatics[control] = true
 		}
 		p.controls = append(p.controls, uxControl{
@@ -405,10 +456,14 @@ func showNativeSettings(app *appState) error {
 	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 130, 478, 493, 30, 0, false)
 	p.probeStatus[1] = makeOne("STATIC", "● 尚未检测 · 用于改写 / 翻译 / 问答", stat, 34, 522, 594, 24, 0, false)
 
-	makeOne("BUTTON", "保存并应用", btn, 29, 572, 141, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级设置", btn, 186, 572, 119, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 550, 572, 93, 34, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "检测仅说明 API 可达；实际听写请使用 Mouse4。API Key 在磁盘上加密保存。", stat, 30, 622, 610, 22, 0, false)
+	makeOne("STATIC", "03   快捷键", stat, 34, 575, 300, 26, 0, true)
+	makeOne("STATIC", "听写快捷键", stat, 34, 613, 108, 22, 0, false)
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 607, 290, 30, uxShortcutInput, false)
+	makeOne("STATIC", "Mouse4 / Mouse5 / F1–F24 · 更改后重启", stat, 435, 611, 210, 22, 0, false)
+	makeOne("BUTTON", "保存并应用", btn, 29, 680, 141, 34, uxSaveButton, false)
+	makeOne("BUTTON", "高级设置", btn, 186, 680, 119, 34, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 550, 680, 93, 34, uxCloseButton, false)
+	p.hint = makeOne("STATIC", "检测仅说明 API 可达；实际听写请使用 Mouse4。API Key 在磁盘上加密保存。", stat, 30, 729, 610, 22, 0, false)
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)

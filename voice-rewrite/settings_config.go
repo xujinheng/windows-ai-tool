@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,7 +14,7 @@ import (
 
 func uxValidURL(s string) bool {
 	u, err := url.Parse(strings.TrimSpace(s))
-	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.Fragment == ""
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.User == nil && u.Fragment == "" && u.RawQuery == ""
 }
 
 func uxUpdatedConfig(old Config, values [6]string) (Config, error) {
@@ -48,6 +50,12 @@ func uxProbe(ctx context.Context, kind, base string) string {
 }
 
 func uxProbeWithKey(ctx context.Context, kind, base, apiKey string) string {
+	return uxProbeModel(ctx, kind, base, apiKey, "")
+}
+
+// A service health response and a compatible model are two separate facts.
+// This probe never uploads microphone audio or sends text prompts.
+func uxProbeModel(ctx context.Context, kind, base, apiKey, configuredModel string) string {
 	if !uxValidURL(base) {
 		return kind + "：服务地址无效"
 	}
@@ -72,7 +80,27 @@ func uxProbeWithKey(ctx context.Context, kind, base, apiKey string) string {
 	defer res.Body.Close()
 	switch res.StatusCode {
 	case http.StatusOK:
-		return kind + "：API 可达 · HTTP 200（未验证实际任务）"
+		var response struct {
+			Data []struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		if e := json.NewDecoder(io.LimitReader(res.Body, 64<<10)).Decode(&response); e != nil {
+			return kind + "：API 可达 · HTTP 200，但模型列表格式无法识别；请试用实际功能"
+		}
+		if len(response.Data) == 0 {
+			return kind + "：API 可达 · HTTP 200，模型列表为空；请检查是否已加载模型"
+		}
+		chosen := strings.TrimSpace(configuredModel)
+		if chosen != "" && chosen != "auto" {
+			for _, model := range response.Data {
+				if model.ID == chosen {
+					return kind + "：模型 " + chosen + " 已在服务中发现（未验证实际任务）"
+				}
+			}
+			return kind + "：服务可达，但模型 " + chosen + " 未列出；请核对 ID 或服务别名"
+		}
+		return fmt.Sprintf("%s：已连接 · 可发现 %d 个模型（未验证实际任务）", kind, len(response.Data))
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
 		return kind + "：服务可达；此接口不提供模型列表，请实际试用"
 	case http.StatusUnauthorized, http.StatusForbidden:

@@ -81,6 +81,7 @@ const (
 	WM_STATUS_CANCEL = 0x8000 + 71
 	HOTKEY_RECORD    = 100
 	HOTKEY_EXIT      = 101
+	HOTKEY_DICTATION = 102
 	MOD_ALT          = 0x0001
 	MOD_CTRL         = 0x0002
 	MOD_NOREPEAT     = 0x4000
@@ -159,18 +160,21 @@ type selectedText struct {
 	Anchor               trayPoint
 }
 type appState struct {
-	Window      uintptr
-	logger      *log.Logger
-	cfg         Config
-	busy        atomic.Bool
-	epoch       taskEpoch
-	status      atomic.Int32
-	trayMu      sync.Mutex
-	tray        *trayIndicator
-	popups      chan popupMessage
-	lastErrorMu sync.Mutex
-	lastError   string
-	paused      atomic.Bool
+	Window          uintptr
+	logger          *log.Logger
+	cfg             Config
+	busy            atomic.Bool
+	epoch           taskEpoch
+	status          atomic.Int32
+	trayMu          sync.Mutex
+	tray            *trayIndicator
+	popups          chan popupMessage
+	lastErrorMu     sync.Mutex
+	lastError       string
+	lastResultMu    sync.Mutex
+	lastResult      string
+	lastResultTitle string
+	paused          atomic.Bool
 }
 
 // Shell notification APIs and icon lifetime are owned by the Windows UI thread.
@@ -206,6 +210,15 @@ func (a *appState) showAnswer(title, body string, anchor trayPoint, selection *s
 	if ok, _, err := procPostMessage.Call(a.Window, WM_SHOW_ANSWER, 0, 0); ok == 0 {
 		a.logger.Printf("cannot show popup: %v", err)
 	}
+}
+
+func (a *appState) rememberResult(title, value string) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+	a.lastResultMu.Lock()
+	a.lastResultTitle, a.lastResult = title, value
+	a.lastResultMu.Unlock()
 }
 
 func winErr(msg string) {
@@ -320,8 +333,21 @@ func runApp() {
 	activeHandyAppWindow = hwnd
 	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
 	dictationButton, dictationMouse := mouseSideButton(cfg.DictationHotkey)
-	if !dictationMouse || dictationButton == selectedMouseButton {
-		winErr("dictation_hotkey 必须是未被改写占用的 Mouse4 或 Mouse5")
+	var dictationVK uintptr
+	if !dictationMouse {
+		mods, key, parseErr := parseHotkey(cfg.DictationHotkey)
+		if parseErr != nil || mods != MOD_NOREPEAT || key == VK_PAUSE {
+			winErr("听写快捷键请选择 Mouse4、Mouse5 或 F1–F24 单独功能键")
+			return
+		}
+		dictationVK = key
+	}
+	if dictationMouse && usingMouse && dictationButton == selectedMouseButton {
+		winErr("听写和改写不能占用同一个鼠标侧键")
+		return
+	}
+	if cfg.RecordMode != "hold" && !dictationMouse {
+		winErr("键盘听写快捷键当前只支持按住说话模式（record_mode=hold）")
 		return
 	}
 	var recordMods, recordVK uintptr
@@ -342,7 +368,9 @@ func runApp() {
 		winErr(e.Error())
 		return
 	}
-	if !usingMouse && recordMods == exitMods && recordVK == exitVK {
+	if (!usingMouse && recordMods == exitMods && recordVK == exitVK) ||
+		(!dictationMouse && recordVK != 0 && dictationVK == recordVK) ||
+		(!dictationMouse && exitMods == MOD_NOREPEAT && exitVK == dictationVK) {
 		winErr("Record and exit hotkeys must differ")
 		return
 	}
@@ -357,6 +385,13 @@ func runApp() {
 			return
 		}
 		defer procUnregisterHotKey.Call(0, HOTKEY_RECORD)
+	}
+	if !dictationMouse {
+		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_DICTATION, MOD_NOREPEAT, dictationVK); rv == 0 {
+			winErr("无法注册听写快捷键：" + cfg.DictationHotkey + "（可能已被其他程序占用）")
+			return
+		}
+		defer procUnregisterHotKey.Call(0, HOTKEY_DICTATION)
 	}
 	if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_EXIT, exitMods, exitVK); rv == 0 {
 		winErr("Cannot register exit hotkey: " + cfg.HotkeyExit)
@@ -375,7 +410,7 @@ func runApp() {
 		app.tray = nil
 		app.trayMu.Unlock()
 	}()
-	l.Printf("started; build=%s mode=%s hotkey=%s ASR=%s LLM=%s (model=%s)", buildID, cfg.RecordMode, cfg.HotkeyRecord, cfg.ASRBaseURL, cfg.LLMBaseURL, cfg.TextModel)
+	l.Printf("started; build=%s mode=%s hotkey=%s dictation=%s", buildID, cfg.RecordMode, cfg.HotkeyRecord, cfg.DictationHotkey)
 	if firstRun {
 		l.Print("first start: opening setup and service checks")
 		if err := showNativeSettings(app); err != nil {
@@ -439,8 +474,12 @@ func runApp() {
 	// One capture engine, two explicitly chosen workflows. Never infer dictation
 	// from Ctrl+C: VS Code may copy an entire line without any selection.
 	startHold := func(dictation bool, button uint16) {
-		if app.busy.Load() || active != nil {
+		if app.paused.Load() || app.busy.Load() || active != nil {
 			beep(320, 90)
+			return
+		}
+		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
+			// Never dictate into VoiceRewrite's own settings form.
 			return
 		}
 		win, _, _ := procGetForegroundWindow.Call()
@@ -464,7 +503,11 @@ func runApp() {
 		if button != 0 { // mouse button release delivered by low level hook
 			go watchMouseHoldTimeout(hwnd, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
 		} else {
-			go watchHoldRelease(hwnd, recordVK, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+			vk := recordVK
+			if dictation {
+				vk = dictationVK
+			}
+			go watchHoldRelease(hwnd, vk, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
 		}
 		// Identical Handy-style pill for both flows; label/phase is mode-specific.
 		statusMode := "改写"
@@ -625,6 +668,17 @@ func runApp() {
 			}
 			continue
 		}
+		if msg.Message == WM_TRAY_LAST_RESULT {
+			app.lastResultMu.Lock()
+			title, value := app.lastResultTitle, app.lastResult
+			app.lastResultMu.Unlock()
+			if value == "" {
+				winErr("当前会话还没有可恢复的语音结果。")
+			} else {
+				app.showAnswer(title+" · 历史结果", value, currentCursorPoint(), nil, false, app.epoch.currentID.Load())
+			}
+			continue
+		}
 		if msg.Message == WM_TRAY_LAST_ERROR {
 			app.lastErrorMu.Lock()
 			latest := app.lastError
@@ -711,7 +765,15 @@ func runApp() {
 			}
 			l.Print("stopped via exit hotkey")
 			return
+		case HOTKEY_DICTATION:
+			if !app.paused.Load() {
+				startHold(true, 0)
+			}
+			continue
 		case HOTKEY_RECORD:
+			if app.paused.Load() {
+				continue
+			}
 			if app.busy.Load() {
 				beep(320, 90)
 				continue
@@ -882,6 +944,7 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	if !isSameForegroundWindow(expectedWindow) {
 		// A result card preserves the transcript without requiring the user to
 		// guess what happened to their clipboard after a focus change.
+		app.rememberResult("听写结果", text)
 		app.showAnswer("听写结果 · 未自动插入", text, currentCursorPoint(), nil, false, generation)
 		app.postHandyPhase(statusFallback, generation)
 		return
@@ -889,10 +952,12 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	start = time.Now()
 	if err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.valid(generation) }); err != nil {
 		app.fail(err)
+		app.rememberResult("听写结果", text)
 		app.showAnswer("听写结果 · 请手动复制", text, currentCursorPoint(), nil, false, generation)
 		app.postHandyPhase(statusFallback, generation)
 		return
 	}
+	app.rememberResult("听写结果", text)
 	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))
 	app.setStatus(traySuccess)
 	app.postHandyPhase(statusSuccess, generation)
@@ -1063,6 +1128,7 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 	action := routeTask(answer, instruction, editable, browserSurface)
 	app.logger.Printf("route=%s intent=%s native_editable=%t browser_surface=%t voice_edit=%t voice_translate=%t", action, answer.Intent, editable, browserSurface, clearlyRequestsEdit(instruction), clearlyRequestsTranslation(instruction))
 	allowApply := action == "replace" || action == "try_replace" || answer.Intent == "edit" || answer.Intent == "translate"
+	app.rememberResult("AI "+answer.Intent, answer.Result)
 	if action == "replace" || action == "try_replace" {
 		app.postHandyPhase(statusApplying, generation)
 		startedPaste := time.Now()
@@ -1098,7 +1164,17 @@ func processAudioAndRewrite(app *appState, rec *audioRecorder, sel selectedText,
 // Standard Windows message dispatch is essential for interactive popup controls.
 // In the v5 prototype the queue was drained without this call, so WM_PAINT,
 // WM_COMMAND and WM_CLOSE were never delivered to the popup WndProc.
+var procIsDialogMessage = user32.NewProc("IsDialogMessageW")
+
 func dispatchNativeMessage(msg *winMSG) {
+	if uxActiveSettings != nil && uxActiveSettings.window != 0 {
+		if uxSettingsKeyMessage(*msg) {
+			return
+		}
+		if handled, _, _ := procIsDialogMessage.Call(uxActiveSettings.window, uintptr(unsafe.Pointer(msg))); handled != 0 {
+			return
+		}
+	}
 	if shouldClosePopupForKey(*msg) {
 		closeActiveAnswer()
 		return
