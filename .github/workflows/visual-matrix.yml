@@ -214,6 +214,7 @@ jobs:
                       [pscustomobject]@{x=($fx+60);y=($fy+34)}
                     )
                     $edges=@('left','right','top','bottom')
+                    $missingEdges=@()
                     for($edge=0;$edge -lt 4;$edge++){
                       $match=$false
                       for($dx=-2;$dx -le 2 -and -not $match;$dx++){
@@ -225,8 +226,13 @@ jobs:
                           if($color.B -gt 155 -and $color.B-$color.G -gt 45 -and $color.B-$color.R -gt 35){$match=$true;break}
                         }
                       }
-                      if(-not $match){throw "model focus border missing lilac $($edges[$edge]) edge"}
+                      Write-Host "FOCUS EDGE $($edges[$edge]): $match"
+                      if(-not $match){$missingEdges+= $edges[$edge]}
                     }
+                    $focused=Join-Path (Get-Location) 'visual-matrix/settings-focus-debug.png'
+                    $bitmap.Save($focused,[System.Drawing.Imaging.ImageFormat]::Png)
+                    Write-Host "FOCUS FRAME SCREEN RECT x=$fx y=$fy; screenshot $focused"
+                    if($missingEdges.Count -gt 0){throw "model focus outline missing lilac: $($missingEdges -join ',')"}
                     Write-Host 'CONFIRMED: all four sides of selected native model field have lilac focus outline'
                   }
                   $file=Join-Path (Get-Location) "visual-matrix/$($case.id)-$suffix.png"
