@@ -6,7 +6,7 @@
 - Recover the most recent dictated/generated result from the system tray without persisting history.
 - Diagnose configured model ID from OpenAI-compatible `/v1/models` results, invalidate probes after edits, and show more actionable feedback.
 - Protect API keys through Windows DPAPI, sanitize endpoint logging, and preserve complete result-card text.
-- Package a portable Windows ZIP with SHA-256 verification alongside the existing EXE artifact.
+- Package a portable Windows ZIP with SHA-256 verification alongside the existing EXE artifact.\n- Keep CI read-only toward source branches: no bot commits of rebuilt binaries, which previously caused concurrent-push failures.
 
 ## v21 — Everyday-use reliability
 - Pause/resume tray interception and restore mouse side buttons when paused.

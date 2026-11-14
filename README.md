@@ -8,7 +8,7 @@ Read [the detailed README](voice-rewrite/README.md) for usage, API configuration
 
 ## Local ASR with restored OneClick
 
-The original [Qwen3-ASR OneClick](oneclick/README.md) source (previously deleted from main) has been restored unmodified from Git history. The Windows build now produces `Qwen3-ASR-OneClick-Windows-x64.exe`, uploads it as a CI artifact, and publishes the executable to [dist/](dist/) on successful main-branch builds.
+The original [Qwen3-ASR OneClick](oneclick/README.md) source (previously deleted from main) has been restored unmodified from Git history. The Windows build now produces `Qwen3-ASR-OneClick-Windows-x64.exe`, uploads it as a CI artifact. The originally restored EXE remains in [dist/](dist/), while newer compiled versions are obtained from the CI Artifact without automated commits to main.
 
 OneClick is a small launcher + proxy, **not** an all-in-one model/runtime installer. Supply a compatible `llama-server.exe`, CUDA DLLs and matching Qwen3-ASR model/MMProj GGUF locally. Do not upload model weights, credentials, or user-specific config.
 
@@ -18,7 +18,7 @@ Qwen3.5 text generation may continue using LM Studio or a separate compatible ll
 
 ## Windows portable build
 
-Each successful main-branch Windows build uploads a `VoiceRewrite-portable-windows-x64` Artifact containing `VoiceRewrite-windows-x64.zip` and its `SHA256SUMS.txt`. The ZIP includes `VoiceRewrite.exe`, an example config and the user guide. Extract to a normal directory before launch; user configuration is written to the Windows user profile rather than the extracted directory. The separate OneClick build is available as a different artifact and as `dist/Qwen3-ASR-OneClick-Windows-x64.exe`.
+Each successful main-branch Windows build uploads a `VoiceRewrite-portable-windows-x64` Artifact containing `VoiceRewrite-windows-x64.zip` and its `SHA256SUMS.txt`. The ZIP includes `VoiceRewrite.exe`, an example config and the user guide. Extract to a normal directory before launch; user configuration is written to the Windows user profile rather than the extracted directory. The separate OneClick build is available as a different CI Artifact. The restored historical EXE is also in `dist/Qwen3-ASR-OneClick-Windows-x64.exe`.
 
 ## Development
 
