@@ -248,7 +248,7 @@ def build(assets,output,fps=FPS,duration=DURATION):
     recording=Image.open(recpath).convert('RGBA')
     output.mkdir(parents=True,exist_ok=True)
     mp4=output/'voicerewrite-demo.mp4'
-    args=['ffmpeg','-y','-hide_banner','-loglevel','error','-f','rawvideo','-vcodec','rawvideo','-s',f'{W}x{H}', '-pix_fmt','rgb24','-r',str(fps),'-i','-','-an','-c:v','libx264','-pix_fmt','yuv420p','-preset','ultrafast','-crf','24','-movflags','+faststart',str(mp4)]
+    args=['ffmpeg','-y','-hide_banner','-loglevel','error','-f','rawvideo','-vcodec','rawvideo','-s',f'{W}x{H}', '-pix_fmt','rgb24','-r',str(fps),'-i','-','-an','-c:v','libx264','-pix_fmt','yuv420p','-preset','medium','-crf','18','-movflags','+faststart',str(mp4)]
     p=subprocess.Popen(args,stdin=subprocess.PIPE,stderr=subprocess.PIPE)
     try:
         for i in range(fps*duration):
@@ -262,13 +262,19 @@ def build(assets,output,fps=FPS,duration=DURATION):
         if p.stdin and not p.stdin.closed:p.stdin.close()
         p.kill();p.wait();raise
     if ret:raise RuntimeError('ffmpeg encoding failed: '+err[-900:])
-    # Short looping READMEs get an actual preview, while full-resolution MP4
-    # carries all timings. GIF sampled at low fps to reduce repository weight.
+    # GitHub README hero: full-resolution, true-color animation. Animated WebP
+    # avoids GIF's 256-color palette and the former 560px scaling blur.
+    webp=output/'voicerewrite-preview.webp'
+    subprocess.run(['ffmpeg','-y','-hide_banner','-loglevel','error','-i',str(mp4),
+        '-vf','fps=12,scale=1280:-2:flags=lanczos', '-c:v','libwebp_anim',
+        '-lossless','0','-quality','90','-compression_level','4',
+        '-loop','0','-an',str(webp)], check=True)
+    # Retain a very small GIF fallback for older Markdown consumers.
     gif=output/'voicerewrite-preview.gif'
     filt='fps=5,scale=560:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4'
     subprocess.run(['ffmpeg','-y','-hide_banner','-loglevel','error','-i',str(mp4),'-filter_complex',filt,'-loop','0',str(gif)],check=True)
-    print('MP4',mp4.stat().st_size,'bytes; GIF',gif.stat().st_size,'bytes')
-    return mp4,gif
+    print('MP4',mp4.stat().st_size,'bytes; WebP',webp.stat().st_size,'bytes; GIF',gif.stat().st_size,'bytes')
+    return mp4,webp
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()

@@ -8,9 +8,11 @@
 
 ### 30-second video · 30 秒看懂怎么用
 
-[![VoiceRewrite: Mouse4 voice typing, Mouse5 selected-text rewriting or explanation](docs/demo/voicerewrite-preview.gif)](docs/demo/voicerewrite-demo.mp4)
+[![VoiceRewrite: Mouse4 voice typing, Mouse5 selected-text rewriting or explanation](docs/demo/voicerewrite-preview.webp)](docs/demo/voicerewrite-demo.mp4)
 
-**[▶ Watch full 30-second HD demo (MP4)](docs/demo/voicerewrite-demo.mp4)** · [Download video](docs/demo/voicerewrite-demo.mp4)
+**[▶ Watch full 30-second HD demo (MP4)](docs/demo/voicerewrite-demo.mp4)** · [Lightweight GIF fallback](docs/demo/voicerewrite-preview.gif)
+
+*The inline preview is a full-resolution animated WebP (1280 × 720, 12 FPS), not the old 560 px / 64-color GIF. Click it to open the high-quality MP4.*
 
 **下侧键 Mouse4**：按住说话、松开输入。**上侧键 Mouse5**：选中文字，按住说出改写要求或提问；改写可替换原文，问题在结果卡片中回答。
 

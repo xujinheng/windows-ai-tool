@@ -14,4 +14,4 @@ To regenerate on Linux/Windows with `ffmpeg` and `Pillow>=11`:
 python scripts/render-demo-video.py --assets docs/ui --output docs/demo
 ```
 
-The [demo-video.yml](../../.github/workflows/demo-video.yml) workflow updates `voicerewrite-demo.mp4`, `voicerewrite-preview.gif` and `poster.jpg` when source UI screenshots change. A stale run will not overwrite assets from a newer main commit.
+The [demo-video.yml](../../.github/workflows/demo-video.yml) workflow updates `voicerewrite-demo.mp4` (H.264, CRF 18), `voicerewrite-preview.webp` (1280 × 720, 12 FPS, 24-bit animated WebP), `voicerewrite-preview.gif` (560 px lightweight fallback), and `poster.jpg` when source UI screenshots change. README uses animated WebP by default to preserve legible text without GIF's low-resolution and limited palette. A stale run will not overwrite assets from a newer main commit. A stale run will not overwrite assets from a newer main commit.

@@ -65,8 +65,9 @@ jobs:
           directory = Path('docs/demo')
           video=directory/'voicerewrite-demo.mp4'
           gif=directory/'voicerewrite-preview.gif'
+          webp=directory/'voicerewrite-preview.webp'
           poster=directory/'poster.jpg'
-          for path in [video,gif,poster]:
+          for path in [video,gif,webp,poster]:
               if not path.is_file() or path.stat().st_size<4096:
                   raise SystemExit('Missing/empty demo asset: '+str(path))
           duration=float(subprocess.check_output(['ffprobe','-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',str(video)],text=True))
@@ -74,8 +75,11 @@ jobs:
               raise SystemExit(f'Unexpected demo length {duration}')
           with Image.open(gif) as image:
               if image.n_frames < 80:
-                  raise SystemExit('Demo preview is not an animated GIF')
-          print('MP4, animated GIF and thumbnail validated')
+                  raise SystemExit('Fallback preview is not an animated GIF')
+          with Image.open(webp) as image:
+              if image.format != 'WEBP' or image.size != (1280,720) or image.n_frames < 300:
+                  raise SystemExit('README WebP preview must be full HD and animated')
+          print('MP4, HD animated WebP, GIF fallback and thumbnail validated')
           PY
       - name: Upload rendered product demo
         uses: actions/upload-artifact@v4
@@ -83,6 +87,7 @@ jobs:
           name: VoiceRewrite-product-demo-video
           path: |
             docs/demo/voicerewrite-demo.mp4
+            docs/demo/voicerewrite-preview.webp
             docs/demo/voicerewrite-preview.gif
             docs/demo/poster.jpg
           if-no-files-found: error
@@ -91,7 +96,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git add -- docs/demo/voicerewrite-demo.mp4 docs/demo/voicerewrite-preview.gif docs/demo/poster.jpg
+          git add -- docs/demo/voicerewrite-demo.mp4 docs/demo/voicerewrite-preview.webp docs/demo/voicerewrite-preview.gif docs/demo/poster.jpg
           if git diff --cached --quiet; then
             echo 'Video assets unchanged.'
             exit 0
