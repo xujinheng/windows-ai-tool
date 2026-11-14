@@ -10,6 +10,7 @@ on:
       - 'voice-rewrite/desktop_monitor_windows.go'
       - 'scripts/publish-readme-screenshots.ps1'
       - 'voice-rewrite/settings_windows.go'
+      - 'voice-rewrite/settings_direct2d_windows.go'
       - 'voice-rewrite/popup_windows.go'
       - 'voice-rewrite/handy_status_windows.go'
       - 'voice-rewrite/visual_preview_windows.go'
