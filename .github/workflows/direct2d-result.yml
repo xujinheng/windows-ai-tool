@@ -1,0 +1,146 @@
+name: VoiceRewrite Direct2D integrated rewrite UI
+on:
+  push:
+    paths:
+      - 'voice-rewrite/result_direct2d_windows.go'
+      - 'voice-rewrite/popup_windows.go'
+      - 'voice-rewrite/answer_visual_preview_windows.go'
+      - 'voice-rewrite/windows.go'
+      - '.github/workflows/direct2d-result.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-ui:
+    runs-on: windows-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Test production Go logic and compile integrated Windows UI
+        shell: pwsh
+        working-directory: voice-rewrite
+        run: |
+          go test ./...
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+          go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
+          if($LASTEXITCODE -ne 0){exit $LASTEXITCODE}
+      - name: Exercise actual Direct2D/DirectWrite window and capture states
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.Drawing
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class RWResult {
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left,Top,Right,Bottom; }
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindow(string cls,string title);
+            [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd,out RECT r);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+            [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr hwnd,int id);
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
+            [DllImport("user32.dll")] public static extern int GetWindowTextLengthW(IntPtr hwnd);
+            [DllImport("user32.dll")] public static extern IntPtr SendMessage(IntPtr hwnd,uint msg,IntPtr wp,IntPtr lp);
+            [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr hwnd,int index);
+          }
+          '@
+          $folder='direct2d-result-evidence'
+          New-Item -ItemType Directory -Force -Path $folder | Out-Null
+          $exe=Join-Path (Get-Location) 'voice-rewrite/VoiceRewrite.exe'
+          $cases=@(
+            @{name='rewrite-light';theme='light';apply='1';long='0'},
+            @{name='rewrite-dark';theme='dark';apply='1';long='0'},
+            @{name='answer-dark';theme='dark';apply='0';long='0'},
+            @{name='long-dark';theme='dark';apply='1';long='1'}
+          )
+          $diag=@()
+          foreach($case in $cases){
+            $env:VOICEREWRITE_VISUAL_PREVIEW='answer'
+            $env:VOICEREWRITE_VISUAL_THEME=$case.theme
+            $env:VOICEREWRITE_VISUAL_APPLY=$case.apply
+            $env:VOICEREWRITE_VISUAL_LONG=$case.long
+            $p=Start-Process -FilePath $exe -PassThru
+            try{
+              $hwnd=[IntPtr]::Zero
+              for($i=0;$i -lt 45;$i++){
+                Start-Sleep -Milliseconds 200
+                $hwnd=[RWResult]::FindWindow('VoiceRewrite.ResultCard.v20','VoiceRewrite')
+                if($hwnd -ne [IntPtr]::Zero){break}
+                $p.Refresh()
+                if($p.HasExited){throw "$($case.name): process exited $($p.ExitCode)"}
+              }
+              if($hwnd -eq [IntPtr]::Zero){throw "$($case.name): missing result window"}
+              # Give DirectWrite composition/native children time to draw.
+              Start-Sleep -Milliseconds 750
+              $style=[RWResult]::GetWindowLongPtr($hwnd,-16).ToInt64()
+              if(($style -band 0x00c00000) -ne 0){throw "$($case.name): old Windows caption is still present"}
+              # Child EDIT creation and the first Direct2D draw are asynchronous
+              # relative to the parent HWND becoming visible. Wait for the
+              # actual Windows control instead of racing its initialization.
+              $editor=[IntPtr]::Zero
+              for($e=0;$e -lt 40;$e++){
+                $editor=[RWResult]::FindWindowEx($hwnd,[IntPtr]::Zero,'Edit',$null)
+                if($editor -ne [IntPtr]::Zero -and [RWResult]::IsWindowVisible($editor)){break}
+                Start-Sleep -Milliseconds 250
+              }
+              if($editor -eq [IntPtr]::Zero -or -not [RWResult]::IsWindowVisible($editor)) {throw "missing readable native edit after 10s initialization"}
+              # GetWindowTextLengthW is unreliable for another process's EDIT.
+              # WM_GETTEXTLENGTH is marshalled by user32 and can be queried safely.
+              $body=[RWResult]::SendMessage($editor,0x000E,[IntPtr]::Zero,[IntPtr]::Zero).ToInt64()
+              if($body -lt 60) {throw "result body truncated: $body chars"}
+              if($case.long -eq '1' -and $body -lt 1000) {throw "long result was clipped: $body chars"}
+              $copy=[RWResult]::GetDlgItem($hwnd,431)
+              $close=[RWResult]::GetDlgItem($hwnd,432)
+              $apply=[RWResult]::GetDlgItem($hwnd,433)
+              if($copy -eq [IntPtr]::Zero -or $close -eq [IntPtr]::Zero){throw "$($case.name): missing real copy/close buttons"}
+              if(-not [RWResult]::IsWindowVisible($copy) -or -not [RWResult]::IsWindowVisible($close)){throw "$($case.name): actions invisible"}
+              if($case.apply -eq '1'){
+                if($apply -eq [IntPtr]::Zero -or -not [RWResult]::IsWindowVisible($apply)){throw "writeback action is missing"}
+              } else {
+                if($apply -ne [IntPtr]::Zero -and [RWResult]::IsWindowVisible($apply)){throw "answer-only mode exposes writeback"}
+              }
+              $rect=New-Object RWResult+RECT
+              if(-not [RWResult]::GetWindowRect($hwnd,[ref]$rect)){throw "window geometry unavailable"}
+              $w=$rect.Right-$rect.Left;$h=$rect.Bottom-$rect.Top
+              if($w -lt 400 -or $h -lt 350){throw "$($case.name): undersized window $w x $h"}
+              $bmp=[System.Drawing.Bitmap]::new($w,$h)
+              $g=[System.Drawing.Graphics]::FromImage($bmp)
+              try{
+                $g.CopyFromScreen($rect.Left,$rect.Top,0,0,[System.Drawing.Size]::new($w,$h))
+                # This lilac mark is painted by Direct2D, not the Win32
+                # owner-draw button fallback; assert an actual D2D frame.
+                $brand=$bmp.GetPixel(42,34)
+                if($case.theme -eq 'dark'){
+                  if([math]::Abs([int]$brand.R-186) -gt 5 -or [math]::Abs([int]$brand.B-255) -gt 5){throw "Direct2D dark paint missing: $brand"}
+                } else {
+                  if([math]::Abs([int]$brand.R-114) -gt 5 -or [math]::Abs([int]$brand.B-207) -gt 5){throw "Direct2D light paint missing: $brand"}
+                }
+                $file=Join-Path $folder ($case.name+'.png')
+                $bmp.Save($file,[System.Drawing.Imaging.ImageFormat]::Png)
+              }finally{$g.Dispose();$bmp.Dispose()}
+              $p.Refresh()
+              $diag+=[pscustomobject]@{name=$case.name;theme=$case.theme;allowApply=$case.apply;longText=$case.long;width=$w;height=$h;workingSetMB=[math]::Round($p.WorkingSet64/1MB,2);privateMB=[math]::Round($p.PrivateMemorySize64/1MB,2)}
+              Write-Host "CAPTURED $($case.name): $w x $h; $([math]::Round($p.WorkingSet64/1MB,2)) MB working set"
+            }finally{
+              $p.Refresh()
+              if(-not $p.HasExited){Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue}
+              Start-Sleep -Milliseconds 150
+            }
+          }
+          $diag | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8 (Join-Path $folder 'diagnostics.json')
+          $folderInfo=Get-ChildItem $folder -Filter '*.png'
+          if($folderInfo.Count -ne 4){throw "Expected four real screenshot captures"}
+          foreach($f in $folderInfo){if($f.Length -lt 3000){throw "Blank-looking screenshot: $($f.Name)"}}
+          $hashLight=(Get-FileHash (Join-Path $folder 'rewrite-light.png') -Algorithm SHA256).Hash
+          $hashDark=(Get-FileHash (Join-Path $folder 'rewrite-dark.png') -Algorithm SHA256).Hash
+          if($hashLight -eq $hashDark){throw 'Dark and light themes are pixel-identical'}
+      - name: Upload real Windows screenshots and one-time process sample
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceRewrite-integrated-Direct2D-rewrite
+          path: direct2d-result-evidence/
+          if-no-files-found: warn

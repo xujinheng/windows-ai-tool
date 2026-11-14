@@ -29,6 +29,11 @@ const (
 	WM_DRAWITEM                    = 0x002B
 	VK_ESCAPE                      = 0x1b
 	WS_OVERLAPPED                  = 0
+	resultWSPopup                  = 0x80000000
+	resultWMNCHitTest              = 0x0084
+	resultHTCaption                = 2
+	resultHTClient                 = 1
+	resultWMSize                   = 0x0005
 	WS_CAPTION                     = 0x00c00000
 	WS_SYSMENU                     = 0x00080000
 	WS_CHILD                       = 0x40000000
@@ -87,6 +92,8 @@ type answerPopup struct {
 	applyResult        chan error
 	generation         uint64
 	canceled           atomic.Bool
+	renderer           *resultRenderer
+	title              string
 }
 
 var activeAnswer *answerPopup
@@ -262,17 +269,65 @@ func (p *answerPopup) apply() {
 		}
 	}()
 }
+
+// Match the native controls to the Direct2D reading surface, independent of
+// the older rose-colored settings skin.
+func (p *answerPopup) bodyTitle() string {
+	if p == nil {
+		return ""
+	}
+	return p.title
+}
+
+// Windows native dark scrollbars are requested only when the OS supports
+// them; unsupported platforms keep the standard accessible EDIT scrollbar.
+var resultSetWindowTheme = syscall.NewLazyDLL("uxtheme.dll").NewProc("SetWindowTheme")
+
+func resultStyleNativeEdit(hwnd uintptr, dark bool) {
+	if hwnd == 0 {
+		return
+	}
+	name := "Explorer"
+	if dark {
+		name = "DarkMode_Explorer"
+	}
+	ptr, err := syscall.UTF16PtrFromString(name)
+	if err == nil {
+		resultSetWindowTheme.Call(hwnd, uintptr(unsafe.Pointer(ptr)), 0)
+	}
+}
+
+func resultCardPalette() uiPalette {
+	p := systemPalette()
+	if p.dark {
+		p.background, p.surface, p.field = 0x101218, 0x232631, 0x232631
+		p.text, p.muted, p.border = 0xf2f1f7, 0xa4a5b7, 0x353948
+		p.primary, p.primaryText = 0xbaaeff, 0x17121d
+		p.secondary, p.secondaryPressed = 0x292c38, 0x393d4b
+	} else {
+		p.background, p.surface, p.field = 0xf8f9fc, 0xffffff, 0xffffff
+		p.text, p.muted, p.border = 0x252637, 0x777b8c, 0xe5e6ef
+		p.primary, p.primaryText = 0x7258cf, 0xffffff
+		p.secondary, p.secondaryPressed = 0xf0f1f6, 0xe5e6ef
+	}
+	return p
+}
+
 func (p *answerPopup) refreshTheme() {
 	if p == nil || p.window == 0 {
 		return
 	}
-	palette := systemPalette()
+	palette := resultCardPalette()
 	if palette == p.palette {
 		return
 	}
 	p.bgBrush = refreshPaletteBrush(p.bgBrush, palette, palette.background)
 	p.editBrush = refreshPaletteBrush(p.editBrush, palette, palette.surface)
 	p.palette = palette
+	resultStyleNativeEdit(p.edit, palette.dark)
+	if p.renderer != nil {
+		p.renderer.updateColors(palette.dark)
+	}
 	applyWindowPalette(p.window, palette)
 	captionColor := uint32(palette.color(palette.background))
 	procDwmSetWindowAttribute.Call(p.window, DWMWA_CAPTION_COLOR, uintptr(unsafe.Pointer(&captionColor)), unsafe.Sizeof(captionColor))
@@ -291,6 +346,24 @@ func (p *answerPopup) refreshTheme() {
 
 func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch uint32(msg) {
+	case resultWMNCHitTest:
+		if activeAnswer != nil && activeAnswer.window == hwnd {
+			var bounds rect32
+			if ok, _, _ := user32.NewProc("GetWindowRect").Call(hwnd, uintptr(unsafe.Pointer(&bounds))); ok != 0 {
+				x := int32(int16(uint16(lParam & 0xffff)))
+				y := int32(int16(uint16((lParam >> 16) & 0xffff)))
+				if y >= bounds.Top && y < bounds.Top+int32(74*activeAnswer.scale) && x < bounds.Right-int32(76*activeAnswer.scale) {
+					return resultHTCaption
+				}
+				return resultHTClient
+			}
+		}
+	case resultWMSize:
+		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.renderer != nil {
+			activeAnswer.renderer.resized()
+			refreshNativeWindow(hwnd)
+		}
+		return 0
 	case uxWMSettingChange, uxWMThemeChanged:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			activeAnswer.refreshTheme()
@@ -301,16 +374,25 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var ps handyPaintStruct
 			hdc, _, _ := procBeginPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			if hdc != 0 {
-				var rc rect32
-				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
-				palette := activeAnswer.palette
-				sc := func(v int32) int32 { return int32(float64(v)*activeAnswer.scale + 0.5) }
-				uiRoundSurface(hdc, rect32{sc(20), sc(99), rc.Right - sc(20), rc.Bottom - sc(59)}, sc(16), palette.color(palette.surface), palette.color(palette.border))
-				accent, _, _ := procCreateSolidBrush.Call(palette.color(palette.primary))
-				if accent != 0 {
-					rail := rect32{sc(22), sc(27), sc(27), sc(50)}
-					procFillRect.Call(hdc, uintptr(unsafe.Pointer(&rail)), accent)
-					procDeleteObject.Call(accent)
+				painted := activeAnswer.renderer != nil && activeAnswer.renderer.draw()
+				if !painted {
+					var rc rect32
+					procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+					palette := activeAnswer.palette
+					sc := func(v int32) int32 { return int32(float64(v)*activeAnswer.scale + 0.5) }
+					uiRoundSurface(hdc, rect32{sc(23), sc(164), rc.Right - sc(23), rc.Bottom - sc(89)}, sc(16), palette.color(palette.surface), palette.color(palette.border))
+					ptr := uxPtr("VoiceRewrite  ·  " + activeAnswer.bodyTitle())
+					old := uintptr(0)
+					if len(activeAnswer.fonts) > 0 {
+						old, _, _ = procSelectObject.Call(hdc, activeAnswer.fonts[0])
+					}
+					procSetBkMode.Call(hdc, TRANSPARENT)
+					procSetTextColor.Call(hdc, palette.color(palette.text))
+					label := rect32{sc(28), sc(78), rc.Right - sc(28), sc(116)}
+					procDrawText.Call(hdc, uintptr(unsafe.Pointer(ptr)), ^uintptr(0), uintptr(unsafe.Pointer(&label)), 0)
+					if old != 0 {
+						procSelectObject.Call(hdc, old)
+					}
 				}
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			}
@@ -326,7 +408,12 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_CTLCOLORSTATIC:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			procSetBkMode.Call(wParam, TRANSPARENT)
-			if uint32(msg) == WM_CTLCOLORSTATIC && activeAnswer.note == lParam {
+			if lParam == activeAnswer.edit {
+				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
+				procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.surface))
+				return activeAnswer.editBrush
+			}
+			if activeAnswer.note == lParam {
 				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.muted))
 			} else {
 				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
@@ -371,6 +458,10 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_NCDESTROY:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			activeAnswer.canceled.Store(true)
+			if activeAnswer.renderer != nil {
+				activeAnswer.renderer.close()
+				activeAnswer.renderer = nil
+			}
 			for _, f := range activeAnswer.fonts {
 				if f != 0 {
 					procDeleteObject.Call(f)
@@ -403,7 +494,7 @@ func drawCardButton(item *drawItemStruct) bool {
 		label = "应用到原文"
 		primary = true
 	case BUTTON_CLOSE:
-		label = "关闭"
+		label = "×"
 	default:
 		return false
 	}
@@ -471,7 +562,7 @@ func showAnswerPopup(msg popupMessage) error {
 	x, y, width, height := desktopPopupPlacement(msg.anchor.X, msg.anchor.Y, width, height, work)
 	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ResultCard")
 	instance, _, _ := procGetModuleHandle.Call(0)
-	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
+	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), Style: 0x00020000, WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
 	atom, _, regErr := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
 	runtime.KeepAlive(wc)
 	if atom == 0 && regErr != syscall.Errno(1410) {
@@ -479,72 +570,81 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	caption, _ := syscall.UTF16PtrFromString("VoiceRewrite")
 	hwnd, _, err := procCreateWindow.Call(WS_EX_TOPMOST|WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(caption)),
-		WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, instance, 0)
+		resultWSPopup|WS_SYSMENU, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, instance, 0)
 	runtime.KeepAlive(class)
 	runtime.KeepAlive(caption)
 	if hwnd == 0 {
 		return fmt.Errorf("create result card: %w", err)
 	}
-	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation, palette: systemPalette(), scale: scale}
+	popup := &answerPopup{window: hwnd, title: msg.title, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation, palette: resultCardPalette(), scale: scale}
 	activeAnswer = popup
 	popup.bgBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.background))
 	popup.editBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.surface))
 	applyWindowPalette(hwnd, popup.palette)
+	if renderer, renderErr := newResultRenderer(hwnd, scale, msg.title, popup.palette.dark, msg.allowApply); renderErr == nil {
+		popup.renderer = renderer
+	} else if msg.app != nil && msg.app.logger != nil {
+		msg.app.logger.Printf("Direct2D result renderer unavailable, using native fallback: %v", renderErr)
+	}
 	var bounds rect32
 	procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 	cw, ch := bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
 	px := func(v int32) int32 { return int32(float64(v)*scale + 0.5) }
-	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, px(36), px(24), cw-px(64), px(34), hwnd, 0)
+	// Keep the spoken/rewritten output in a real read-only multiline HWND:
+	// mouse selection, Ctrl+C, scroll, screen readers and long text still work.
+	// A tiny native label exposes the heading to accessibility inspection;
+	// DirectWrite owns the visible heading, so this duplicate stays hidden.
+	title, err := makeChild("STATIC", msg.title, WS_CHILD, 0, 0, 1, 1, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	summary := "基于选中文字 · 未修改原文"
+	summary := "安全预览 · 原文未修改"
 	if msg.selection == nil {
-		summary = "原输入位置不可用 · 完整结果保留在此，可复制"
+		summary = "原输入位置不可用 · 结果仍可复制"
 	} else if !msg.allowApply {
-		summary = "基于选中文字 · AI 回答"
+		summary = "围绕选中文字生成 · 原文未修改"
 	}
-	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, px(36), px(62), cw-px(72), px(23), hwnd, 0)
+	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, px(31), px(133), cw-px(62), px(22), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
 	popup.note = note
-	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
+	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | uxWSTabStop | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, px(32), px(111), cw-px(64), ch-px(179), hwnd, 0)
+	editor, err := makeChild("EDIT", "", bodyStyle, px(35), px(178), cw-px(70), ch-px(284), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
 	popup.edit = editor
-	// Short multiline responses must be scrollable rather than silently clipped.
+	resultStyleNativeEdit(editor, popup.palette.dark)
 	procSendMessage.Call(editor, 0x00D3, 3, uintptr(uint32(px(12))|(uint32(px(12))<<16)))
-	// Multiline EDIT controls default to a 32K character limit. Raise it
-	// before setting the text, otherwise the UI silently drops the tail.
+	// Preserve the full result instead of truncating beyond the 32K default.
 	procSendMessage.Call(editor, EM_LIMITTEXT, uintptr(len(utf16.Encode([]rune(editorText)))+1), 0)
 	uxSetText(editor, editorText)
 	if size, _, _ := procGetWindowTextLength.Call(editor); size == 0 {
 		closeActiveAnswer()
-		return errors.New("卡片正文控件未收到模型结果")
+		return errors.New("结果正文未写入文本控件")
 	}
-	bottom := ch - px(46)
+	// The header Close action stays outside the draggable caption hit area.
+	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(64), px(26), px(34), px(32), hwnd, BUTTON_CLOSE); err != nil {
+		closeActiveAnswer()
+		return err
+	}
+	bottom := ch - px(64)
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(342), bottom, px(122), px(34), hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(274), bottom, px(126), px(38), hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(209), bottom, px(102), px(34), hwnd, BUTTON_COPY); err != nil {
+	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(136), bottom, px(106), px(38), hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(96), bottom, px(74), px(34), hwnd, BUTTON_CLOSE); err != nil {
-		closeActiveAnswer()
-		return err
-	}
-	popup.fonts = []uintptr{popupFont(-px(24), 650), popupFont(-px(18), 400), popupFont(-px(16), 600), popupFont(-px(14), 400)}
+	popup.fonts = []uintptr{popupFont(-px(24), 650), popupFont(-px(17), 400), popupFont(-px(15), 600), popupFont(-px(14), 400)}
 	setFont(title, popup.fonts[0])
 	setFont(editor, popup.fonts[1])
 	setFont(note, popup.fonts[3])
