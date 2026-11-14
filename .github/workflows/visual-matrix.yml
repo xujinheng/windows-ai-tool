@@ -1,0 +1,134 @@
+name: VoiceRewrite visual matrix (real Windows pixels)
+on:
+  push:
+    paths:
+      - 'voice-rewrite/appearance_windows.go'
+      - 'voice-rewrite/settings_windows.go'
+      - 'voice-rewrite/popup_windows.go'
+      - 'voice-rewrite/handy_status_windows.go'
+      - 'voice-rewrite/visual_preview_windows.go'
+      - 'voice-rewrite/answer_visual_preview_windows.go'
+      - '.github/workflows/visual-matrix.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  screenshots:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Build actual Go / Win32 EXE
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: |
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-H=windowsgui' -o VoiceRewrite.exe .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Capture actual windows in light, dark and simulated 125–200% scaling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path 'visual-matrix' | Out-Null
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class MatrixWin {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct RECT { public int Left,Top,Right,Bottom; }
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)]
+            public static extern IntPtr FindWindow(string className,string title);
+            [DllImport("user32.dll")]
+            public static extern bool GetWindowRect(IntPtr hwnd,out RECT rect);
+            [DllImport("user32.dll")]
+            public static extern IntPtr SendMessage(IntPtr hwnd,uint msg,IntPtr wp,IntPtr lp);
+            [DllImport("user32.dll")]
+            public static extern bool IsWindowVisible(IntPtr hwnd);
+          }
+          '@
+          $exe=Join-Path (Get-Location) 'voice-rewrite/VoiceRewrite.exe'
+          $cases=@(
+            @{id='settings-light';kind='settings';theme='light';scale='1'},
+            @{id='settings-dark';kind='settings';theme='dark';scale='1'},
+            @{id='settings-125';kind='settings';theme='light';scale='1.25'},
+            @{id='settings-150';kind='settings';theme='dark';scale='1.5'},
+            @{id='settings-200';kind='settings';theme='light';scale='2'},
+            @{id='answer-light';kind='answer';theme='light';scale='1'},
+            @{id='answer-dark-long';kind='answer';theme='dark';scale='1';long='1'},
+            @{id='recording-200';kind='recording';theme='dark';scale='2'}
+          )
+          $report=@()
+          foreach($case in $cases) {
+            $env:VOICEREWRITE_VISUAL_PREVIEW=$case.kind
+            $env:VOICEREWRITE_VISUAL_THEME=$case.theme
+            $env:VOICEREWRITE_VISUAL_SCALE=$case.scale
+            $env:VOICEREWRITE_VISUAL_LONG=$case.long
+            $class=switch($case.kind) {
+              'settings' {'VoiceRewrite.Settings.v20'}
+              'answer' {'VoiceRewrite.ResultCard.v20'}
+              'recording' {'VoiceRewrite.HandySmoothStatus.v14'}
+            }
+            $title=switch($case.kind) {
+              'settings' {'VoiceRewrite · 连接设置'}
+              'answer' {'VoiceRewrite'}
+              'recording' {'VoiceRewrite status'}
+            }
+            $proc=Start-Process -FilePath $exe -PassThru
+            try {
+              $hwnd=[IntPtr]::Zero
+              for($i=0;$i -lt 50;$i++) {
+                Start-Sleep -Milliseconds 200
+                $hwnd=[MatrixWin]::FindWindow($class,$title)
+                if($hwnd -ne [IntPtr]::Zero){break}
+                $proc.Refresh()
+                if($proc.HasExited){throw "$($case.id): app exited: $($proc.ExitCode)"}
+              }
+              if($hwnd -eq [IntPtr]::Zero){throw "$($case.id): no HWND $class"}
+              Start-Sleep -Milliseconds 450
+              $rect=New-Object MatrixWin+RECT
+              if(-not [MatrixWin]::GetWindowRect($hwnd,[ref]$rect)){throw "No window rect"}
+              $w=$rect.Right-$rect.Left
+              $h=$rect.Bottom-$rect.Top
+              if($w -lt 110 -or $h -lt 30){throw "Invalid dimensions $w x $h"}
+              $work=[System.Windows.Forms.SystemInformation]::VirtualScreen
+              if($rect.Left -lt $work.Left -or $rect.Top -lt $work.Top -or $rect.Right -gt $work.Right -or $rect.Bottom -gt $work.Bottom) {
+                throw "$($case.id): window clipped by virtual display $($work.ToString()); rect=$($rect.Left),$($rect.Top) $w x $h"
+              }
+              $suffixes=@('top')
+              if($case.id -eq 'settings-200'){$suffixes=@('top','bottom')}
+              foreach($suffix in $suffixes){
+                if($suffix -eq 'bottom'){
+                  [void][MatrixWin]::SendMessage($hwnd,0x115,[IntPtr]7,[IntPtr]::Zero)
+                  [void][MatrixWin]::SendMessage($hwnd,0x114,[IntPtr]7,[IntPtr]::Zero)
+                  Start-Sleep -Milliseconds 300
+                }
+                $bitmap=[System.Drawing.Bitmap]::new($w,$h)
+                $g=[System.Drawing.Graphics]::FromImage($bitmap)
+                try{
+                  $g.CopyFromScreen($rect.Left,$rect.Top,0,0,[System.Drawing.Size]::new($w,$h))
+                  $file=Join-Path (Get-Location) "visual-matrix/$($case.id)-$suffix.png"
+                  $bitmap.Save($file,[System.Drawing.Imaging.ImageFormat]::Png)
+                } finally {$g.Dispose();$bitmap.Dispose()}
+              }
+              $report+= [pscustomobject]@{case=$case.id;kind=$case.kind;theme=$case.theme;simulatedScale=$case.scale;width=$w;height=$h;windowVisible=[MatrixWin]::IsWindowVisible($hwnd);screen=$work.ToString()}
+              Write-Host "CAPTURED $($case.id) $w x $h"
+            } finally {
+              $proc.Refresh()
+              if(-not $proc.HasExited){Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+              Start-Sleep -Milliseconds 150
+            }
+          }
+          $report | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 'visual-matrix/diagnostics.json'
+      - name: Upload actual screenshot evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceRewrite-v29-real-windows-visual-matrix
+          path: visual-matrix/
+          if-no-files-found: warn
