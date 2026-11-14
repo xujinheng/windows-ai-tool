@@ -100,6 +100,7 @@ type uxSettings struct {
 	scrollX, scrollY                        int32
 	renderer                                *resultRenderer
 	page                                    int
+	focusRow                                int
 	pages                                   [3][]uintptr
 	navButtons                              [3]uintptr
 }
@@ -225,6 +226,7 @@ func (p *uxSettings) switchPage(next int) {
 		return
 	}
 	p.page = next
+	p.focusRow = -1
 	for page, windows := range p.pages {
 		for _, handle := range windows {
 			how := uintptr(0) // SW_HIDE
@@ -449,7 +451,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var ps handyPaintStruct
 			hdc, _, _ := procBeginPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			if hdc != 0 {
-				if p.renderer != nil && p.renderer.drawSettings(p.page, p.scrollX, p.scrollY) {
+				if p.renderer != nil && p.renderer.drawSettings(p.page, p.scrollX, p.scrollY, p.focusRow) {
 					resultSetReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)), 1)
 				} else {
 					p.drawSettingsFallback(hdc)
@@ -515,6 +517,20 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case uxWMCommand:
 		if p != nil && p.window == hwnd {
+			// Native focus events keep the D2D field outline keyboard-visible.
+			notification := (wParam >> 16) & 0xffff
+			if notification == 0x0100 || notification == 0x0200 { // EN_SETFOCUS/EN_KILLFOCUS
+				if notification == 0x0200 {
+					p.focusRow = -1
+				} else {
+					p.focusRow = -1
+					for idx, edit := range p.inputs {
+						if edit == lParam { p.focusRow = idx%3 }
+					}
+					if p.shortcut == lParam { p.focusRow = 0 }
+				}
+				refreshNativeWindow(hwnd)
+			}
 			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
 				for idx, controls := range [2][3]uintptr{{p.inputs[0], p.inputs[1], p.inputs[2]}, {p.inputs[3], p.inputs[4], p.inputs[5]}} {
 					for _, edit := range controls {
@@ -694,7 +710,7 @@ func showNativeSettings(app *appState) error {
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
-	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool), palette: resultCardPalette()}
+	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), palette: resultCardPalette()}
 	uxActiveSettings = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.cardBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
@@ -733,7 +749,9 @@ func showNativeSettings(app *appState) error {
 		return control
 	}
 	stat := uintptr(uxWSChild | uxWSVisible)
-	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxWSBorder | uxESAutoScroll)
+	// Borderless Win32 EDIT + Direct2D rounded backplate: native selection, IME,
+	// password masking and Ctrl+C remain available.
+	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxBSOwnerDraw)
 	// Native sidebar navigation, one focused form page at a time.
 	p.navButtons[0] = makeOne("BUTTON", "语音识别", btn, 12, 110, 170, 35, uxNavSpeech, false)
