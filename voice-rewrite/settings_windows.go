@@ -93,6 +93,7 @@ type uxSettings struct {
 	probeStatus                             [2]uintptr
 	probeSerial                             [2]uint64
 	controls                                []uxControl
+	fieldFrames                             []uxControl
 	scale                                   float64
 	scrollX, scrollY                        int32
 }
@@ -393,6 +394,16 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					}
 					uiRoundSurface(hdc, rect32{sc(19 - p.scrollX), sc(card.top - p.scrollY), sc(right - 19 - p.scrollX), sc(card.bottom - p.scrollY)}, sc(18), p.palette.color(p.palette.surface), p.palette.color(p.palette.border))
 				}
+				// Keep real native EDIT controls while painting a softer, rounded frame
+				// behind each one. All geometry remains in logical 96-DPI units.
+				contentW := int32(float64(rc.Right) / p.scale)
+				if contentW < uxContentWidth {
+					contentW = uxContentWidth
+				}
+				for _, field := range p.fieldFrames {
+					x, y, w, h := uxLayoutRect(field, contentW)
+					uiRoundSurface(hdc, rect32{sc(x - p.scrollX), sc(y - p.scrollY), sc(x + w - p.scrollX), sc(y + h - p.scrollY)}, sc(10), p.palette.color(p.palette.field), p.palette.color(p.palette.border))
+				}
 				uiRoundSurface(hdc, rect32{sc(29 - p.scrollX), sc(24 - p.scrollY), sc(65 - p.scrollX), sc(60 - p.scrollY)}, sc(14), p.palette.color(p.palette.primary), p.palette.color(p.palette.primary))
 				uxSetBkMode.Call(hdc, TRANSPARENT)
 				uxSetTextColor.Call(hdc, p.palette.color(p.palette.primaryText))
@@ -647,7 +658,7 @@ func showNativeSettings(app *appState) error {
 	p.cardBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
 	p.editBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.field))
 	applyWindowPalette(h, p.palette)
-	fontName := uxPtr("Segoe UI Variable")
+	fontName := uxPtr("Microsoft YaHei UI")
 	p.font, _, _ = procCreateFont.Call(sc(-16), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.titleFont, _, _ = procCreateFont.Call(sc(-26), 0, 0, 0, 650, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.sectionFont, _, _ = procCreateFont.Call(sc(-20), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
@@ -657,59 +668,69 @@ func showNativeSettings(app *appState) error {
 		if head {
 			useFont = p.sectionFont
 		}
+		originalX := x
+		if cls == "EDIT" {
+			// Insets expose the parent's rounded frame while retaining native
+			// keyboard navigation, Chinese IME, password masking and selection.
+			p.fieldFrames = append(p.fieldFrames, uxControl{x: x, y: y, w: w, h: hh, stretch: x == 130})
+			x += 6
+			y += 2
+			w -= 12
+			hh -= 4
+		}
 		control := uxCreateControl(h, cls, t, style, int32(sc(x)), int32(sc(y)), int32(sc(w)), int32(sc(hh)), id, useFont)
 		if control == 0 {
 			return 0
 		}
 		if cls == "EDIT" {
-			procSendMessage.Call(control, uxEMSetMargins, 3, uintptr(8|(8<<16)))
+			procSendMessage.Call(control, uxEMSetMargins, 3, uintptr(7|(7<<16)))
 		}
 		if cls == "STATIC" && y >= 99 && y < 596 {
 			p.cardStatics[control] = true
 		}
 		p.controls = append(p.controls, uxControl{
 			hwnd: control, x: x, y: y, w: w, h: hh,
-			stretch: (x == 130 || (cls == "STATIC" && w >= 380)),
-			right:   (x >= 527),
+			stretch: (originalX == 130 || (cls == "STATIC" && w >= 380)),
+			right:   (originalX >= 527),
 			id:      id,
 		})
 		return control
 	}
 	stat := uintptr(uxWSChild | uxWSVisible)
-	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxWSBorder | uxESAutoScroll)
+	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxBSOwnerDraw)
 	heading := makeOne("STATIC", "VoiceRewrite", stat, 78, 19, 365, 35, 0, false)
 	setFont(heading, p.titleFont)
-	subtitle := makeOne("STATIC", "语音转文字  ·  智能改写  ·  本地优先", stat, 80, 60, 540, 22, 0, false)
+	subtitle := makeOne("STATIC", "开口即写  ·  智能润色  ·  专注表达", stat, 80, 60, 540, 22, 0, false)
 	setFont(subtitle, p.mutedFont)
-	badge := makeOne("STATIC", "PRIVATE  /  LOCAL", stat, 519, 33, 160, 22, 0, false)
+	badge := makeOne("STATIC", "你的语音工作台", stat, 519, 33, 160, 22, 0, false)
 	setFont(badge, p.mutedFont)
-	makeOne("STATIC", "01   语音识别", stat, 44, 104, 300, 30, 0, true)
-	micro := makeOne("STATIC", "SPEECH TO TEXT", stat, 480, 110, 145, 22, 0, false)
+	makeOne("STATIC", "01   语音转文字", stat, 44, 104, 300, 30, 0, true)
+	micro := makeOne("STATIC", "连接语音识别服务", stat, 480, 110, 145, 22, 0, false)
 	setFont(micro, p.mutedFont)
-	makeOne("STATIC", "API 地址", stat, 34, 141, 100, 20, 0, false)
+	makeOne("STATIC", "服务地址", stat, 34, 141, 100, 20, 0, false)
 	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 130, 135, 385, 30, 0, false)
 	makeOne("BUTTON", "检测", btn, 527, 135, 96, 30, uxProbeASRButton, false)
 	makeOne("STATIC", "模型 ID", stat, 34, 179, 100, 20, 0, false)
 	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 130, 173, 493, 30, 0, false)
-	makeOne("STATIC", "API Key", stat, 34, 217, 100, 20, 0, false)
+	makeOne("STATIC", "API 密钥", stat, 34, 217, 100, 20, 0, false)
 	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 130, 211, 493, 30, 0, false)
-	p.probeStatus[0] = makeOne("STATIC", "● 尚未检测 · 可在设置后试录音验证", stat, 34, 251, 594, 24, 0, false)
+	p.probeStatus[0] = makeOne("STATIC", "● 尚未连接  ·  设置完成后可测试识别服务", stat, 34, 251, 594, 24, 0, false)
 
-	makeOne("STATIC", "02   AI 文本处理", stat, 44, 294, 330, 30, 0, true)
-	modelBadge := makeOne("STATIC", "LANGUAGE MODEL", stat, 484, 298, 152, 22, 0, false)
+	makeOne("STATIC", "02   智能文字处理", stat, 44, 294, 330, 30, 0, true)
+	modelBadge := makeOne("STATIC", "连接 AI 语言模型", stat, 484, 298, 152, 22, 0, false)
 	setFont(modelBadge, p.mutedFont)
-	makeOne("STATIC", "API 地址", stat, 34, 331, 100, 20, 0, false)
+	makeOne("STATIC", "服务地址", stat, 34, 331, 100, 20, 0, false)
 	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 130, 325, 385, 30, 0, false)
 	makeOne("BUTTON", "检测", btn, 527, 325, 96, 30, uxProbeLLMButton, false)
 	makeOne("STATIC", "模型 ID", stat, 34, 372, 100, 20, 0, false)
 	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 130, 366, 493, 30, 0, false)
-	makeOne("STATIC", "API Key", stat, 34, 413, 100, 20, 0, false)
+	makeOne("STATIC", "API 密钥", stat, 34, 413, 100, 20, 0, false)
 	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 130, 407, 493, 30, 0, false)
-	p.probeStatus[1] = makeOne("STATIC", "● 尚未检测 · 用于改写 / 翻译 / 问答", stat, 34, 451, 594, 24, 0, false)
+	p.probeStatus[1] = makeOne("STATIC", "● 尚未连接  ·  支持改写、翻译与问答", stat, 34, 451, 594, 24, 0, false)
 
-	makeOne("STATIC", "03   输入与快捷键", stat, 44, 491, 330, 26, 0, true)
-	deviceBadge := makeOne("STATIC", "INPUT & DEVICE", stat, 484, 494, 152, 22, 0, false)
+	makeOne("STATIC", "03   快捷输入", stat, 44, 491, 330, 26, 0, true)
+	deviceBadge := makeOne("STATIC", "输入方式与设备", stat, 484, 494, 152, 22, 0, false)
 	setFont(deviceBadge, p.mutedFont)
 	makeOne("STATIC", "听写快捷键", stat, 34, 527, 108, 22, 0, false)
 	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 521, 493, 30, uxShortcutInput, false)
@@ -719,7 +740,7 @@ func showNativeSettings(app *appState) error {
 	makeOne("BUTTON", "保存并应用", btn, 29, 611, 170, 38, uxSaveButton, false)
 	makeOne("BUTTON", "高级设置", btn, 212, 611, 126, 38, uxAdvancedButton, false)
 	makeOne("BUTTON", "关闭", btn, 550, 611, 104, 38, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "本地优先  ·  API Key 已加密  ·  按住 "+app.cfg.DictationHotkey+" 开始听写", stat, 33, 658, 620, 22, 0, false)
+	p.hint = makeOne("STATIC", "连接由你掌控  ·  API 密钥已保护  ·  按住 "+app.cfg.DictationHotkey+" 开始听写", stat, 33, 658, 620, 22, 0, false)
 	setFont(p.hint, p.mutedFont)
 	setFont(p.probeStatus[0], p.mutedFont)
 	setFont(p.probeStatus[1], p.mutedFont)

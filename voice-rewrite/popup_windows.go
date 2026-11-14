@@ -74,7 +74,7 @@ type popupMessage struct {
 	generation  uint64
 }
 type answerPopup struct {
-	window, edit, note uintptr
+	window, edit, note, eyebrow, footerNote uintptr
 	fonts              []uintptr
 	bgBrush            uintptr
 	editBrush          uintptr
@@ -287,6 +287,12 @@ func (p *answerPopup) refreshTheme() {
 	if p.note != 0 {
 		refreshNativeWindow(p.note)
 	}
+	if p.eyebrow != 0 {
+		refreshNativeWindow(p.eyebrow)
+	}
+	if p.footerNote != 0 {
+		refreshNativeWindow(p.footerNote)
+	}
 }
 
 func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
@@ -305,10 +311,10 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 				palette := activeAnswer.palette
 				sc := func(v int32) int32 { return int32(float64(v)*activeAnswer.scale + 0.5) }
-				uiRoundSurface(hdc, rect32{sc(20), sc(99), rc.Right - sc(20), rc.Bottom - sc(59)}, sc(16), palette.color(palette.surface), palette.color(palette.border))
+				uiRoundSurface(hdc, rect32{sc(20), sc(120), rc.Right - sc(20), rc.Bottom - sc(59)}, sc(16), palette.color(palette.surface), palette.color(palette.border))
 				accent, _, _ := procCreateSolidBrush.Call(palette.color(palette.primary))
 				if accent != 0 {
-					rail := rect32{sc(22), sc(27), sc(27), sc(50)}
+					rail := rect32{sc(24), sc(55), sc(29), sc(79)}
 					procFillRect.Call(hdc, uintptr(unsafe.Pointer(&rail)), accent)
 					procDeleteObject.Call(accent)
 				}
@@ -326,7 +332,7 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_CTLCOLORSTATIC:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			procSetBkMode.Call(wParam, TRANSPARENT)
-			if uint32(msg) == WM_CTLCOLORSTATIC && activeAnswer.note == lParam {
+			if lParam == activeAnswer.note || lParam == activeAnswer.eyebrow || lParam == activeAnswer.footerNote {
 				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.muted))
 			} else {
 				procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
@@ -443,7 +449,7 @@ func makeChild(className, text string, style uintptr, x, y, w, h int32, parent, 
 	return handle, nil
 }
 func popupFont(height, weight int32) uintptr {
-	name, _ := syscall.UTF16PtrFromString("Segoe UI Variable")
+	name, _ := syscall.UTF16PtrFromString("Microsoft YaHei UI")
 	font, _, _ := procCreateFont.Call(uintptr(height), 0, 0, 0, uintptr(weight), 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(name)))
 	runtime.KeepAlive(name)
 	return font
@@ -494,18 +500,24 @@ func showAnswerPopup(msg popupMessage) error {
 	procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 	cw, ch := bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
 	px := func(v int32) int32 { return int32(float64(v)*scale + 0.5) }
-	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, px(36), px(24), cw-px(64), px(34), hwnd, 0)
+	eyebrow, err := makeChild("STATIC", "VoiceRewrite  /  智能结果", WS_CHILD|WS_VISIBLE, px(36), px(22), cw-px(72), px(22), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
-	summary := "基于选中文字 · 未修改原文"
-	if msg.selection == nil {
-		summary = "原输入位置不可用 · 完整结果保留在此，可复制"
-	} else if !msg.allowApply {
-		summary = "基于选中文字 · AI 回答"
+	popup.eyebrow = eyebrow
+	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, px(38), px(48), cw-px(72), px(34), hwnd, 0)
+	if err != nil {
+		closeActiveAnswer()
+		return err
 	}
-	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, px(36), px(62), cw-px(72), px(23), hwnd, 0)
+	summary := "安全预览  ·  原文未修改"
+	if msg.selection == nil {
+		summary = "原输入位置已变化  ·  完整结果保留在此，可复制"
+	} else if !msg.allowApply {
+		summary = "围绕选中文字生成  ·  原文未修改"
+	}
+	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, px(38), px(85), cw-px(76), px(23), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -513,7 +525,7 @@ func showAnswerPopup(msg popupMessage) error {
 	popup.note = note
 	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, px(32), px(111), cw-px(64), ch-px(179), hwnd, 0)
+	editor, err := makeChild("EDIT", "", bodyStyle, px(32), px(132), cw-px(64), ch-px(200), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -530,6 +542,12 @@ func showAnswerPopup(msg popupMessage) error {
 		return errors.New("卡片正文控件未收到模型结果")
 	}
 	bottom := ch - px(46)
+	footerNote, err := makeChild("STATIC", "可选中正文  ·  支持 Ctrl+C", WS_CHILD|WS_VISIBLE, px(32), bottom+px(7), px(270), px(20), hwnd, 0)
+	if err != nil {
+		closeActiveAnswer()
+		return err
+	}
+	popup.footerNote = footerNote
 	if msg.allowApply {
 		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-px(342), bottom, px(122), px(34), hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
@@ -548,6 +566,8 @@ func showAnswerPopup(msg popupMessage) error {
 	setFont(title, popup.fonts[0])
 	setFont(editor, popup.fonts[1])
 	setFont(note, popup.fonts[3])
+	setFont(eyebrow, popup.fonts[3])
+	setFont(footerNote, popup.fonts[3])
 	rounded := uint32(2)
 	procDwmSetWindowAttribute.Call(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, uintptr(unsafe.Pointer(&rounded)), unsafe.Sizeof(rounded))
 	captionColor := uint32(popup.palette.color(popup.palette.background))
