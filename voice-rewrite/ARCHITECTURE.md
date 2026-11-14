@@ -1,20 +1,31 @@
-# VoiceRewrite v6: Windows threading, intent and popup architecture
+# Architecture
 
-## Processing
+VoiceRewrite is a native Go/Win32 application. Its main components are:
 
-- Dedicated Windows `WH_MOUSE_LL` hook OS thread: forwards Mouse5 press/release events; it must not block on clipboard or network I/O.
-- UI thread: maintains the tray state and main `GetMessageW` loop. The app handles its own posted app messages, and forwards **every other window message** to `TranslateMessage` and `DispatchMessageW`; these are required to paint and close popup windows and deliver child `WM_COMMAND` notifications.
-- Worker goroutines: record PCM, capture selected text after Mouse5 release, transcribe via local Qwen3-ASR, use local LLM exactly once to classify intent and generate output, and optionally attempt safe replacement.
+| Component | Source | Responsibility |
+| --- | --- | --- |
+| Input and recording | `mouse_windows.go`, `recording_windows.go`, `microphone_windows.go` | Detect hold/release and capture PCM audio |
+| Task execution | `task_worker_windows.go`, `task_epoch.go` | Coordinate asynchronous work, cancellation and target checks |
+| ASR | `asr.go`, `audio_chunks.go` | Transcribe audio through the configured API |
+| Text processing | `llm.go`, `intent.go` | Classify spoken instructions and generate text |
+| Text insertion | `clipboard_windows.go`, `edit_target.go`, `unicode_input_windows.go` | Apply text to an eligible editor |
+| User interface | `settings_windows.go`, `popup_windows.go`, `handy_status_windows.go`, `tray_windows.go` | Settings, results, recording indicator and tray menu |
+| Configuration | `config.go`, `config_store.go`, `secrets_windows.go` | Persist settings and protect API keys |
 
-## Routing
+## Execution
 
-One response: `{"intent":"edit|translate|answer|summarize|ambiguous","result":"..."}`. The model never controls whether text may be written. A deterministic instruction guard and a native editable-control check must BOTH authorize replacement. A translation command like `请写成英文` is a transformation: auto-replace when safe, popup otherwise. Requests for explanations/summaries always use the popup. Browser article and unknown editor control selection never gets auto-pasted into.
+Windows input hooks and the UI message loop remain responsive while audio, network requests and text processing run in background tasks. Results are associated with a task generation and the original target window; stale tasks cannot apply text to a different target.
 
-The popup is a native nonmodal Win32 top-level window containing a UTF-16 read-only EDIT and two buttons (Copy and Close), with an explicit `WM_CLOSE` and `WM_COMMAND` handler. The central message pump dispatches its events. Mouse position is captured when dictation ends; results are rendered later without taking keyboard focus. If a popup has focus, Escape closes it. Tray menu can close it at any time.
+The ASR client uses `/v1/audio/transcriptions`; the LLM client uses `/v1/chat/completions`. Long recordings are split into bounded audio chunks. Text selections are treated as untrusted data when sent to the LLM.
 
-## Known limitations
+## Input safety
 
-- No general-purpose UI Automation / IAccessible implementation; browser editable text may show preview instead of auto-replace. This avoids injecting Ctrl+V into a page read-only selection.
-- Clipboard restore is only plain text and is conditional on clipboard sequence staying unchanged. Image/rich-text clipboard preservation is not yet implemented.
-- The native popup lifecycle test is opt-in because it requires an interactive Windows desktop. Cross-compilation does **not** establish native GUI correctness.
-- Pasted speech and selected text remain local to the configured servers; never log content; log `intent`, `route`, timings and status instead.
+Automatic replacement checks the editor and selection before inserting text. Clipboard restoration is conditional on ownership and available formats. Unsupported clipboard formats and inaccessible editors may require manual copy from the result card.
+
+Known native password fields are excluded. Windows UI Automation augments password-field detection in other applications; accessibility providers may be incomplete.
+
+## Data
+
+Settings are stored under `%APPDATA%\VoiceRewrite`; API keys use DPAPI. Logs are stored under `%LOCALAPPDATA%\VoiceRewrite`. Recent text results and clipboard snapshots remain in process memory.
+
+For setup, see [README](README.md). For verification, see [TESTING.md](TESTING.md).
