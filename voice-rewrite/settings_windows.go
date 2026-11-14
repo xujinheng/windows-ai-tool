@@ -20,6 +20,8 @@ const (
 	uxWMSize          = 0x0005
 	uxWMGetMinMaxInfo = 0x0024
 	uxWSThickFrame    = 0x00040000
+	uxWMSettingChange = 0x001A
+	uxWMThemeChanged  = 0x031A
 	uxWMClose         = 0x0010
 	uxWMEraseBkgnd    = 0x0014
 	uxWMPaint         = 0x000F
@@ -147,9 +149,33 @@ func uxSettingsKeyMessage(msg winMSG) bool {
 	return true
 }
 
+func (p *uxSettings) refreshTheme() {
+	if p == nil || p.window == 0 {
+		return
+	}
+	palette := systemPalette()
+	if palette == p.palette {
+		return
+	}
+	p.background = refreshPaletteBrush(p.background, palette, palette.background)
+	p.cardBrush = refreshPaletteBrush(p.cardBrush, palette, palette.surface)
+	p.editBrush = refreshPaletteBrush(p.editBrush, palette, palette.field)
+	p.palette = palette
+	applyWindowPalette(p.window, palette)
+	refreshNativeWindow(p.window)
+	for _, c := range p.controls {
+		refreshNativeWindow(c.hwnd)
+	}
+}
+
 func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	p := uxActiveSettings
 	switch uint32(msg) {
+	case uxWMSettingChange, uxWMThemeChanged:
+		if p != nil && p.window == hwnd {
+			p.refreshTheme()
+		}
+		return 0
 	case uxWMSize:
 		if p != nil && p.window == hwnd {
 			p.layout()

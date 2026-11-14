@@ -239,8 +239,40 @@ func (p *answerPopup) apply() {
 		}
 	}()
 }
+func (p *answerPopup) refreshTheme() {
+	if p == nil || p.window == 0 {
+		return
+	}
+	palette := systemPalette()
+	if palette == p.palette {
+		return
+	}
+	p.bgBrush = refreshPaletteBrush(p.bgBrush, palette, palette.background)
+	p.editBrush = refreshPaletteBrush(p.editBrush, palette, palette.field)
+	p.palette = palette
+	applyWindowPalette(p.window, palette)
+	captionColor := uint32(palette.color(palette.background))
+	procDwmSetWindowAttribute.Call(p.window, DWMWA_CAPTION_COLOR, uintptr(unsafe.Pointer(&captionColor)), unsafe.Sizeof(captionColor))
+	captionText := uint32(palette.color(palette.text))
+	procDwmSetWindowAttribute.Call(p.window, DWMWA_TEXT_COLOR, uintptr(unsafe.Pointer(&captionText)), unsafe.Sizeof(captionText))
+	border := uint32(palette.color(palette.border))
+	procDwmSetWindowAttribute.Call(p.window, DWMWA_BORDER_COLOR, uintptr(unsafe.Pointer(&border)), unsafe.Sizeof(border))
+	refreshNativeWindow(p.window)
+	if p.edit != 0 {
+		refreshNativeWindow(p.edit)
+	}
+	if p.note != 0 {
+		refreshNativeWindow(p.note)
+	}
+}
+
 func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch uint32(msg) {
+	case uxWMSettingChange, uxWMThemeChanged:
+		if activeAnswer != nil && activeAnswer.window == hwnd {
+			activeAnswer.refreshTheme()
+		}
+		return 0
 	case WM_ERASEBKGND:
 		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.bgBrush != 0 {
 			var r rect32

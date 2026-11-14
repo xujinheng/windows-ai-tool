@@ -1,4 +1,4 @@
-# VoiceRewrite v23 — Windows native voice writing assistant
+# VoiceRewrite v24 — Windows native voice writing assistant
 
 VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configure a standalone F-key in Settings, to dictate at the caret; hold **Mouse5** after selecting text to rewrite, translate, or ask a question. VoiceRewrite is a **client**, not a model installer: ASR and LLM endpoints are configured separately.
 
@@ -19,16 +19,16 @@ VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configur
 
 ## Architecture
 
-- Go 1.23, standard library and Win32, one native Windows GUI executable. v23 separates configuration, ASR, LLM, intent routing, recording, clipboard insertion, and the Windows task worker into dedicated modules.
-- The settings center and result card use a shared Windows light/dark appearance palette chosen on window creation; settings height was reduced for common laptop screens.
+- Go 1.23, standard library and Win32, one native Windows GUI executable. v23+ separates configuration, ASR, LLM, intent routing, recording, clipboard insertion, and the Windows task worker into dedicated modules.
+- The settings center and result card share Windows light/dark appearance, including live theme refresh when system colors change.
 - Each task owns a cancelable context: pressing Cancel fences results *and cancels outstanding HTTP I/O*.
 - Long recordings are split into 25-second-or-shorter PCM chunks near quieter audio windows, then transcribed sequentially and rejoined without dropping source samples.
 - Connection pooling reuses HTTP transport, redirects are not followed, and server error bodies are not echoed in the UI/logs.
 - ASR: OpenAI-compatible `POST /audio/transcriptions`; handles `{"text":"..."}`, JSON strings and text/plain, strips Qwen3-ASR language markers.
 - LLM: OpenAI-compatible `POST /chat/completions`. ASR and LLM may use different remote/local servers.
 - Selected text is untrusted model input, not a source of instructions.
-- Clipboard/SendInput insertion is **best effort**; sending Ctrl+V does not prove that a third-party application accepted it. Rich clipboard formats are not fully preserved yet.
-- `PRODUCT-DESIGN.md` describes the product interaction contract; `ARCHITECTURE-V23.md` explains module boundaries, and `EXPERIENCE-V23.md` records this release.
+- Clipboard/SendInput insertion is **best effort**; sending Ctrl+V does not prove that a third-party application accepted it. A conservative multi-format HGLOBAL snapshot restores most text, HTML, RTF, and file-list data when clipboard ownership has not changed; uncopyable GDI/owner formats are never overwritten. Dictation falls back to Unicode SendInput when preservation cannot be guaranteed. This is **not** complete Windows OLE clipboard fidelity.
+- `PRODUCT-DESIGN.md` describes the product interaction contract; `ARCHITECTURE-V24.md` explains module boundaries, and `EXPERIENCE-V24.md` records the latest release.
 
 ## Build
 
@@ -42,3 +42,9 @@ go build -trimpath -ldflags='-H windowsgui -s -w' -o VoiceRewrite.exe .
 Run real Windows 11 interactive tests before claiming compatibility across WeChat, VS Code, Chromium, DPI and multi-monitor environments. Avoid publishing API credentials or actual audio/transcript content.
 
 See the repository root for the restored **Qwen3-ASR OneClick** launcher. The project still requires an owner-approved license before redistribution terms are clarified.
+
+## Installation and distribution
+
+On every commit GitHub Actions builds a portable ZIP and an **unsigned per-user Inno Setup installer** with Start-menu shortcut and uninstaller. It preserves the private config and DPAPI secrets under the user profile when uninstalled. An installer is not equivalent to a signed or Microsoft Store-approved application; Windows SmartScreen may warn until the owner arranges code signing.
+
+See `../installer/README.md` and `EXPERIENCE-V24.md` for release boundaries. Tag-triggered GitHub releases are **pre-releases**, not automatically declared stable.

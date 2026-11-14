@@ -47,3 +47,20 @@ func applyWindowPalette(hwnd uintptr, p uiPalette) {
 	// The background keeps the same contrast on Windows 10, where the DWM
 	// attribute may not exist or may return E_INVALIDARG.
 }
+
+// refreshPaletteBrush allocates the new brush first, so a transient GDI
+// allocation failure never leaves a live window without its old brush.
+func refreshPaletteBrush(old uintptr, palette uiPalette, rgb uint32) uintptr {
+	fresh, _, _ := procCreateSolidBrush.Call(palette.color(rgb))
+	if fresh == 0 {
+		return old
+	}
+	if old != 0 {
+		procDeleteObject.Call(old)
+	}
+	return fresh
+}
+
+func refreshNativeWindow(hwnd uintptr) {
+	procInvalidateRectSettings.Call(hwnd, 0, 1)
+}

@@ -2,11 +2,25 @@ name: Build VoiceRewrite Windows
 on:
   push:
     branches: [main]
+    tags: [v*]
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
+  test-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Go format
+        working-directory: voice-rewrite
+        run: test -z "$(gofmt -l .)"
+      - name: Test core with race detector
+        working-directory: voice-rewrite
+        run: go test -race -count=1 ./...
   build:
     runs-on: windows-latest
     steps:
@@ -28,8 +42,7 @@ jobs:
         run: go test ./...
       - name: Vet
         working-directory: voice-rewrite
-        # Win32 callbacks pass OS-owned memory addresses as uintptr.
-        # Retain other go vet checks without suppressing warnings globally.
+        # Win32 callbacks pass OS-owned pointers as uintptr; keep every other vet check.
         run: go vet -unsafeptr=false ./...
       - name: Build x64 GUI
         working-directory: voice-rewrite
@@ -38,7 +51,9 @@ jobs:
           GOARCH: amd64
           CGO_ENABLED: '0'
         shell: pwsh
-        run: go build -trimpath -ldflags '-H=windowsgui -s -w' -o VoiceRewrite.exe .
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.24.0-dev' }
+          go build -trimpath -ldflags "-H=windowsgui -s -w -X main.buildID=$version" -o VoiceRewrite.exe .
       - name: Package portable Windows build
         working-directory: voice-rewrite
         shell: pwsh
@@ -58,11 +73,33 @@ jobs:
             voice-rewrite/VoiceRewrite-windows-x64.zip
             voice-rewrite/SHA256SUMS.txt
           if-no-files-found: error
-      - name: Upload EXE
+      - name: Upload standalone EXE
         uses: actions/upload-artifact@v4
         with:
           name: VoiceRewrite-windows-x64
           path: voice-rewrite/VoiceRewrite.exe
+          if-no-files-found: error
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress --limit-output
+      - name: Build per-user installer
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq 'tag') { $env:GITHUB_REF_NAME.TrimStart('v') } else { '0.24.0' }
+          $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $compiler)) { throw "Inno Setup compiler not found: $compiler" }
+          & $compiler "/DAppVersion=$version" 'installer\VoiceRewrite.iss'
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed: $LASTEXITCODE" }
+          $packages = @(Get-ChildItem -LiteralPath 'installer/output' -Filter 'VoiceRewrite-Setup-*-x64.exe' -File)
+          if ($packages.Count -ne 1) { throw 'Expected exactly one installer output' }
+          $hash = (Get-FileHash -LiteralPath $packages[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash *$($packages[0].Name)" | Set-Content -LiteralPath 'installer/output/INSTALLER-SHA256SUMS.txt' -Encoding ascii
+      - name: Upload installer and checksum
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoiceRewrite-installer-windows-x64
+          path: installer/output/*
+          if-no-files-found: error
   build-oneclick:
     runs-on: windows-latest
     steps:
@@ -86,3 +123,26 @@ jobs:
           name: Qwen3-ASR-OneClick-Windows-x64
           path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
           if-no-files-found: error
+  prerelease:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test-core, build, build-oneclick]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: VoiceRewrite-*
+          path: release
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: Qwen3-ASR-OneClick-Windows-x64
+          path: release
+      - name: Publish unsigned preview release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          generate_release_notes: true
+          files: release/*
+          fail_on_unmatched_files: true

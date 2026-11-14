@@ -21,7 +21,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-14-modern-core-v23"
+var buildID = "0.24.0-dev" // overwritten by -ldflags -X at build time
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -154,6 +154,7 @@ type selectedText struct {
 	HadOriginalClipboard bool
 	TargetWindow         uintptr
 	CopyClipboardSeq     uintptr // clipboard after our simulated Ctrl+C
+	ClipboardBackup      *clipboardSnapshot
 	Anchor               trayPoint
 }
 type appState struct {

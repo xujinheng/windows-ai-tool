@@ -63,10 +63,13 @@ func watchHoldRelease(hwnd, vk, session uintptr, canceled <-chan struct{}, timeo
 	}
 }
 
-// Restore only pre-existing plain text, and only when no other clipboard
-// write happened after our most recent known Ctrl+C. Non-text data is NOT
-// preserved by this helper; see the manual test checklist for that limitation.
+// Restore every snapshotted clipboard format when the sequence is still ours.
+// Never overwrite a later clipboard change made by the user or another app.
 func restoreSelectionClipboardIfOwned(hwnd uintptr, sel selectedText) {
+	if sel.ClipboardBackup != nil {
+		_ = sel.ClipboardBackup.restoreIfOwned(hwnd)
+		return
+	}
 	if mayRestoreTextClipboard(sel.HadOriginalClipboard, sel.CopyClipboardSeq, clipboardSeq()) {
 		_ = setClipboardText(hwnd, sel.OriginalClipboard)
 	}
@@ -134,8 +137,8 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	app.postHandyPhase(statusSuccess, generation)
 }
 
-// Dictation does not require a selected text. Restore only clipboard text we
-// still own; previous rich formats are not yet preserved by the v9 backend.
+// Dictation preserves multi-format clipboard contents. If a format cannot be
+// backed up safely, use direct Unicode input rather than changing clipboard.
 func insertDictationText(hwnd, target uintptr, text string, valid func() bool) error {
 	if strings.TrimSpace(text) == "" {
 		return errors.New("听写结果为空")
@@ -146,31 +149,26 @@ func insertDictationText(hwnd, target uintptr, text string, valid func() bool) e
 	if !valid() || !isSameForegroundWindow(target) {
 		return errors.New("写入前窗口已变化，已取消听写")
 	}
-	old, existed, err := getClipboardText(hwnd)
+	backup, err := snapshotClipboard(hwnd)
 	if err != nil {
-		return err
+		// High-quality clipboard support must never destroy a bitmap, virtual
+		// file, or an application's private object merely to paste text.
+		return sendUnicodeText(text, func() bool { return valid() && isSameForegroundWindow(target) })
 	}
 	if err = setClipboardText(hwnd, text); err != nil {
 		return err
 	}
-	owned := clipboardSeq()
+	backup.markOwned(clipboardSeq())
+	defer backup.restoreIfOwned(hwnd)
 	if !valid() || !isSameForegroundWindow(target) {
-		if mayRestoreTextClipboard(existed, owned, clipboardSeq()) {
-			_ = setClipboardText(hwnd, old)
-		}
 		return errors.New("写入前窗口已变化，已取消听写")
 	}
 	if err = sendCombo('V'); err != nil {
-		if mayRestoreTextClipboard(existed, owned, clipboardSeq()) {
-			_ = setClipboardText(hwnd, old)
-		}
 		return err
 	}
 	time.Sleep(250 * time.Millisecond)
-	if mayRestoreTextClipboard(existed, owned, clipboardSeq()) {
-		if err = setClipboardText(hwnd, old); err != nil {
-			return fmt.Errorf("已触发粘贴，但剪贴板恢复失败: %w", err)
-		}
+	if err = backup.restoreIfOwned(hwnd); err != nil {
+		return fmt.Errorf("已触发粘贴，但剪贴板恢复失败: %w", err)
 	}
 	return nil // SendInput accepted; insertion cannot be proven in all editors.
 }

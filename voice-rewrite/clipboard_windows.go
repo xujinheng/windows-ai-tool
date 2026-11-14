@@ -177,17 +177,16 @@ func captureSelection(hwnd uintptr, cfg Config) (selectedText, error) {
 	if sel.TargetWindow == 0 {
 		return sel, errors.New("找不到当前编辑窗口")
 	}
-	old, exists, e := getClipboardText(hwnd)
-	if e != nil {
-		return sel, e
+	backup, err := snapshotClipboard(hwnd)
+	if err != nil {
+		return sel, err
 	}
-	sel.OriginalClipboard = old
-	sel.HadOriginalClipboard = exists
-	text, e := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
+	sel.ClipboardBackup = backup
+	text, err := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
 	sel.CopyClipboardSeq = clipboardSeq()
-	if e != nil {
-		// Do not blindly overwrite the clipboard if another app/user changed it.
-		return sel, e
+	backup.markOwned(sel.CopyClipboardSeq)
+	if err != nil {
+		return sel, err
 	}
 	sel.Text = text
 	return sel, nil
@@ -215,69 +214,67 @@ func replaceSelectionWithGuard(hwnd uintptr, sel selectedText, replacement strin
 	fg, _, _ := procGetForegroundWindow.Call()
 	windowValid, _, _ := procIsWindow.Call(sel.TargetWindow)
 	if windowValid == 0 || fg != sel.TargetWindow {
-		if e := setClipboardText(hwnd, replacement); e != nil {
-			return e
+		return errors.New("编辑窗口已经切换；结果保留在预览卡片，可手动复制")
+	}
+
+	backup := sel.ClipboardBackup
+	if backup == nil || backup.isFinished() {
+		var err error
+		backup, err = snapshotClipboard(hwnd)
+		if err != nil {
+			return err
 		}
-		return errors.New("编辑窗口已经切换；为了避免覆盖错误位置，改写内容已复制到剪贴板，请返回原窗口手动粘贴。")
+	} else if !backup.ownsCurrent() {
+		return errors.New("执行期间剪贴板被其他程序更改，为避免覆盖用户数据已取消自动写入")
 	}
-	// Re-check selection; otherwise Ctrl+V might insert into a different place.
-	actual, e := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
-	if e != nil || actual != sel.Text {
-		if e2 := setClipboardText(hwnd, replacement); e2 != nil {
-			return e2
-		}
-		return errors.New("原来的选中文字已经变化；为避免误覆盖，结果已复制到剪贴板。请手动粘贴。")
+	defer backup.restoreIfOwned(hwnd)
+
+	// Recheck foreground and selection before mutating the editor. Each Ctrl+C
+	// changes the clipboard; track its sequence as part of our own operation.
+	beforeCopy := clipboardSeq()
+	actual, err := copySelectionWithRetry(hwnd, sel.TargetWindow, cfg)
+	afterCopy := clipboardSeq()
+	if afterCopy != beforeCopy {
+		backup.markOwned(afterCopy)
 	}
-	if valid != nil && !valid() {
-		restoreSelectionClipboardIfOwned(hwnd, selectedText{
-			HadOriginalClipboard: sel.HadOriginalClipboard, OriginalClipboard: sel.OriginalClipboard,
-			CopyClipboardSeq: clipboardSeq(),
-		})
-		return errors.New("任务已过期，禁止覆盖原文")
+	if err != nil || actual != sel.Text {
+		return errors.New("原选区已变化或无法读取；结果保留在预览卡片，不自动覆盖")
 	}
-	if !isSameForegroundWindow(sel.TargetWindow) {
-		return errors.New("粘贴前编辑窗口已变化，已取消覆盖")
+	if (valid != nil && !valid()) || !isSameForegroundWindow(sel.TargetWindow) {
+		return errors.New("粘贴前目标窗口发生变化，已取消自动写入")
 	}
-	if e = setClipboardText(hwnd, replacement); e != nil {
-		return e
+	if err := setClipboardText(hwnd, replacement); err != nil {
+		return err
 	}
-	ownedSeq := clipboardSeq()
-	if valid != nil && !valid() {
-		restoreSelectionClipboardIfOwned(hwnd, selectedText{HadOriginalClipboard: sel.HadOriginalClipboard, OriginalClipboard: sel.OriginalClipboard, CopyClipboardSeq: ownedSeq})
-		return errors.New("任务已过期，禁止粘贴")
+	backup.markOwned(clipboardSeq())
+	if (valid != nil && !valid()) || !isSameForegroundWindow(sel.TargetWindow) {
+		return errors.New("目标窗口变化或任务已取消，已停止粘贴")
 	}
-	if e = sendCombo('V'); e != nil {
-		return e
+	if err := sendCombo('V'); err != nil {
+		return err
 	}
-	// Small grace interval for applications that read the clipboard asynchronously.
 	time.Sleep(270 * time.Millisecond)
 	if verifyBrowser {
 		if !isSameForegroundWindow(sel.TargetWindow) {
-			return errors.New("粘贴后窗口切换，无法验证结果")
+			return errors.New("粘贴后窗口变化，无法验证结果；可使用预览卡片")
 		}
-		// A post-paste Ctrl+C itself may overwrite the clipboard; track its
-		// sequence as part of our own operation instead of losing the backup.
 		beforeProbe := clipboardSeq()
 		stillSelected, verifyErr := clipboardCopy(hwnd, 470*time.Millisecond)
 		afterProbe := clipboardSeq()
-		if verifyErr == nil && afterProbe != beforeProbe {
-			ownedSeq = afterProbe
+		if afterProbe != beforeProbe {
+			if verifyErr == nil {
+				backup.markOwned(afterProbe)
+			} else {
+				// Clipboard ownership is uncertain: don't overwrite an external edit.
+				backup.abandon()
+			}
 		}
 		if verifyErr == nil && stillSelected == sel.Text {
-			if mayRestoreTextClipboard(sel.HadOriginalClipboard, ownedSeq, clipboardSeq()) {
-				_ = setClipboardText(hwnd, sel.OriginalClipboard)
-			}
-			return errors.New("原始文字仍被选中，可能是只读内容；改为预览")
-		}
-		if afterProbe != beforeProbe && verifyErr != nil {
-			// Unknown clipboard writer: never overwrite that new value.
-			ownedSeq = 0
+			return errors.New("原文字仍被选中，目标应用可能拒绝粘贴；结果可从预览卡片复制")
 		}
 	}
-	if mayRestoreTextClipboard(sel.HadOriginalClipboard, ownedSeq, clipboardSeq()) {
-		if e := setClipboardText(hwnd, sel.OriginalClipboard); e != nil {
-			return fmt.Errorf("改写已发送，但恢复纯文本剪贴板失败: %w", e)
-		}
+	if err := backup.restoreIfOwned(hwnd); err != nil {
+		return fmt.Errorf("已尝试粘贴，但剪贴板恢复失败: %w", err)
 	}
-	return nil
+	return nil // Windows accepted Ctrl+V; target editor insertion remains best-effort.
 }
