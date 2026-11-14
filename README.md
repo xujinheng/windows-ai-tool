@@ -8,7 +8,7 @@
 
 ![VoiceRewrite real Windows interface: settings, AI result and recording overlay](docs/ui/overview.png)
 
-*Real screenshots captured from the running Windows EXE in GitHub Actions. The recording overlay uses a deterministic preview, not microphone audio. [How screenshots are kept up to date](voice-rewrite/VISUAL-TESTING.md).*
+*Real screenshots captured from the running Windows EXE in GitHub Actions. The recording overlay is shown in preview mode without microphone audio. [How screenshots are kept up to date](voice-rewrite/VISUAL-TESTING.md).*
 
 <table>
   <tr>
