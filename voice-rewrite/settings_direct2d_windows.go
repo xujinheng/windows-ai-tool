@@ -15,7 +15,7 @@ var settingsSubtitles = [3]string{
 }
 var settingsSectionNames = [3]string{"连接配置", "模型配置", "输入偏好"}
 
-func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32) bool {
+func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow int) bool {
 	if d == nil {
 		return false
 	}
@@ -36,10 +36,9 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32) bool {
 	d.fill(0, 0, 194, h, 1)
 	d.fill(193, 0, 1, h, 6)
 	d.text("VoiceRewrite", 20, 23, 167, 27, 3, 4)
-	d.text("PREFERENCES", 22, 75, 150, 20, 0, 5)
+	d.text("设置分类", 22, 75, 150, 20, 0, 5)
 	d.fill(20, 246, 154, 1, 6)
-	d.text("LOCAL  ·  WINDOWS", 22, h-51, 165, 20, 0, 5)
-	d.text("原生 · 轻量", 22, h-32, 156, 18, 0, 5)
+	// No decorative footer copy: navigation is the only purpose of the rail.
 	// Main pane. No brand banner, stacked white cards or redundant headings.
 	if page < 0 || page >= len(settingsHeadings) {
 		page = 0
@@ -50,10 +49,23 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32) bool {
 	d.text(settingsSectionNames[page], 224, 140, 235, 30, 3, 4)
 	// Horizontal rules align with the three native field rows.
 	if page == 0 || page == 1 {
+		for i, y := range []float32{169, 239, 309} {
+			rectY := y-float32(scrollY)
+			rectX := float32(345)-float32(scrollX)
+			d.round(rectX, rectY, 447, 42, 8, 2)
+			outline := 6
+			if i == focusRow { outline = 7 }
+			d.outline(rectX, rectY, 447, 42, 8, outline)
+		}
 		for _, y := range []float32{213, 283, 353} {
 			d.fill(224-float32(scrollX), y-float32(scrollY), w-253, 1, 6)
 		}
 	} else {
+		rectX, rectY := float32(345)-float32(scrollX), float32(169)-float32(scrollY)
+		d.round(rectX, rectY, 226, 42, 8, 2)
+		outline := 6
+		if focusRow == 0 { outline = 7 }
+		d.outline(rectX, rectY, 226, 42, 8, outline)
 		d.fill(224-float32(scrollX), 216-float32(scrollY), w-253, 1, 6)
 		d.fill(224-float32(scrollX), 290-float32(scrollY), w-253, 1, 6)
 	}
@@ -75,6 +87,16 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&side)), p.cardBrush)
 	line := rect32{sc(193), 0, sc(194), rc.Bottom}
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), p.editBrush)
+	for i, y := range []int32{169, 239, 309} {
+		if p.page == 2 && i > 0 { break }
+		w := int32(447)
+		if p.page == 2 { w = 226 }
+		x := int32(345)
+		outline := p.palette.color(p.palette.border)
+		if p.focusRow == i { outline = p.palette.color(p.palette.primary) }
+		uiRoundSurface(hdc, rect32{sc(x-p.scrollX), sc(y-p.scrollY),
+			sc(x+w-p.scrollX), sc(y+42-p.scrollY)}, sc(9), p.palette.color(p.palette.field), outline)
+	}
 	procSetBkMode.Call(hdc, TRANSPARENT)
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.text))
 	head, _, _ := procSelectObject.Call(hdc, p.titleFont)
@@ -95,9 +117,11 @@ func (p *uxSettings) drawSidebarItem(item *drawItemStruct, index int) bool {
 		return false
 	}
 	r := item.Rect
-	brush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
-	// The background around a rounded selection must match the sidebar.
-	side, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
+	// Inactive items are transparent relative to the sidebar, not three
+	// separately filled cards.
+	sideRGB := uint32(0x181b23)
+	if !p.palette.dark { sideRGB = 0xf0f1f6 }
+	side, _, _ := procCreateSolidBrush.Call(p.palette.color(sideRGB))
 	if side != 0 {
 		procFillRect.Call(item.Hdc, uintptr(unsafe.Pointer(&r)), side)
 		procDeleteObject.Call(side)
@@ -111,9 +135,7 @@ func (p *uxSettings) drawSidebarItem(item *drawItemStruct, index int) bool {
 			procDeleteObject.Call(accent)
 		}
 	}
-	if brush != 0 {
-		procDeleteObject.Call(brush)
-	}
+	
 	procSetBkMode.Call(item.Hdc, TRANSPARENT)
 	ink := p.palette.muted
 	if index == p.page {
