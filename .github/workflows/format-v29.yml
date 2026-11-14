@@ -35,4 +35,8 @@ jobs:
           git add voice-rewrite
           git commit -m "style: gofmt native Windows visual changes"
           # Never write a feature-branch format commit onto main.
+          # A UI edit may land while the formatter is running: rebase the
+          # mechanical formatting commit instead of pushing a stale head.
+          git fetch origin "${GITHUB_REF_NAME}"
+          git rebase "origin/${GITHUB_REF_NAME}"
           git push origin HEAD:"${GITHUB_REF_NAME}"
