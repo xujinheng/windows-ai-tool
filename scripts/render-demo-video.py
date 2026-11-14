@@ -251,7 +251,7 @@ def build(assets,output,fps=FPS,duration=DURATION):
         for i in range(fps*duration):
             frame=scene(Image.new('RGBA',(W,H),BG),recording,i/fps).convert('RGB')
             p.stdin.write(frame.tobytes())
-            p.stdin.close()
+        p.stdin.close()
         err=p.stderr.read().decode('utf8','replace')
         ret=p.wait()
     except Exception:
