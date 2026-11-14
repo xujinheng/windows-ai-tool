@@ -270,7 +270,7 @@ func (p *answerPopup) refreshTheme() {
 		return
 	}
 	p.bgBrush = refreshPaletteBrush(p.bgBrush, palette, palette.background)
-	p.editBrush = refreshPaletteBrush(p.editBrush, palette, palette.field)
+	p.editBrush = refreshPaletteBrush(p.editBrush, palette, palette.surface)
 	p.palette = palette
 	applyWindowPalette(p.window, palette)
 	captionColor := uint32(palette.color(palette.background))
@@ -295,6 +295,25 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			activeAnswer.refreshTheme()
 		}
 		return 0
+	case WM_PAINT:
+		if activeAnswer != nil && activeAnswer.window == hwnd {
+			var ps handyPaintStruct
+			hdc, _, _ := procBeginPaintHandy.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
+			if hdc != 0 {
+				var rc rect32
+				procGetClientRect.Call(hwnd,uintptr(unsafe.Pointer(&rc)))
+				palette := activeAnswer.palette
+				uiRoundSurface(hdc,rect32{20,99,rc.Right-20,rc.Bottom-59},16,palette.color(palette.surface),palette.color(palette.border))
+				accent, _, _ := procCreateSolidBrush.Call(palette.color(palette.primary))
+				if accent != 0 {
+					rail := rect32{22,27,27,50}
+					procFillRect.Call(hdc,uintptr(unsafe.Pointer(&rail)),accent)
+					procDeleteObject.Call(accent)
+				}
+				procEndPaintHandy.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
+			}
+			return 0
+		}
 	case WM_ERASEBKGND:
 		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.bgBrush != 0 {
 			var r rect32
@@ -316,7 +335,7 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_CTLCOLOREDIT:
 		if activeAnswer != nil && activeAnswer.window == hwnd && activeAnswer.editBrush != 0 {
 			procSetTextColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.text))
-			procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.field))
+			procSetBkColor.Call(wParam, activeAnswer.palette.color(activeAnswer.palette.surface))
 			return activeAnswer.editBrush
 		}
 	case WM_DRAWITEM:
@@ -369,63 +388,18 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 }
 
 func drawCardButton(item *drawItemStruct) bool {
-	if item == nil || (item.CtlID != BUTTON_COPY && item.CtlID != BUTTON_APPLY && item.CtlID != BUTTON_CLOSE) {
-		return false
+	if item == nil || activeAnswer == nil { return false }
+	label := ""
+	primary := false
+	switch item.CtlID {
+	case BUTTON_COPY: label = "复制结果"; primary = !activeAnswer.allowApply
+	case BUTTON_APPLY: label = "应用到原文"; primary = true
+	case BUTTON_CLOSE: label = "关闭"
+	default: return false
 	}
-	primary := item.CtlID == BUTTON_APPLY
-	var fill, border, ink uintptr
-	if primary {
-		fill = activeAnswer.palette.color(activeAnswer.palette.primary)
-		border = fill
-		ink = activeAnswer.palette.color(activeAnswer.palette.primaryText)
-	} else {
-		fill = activeAnswer.palette.color(activeAnswer.palette.secondary)
-		border = activeAnswer.palette.color(activeAnswer.palette.border)
-		ink = activeAnswer.palette.color(activeAnswer.palette.text)
-	}
-	if item.ItemState&ODS_SELECTED != 0 {
-		if primary {
-			fill = activeAnswer.palette.color(activeAnswer.palette.primary)
-		} else {
-			fill = activeAnswer.palette.color(activeAnswer.palette.secondaryPressed)
-		}
-	}
-	b, _, _ := procCreateSolidBrush.Call(fill)
-	pen, _, _ := procCreatePen.Call(0, 1, border)
-	if b == 0 || pen == 0 {
-		if b != 0 {
-			procDeleteObject.Call(b)
-		}
-		if pen != 0 {
-			procDeleteObject.Call(pen)
-		}
-		return false
-	}
-	oldB, _, _ := procSelectObject.Call(item.Hdc, b)
-	oldP, _, _ := procSelectObject.Call(item.Hdc, pen)
-	r := item.Rect
-	procRoundRect.Call(item.Hdc, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right), uintptr(r.Bottom), 16, 16)
-	procSelectObject.Call(item.Hdc, oldB)
-	procSelectObject.Call(item.Hdc, oldP)
-	procDeleteObject.Call(b)
-	procDeleteObject.Call(pen)
-	procSetBkMode.Call(item.Hdc, TRANSPARENT)
-	procSetTextColor.Call(item.Hdc, ink)
-	text := "关闭"
-	if item.CtlID == BUTTON_COPY {
-		text = "复制结果"
-	}
-	if item.CtlID == BUTTON_APPLY {
-		text = "应用到原文"
-	}
-	p, _ := syscall.UTF16PtrFromString(text)
-	if activeAnswer != nil && len(activeAnswer.fonts) > 2 {
-		old, _, _ := procSelectObject.Call(item.Hdc, activeAnswer.fonts[2])
-		defer procSelectObject.Call(item.Hdc, old)
-	}
-	procDrawText.Call(item.Hdc, uintptr(unsafe.Pointer(p)), ^uintptr(0), uintptr(unsafe.Pointer(&r)), DT_CENTER|DT_VCENTER|DT_SINGLELINE)
-	runtime.KeepAlive(p)
-	return true
+	var font uintptr
+	if len(activeAnswer.fonts)>2 { font = activeAnswer.fonts[2] }
+	return uiDrawActionButton(item, activeAnswer.palette,font,label,primary)
 }
 
 var answerWndProcCallback = syscall.NewCallback(popupWndProc)
@@ -457,7 +431,7 @@ func makeChild(className, text string, style uintptr, x, y, w, h int32, parent, 
 	return handle, nil
 }
 func popupFont(height, weight int32) uintptr {
-	name, _ := syscall.UTF16PtrFromString("Segoe UI")
+	name, _ := syscall.UTF16PtrFromString("Segoe UI Variable")
 	font, _, _ := procCreateFont.Call(uintptr(height), 0, 0, 0, uintptr(weight), 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(name)))
 	runtime.KeepAlive(name)
 	return font
@@ -513,12 +487,12 @@ func showAnswerPopup(msg popupMessage) error {
 	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation, palette: systemPalette()}
 	activeAnswer = popup
 	popup.bgBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.background))
-	popup.editBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.field))
+	popup.editBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.surface))
 	applyWindowPalette(hwnd, popup.palette)
 	var bounds rect32
 	procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&bounds)))
 	cw, ch := bounds.Right-bounds.Left, bounds.Bottom-bounds.Top
-	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, 22, 16, cw-44, 28, hwnd, 0)
+	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, 36, 24, cw-64, 34, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
@@ -529,22 +503,22 @@ func showAnswerPopup(msg popupMessage) error {
 	} else if !msg.allowApply {
 		summary = "基于选中文字 · AI 回答"
 	}
-	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, 23, 46, cw-46, 21, hwnd, 0)
+	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, 36, 62, cw-72, 23, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
 	popup.note = note
-	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
+	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", "", bodyStyle, 22, 77, cw-44, ch-132, hwnd, 0)
+	editor, err := makeChild("EDIT", "", bodyStyle, 32, 111, cw-64, ch-179, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
 	popup.edit = editor
 	// Short multiline responses must be scrollable rather than silently clipped.
-	procSendMessage.Call(editor, 0x00D3, 3, uintptr(10|(10<<16)))
+	procSendMessage.Call(editor, 0x00D3, 3, uintptr(12|(12<<16)))
 	// Multiline EDIT controls default to a 32K character limit. Raise it
 	// before setting the text, otherwise the UI silently drops the tail.
 	procSendMessage.Call(editor, EM_LIMITTEXT, uintptr(len(utf16.Encode([]rune(editorText)))+1), 0)
@@ -553,7 +527,7 @@ func showAnswerPopup(msg popupMessage) error {
 		closeActiveAnswer()
 		return errors.New("卡片正文控件未收到模型结果")
 	}
-	bottom := ch - 43
+	bottom := ch - 46
 	if msg.allowApply {
 		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|BS_OWNERDRAW, cw-342, bottom, 122, 34, hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
@@ -568,7 +542,7 @@ func showAnswerPopup(msg popupMessage) error {
 		closeActiveAnswer()
 		return err
 	}
-	popup.fonts = []uintptr{popupFont(-21, 600), popupFont(-18, 400), popupFont(-15, 550), popupFont(-13, 400)}
+	popup.fonts = []uintptr{popupFont(-24, 650), popupFont(-18, 400), popupFont(-16, 600), popupFont(-14, 400)}
 	setFont(title, popup.fonts[0])
 	setFont(editor, popup.fonts[1])
 	setFont(note, popup.fonts[3])

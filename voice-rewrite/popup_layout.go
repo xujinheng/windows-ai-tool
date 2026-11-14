@@ -3,15 +3,15 @@ package main
 // Compact by default; expand only for longer explanations or rewrite previews.
 // The Win32 result window retains native buttons and keyboard accessibility.
 func v14PopupSize(runes int) (width, height int32) {
-	width, height = 540, 360
+	width, height = 576, 420
 	if runes > 100 {
-		height = 400
+		height = 470
 	}
 	if runes > 320 {
-		height = 460
+		height = 540
 	}
 	if runes > 850 {
-		height = 540
+		height = 620
 	}
 	return
 }

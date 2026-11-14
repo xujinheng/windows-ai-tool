@@ -41,6 +41,7 @@ type handyStatus struct {
 	changed       time.Time
 	tick          uint32
 	smoothedLevel float64
+	closeHovered bool
 	x, y          int32
 	scale         float64
 }
@@ -152,6 +153,22 @@ func handyStatusWndProc(hwnd, message, wParam, lParam uintptr) uintptr {
 			s.tick++
 			drawHandyStatus(s)
 			return 0
+		}
+	case 0x0200: // WM_MOUSEMOVE
+		if activeHandyStatus != nil && activeHandyStatus.window == hwnd {
+			s := activeHandyStatus
+			x := int(int16(lParam & 0xffff))
+			hover := handyCancelHit(int(math.Floor(float64(x)/s.scale)), handyStatusWidth(s.phase))
+			if hover != s.closeHovered { s.closeHovered = hover; drawHandyStatus(s) }
+			if hover {
+				var tme = struct{Size, Flags uint32; Hwnd, HoverTime uintptr}{Size: uint32(unsafe.Sizeof(struct{Size,Flags uint32; Hwnd,HoverTime uintptr}{})), Flags: 2, Hwnd: hwnd}
+				user32.NewProc("TrackMouseEvent").Call(uintptr(unsafe.Pointer(&tme)))
+			}
+		}
+	case 0x02A3: // WM_MOUSELEAVE
+		if activeHandyStatus != nil && activeHandyStatus.window == hwnd {
+			activeHandyStatus.closeHovered = false
+			drawHandyStatus(activeHandyStatus)
 		}
 	case WM_LBUTTONUP:
 		if activeHandyStatus != nil && activeHandyStatus.window == hwnd {
@@ -406,13 +423,13 @@ func drawHandyStatus(s *handyStatus) {
 	// DIB width to a painter which itself multiplies by s.scale.
 	p.pill(0x11000000, 3, 8, logicalWidth-6, handyBodyHeight)
 	p.pill(0x22000000, 4, 7, logicalWidth-8, handyBodyHeight)
-	p.pill(0xFF1E2029, handyPillInset, handyBodyTop, logicalWidth-2*handyPillInset, handyBodyHeight)
+	p.pill(0xFF20242E, handyPillInset, handyBodyTop, logicalWidth-2*handyPillInset, handyBodyHeight)
 	// Avoid a translucent full-size second fill: it makes a faint double edge
 	// and reduces color consistency around anti-aliased corners.
 
-	accent := uint32(0xFFF58AAD) // Mouse4 dictation: Handy rose
+	accent := uint32(0xFFE981AA) // Mouse4 dictation: Handy rose
 	if s.mode == "改写" {
-		accent = 0xFFBBA1FF // Mouse5 rewrite: soft lavender for clear mode feedback
+		accent = 0xFFAFA5FF // Mouse5 rewrite: soft lavender for clear mode feedback
 	}
 	if s.phase == statusError {
 		accent = 0xFFFF818A
@@ -473,6 +490,7 @@ func drawHandyStatus(s *handyStatus) {
 		}
 		p.text(handyStatusLabel(s.phase, s.mode), handyWorkingTextX, 10, logicalWidth-handyWorkingTextX-handyWorkingTextRightGap, 30, 13, 500, 0xFFECE8F0)
 	}
+	if s.closeHovered { p.fill(0xFF343A49, logicalWidth-34, 11, 28, 28, true) }
 	// Crisp anti-aliased vector X; no separate text glyph competing with the timer.
 	p.closeGlyph(logicalWidth-handyCancelGlyphInset, handyIconCenterY)
 	target := handyPoint{s.x, s.y}
