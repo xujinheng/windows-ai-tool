@@ -77,7 +77,7 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), p.editBrush)
 	procSetBkMode.Call(hdc, TRANSPARENT)
 	procSetTextColor.Call(hdc, p.palette.color(p.palette.text))
-	head, _ := procSelectObject.Call(hdc, p.titleFont)
+	head, _, _ := procSelectObject.Call(hdc, p.titleFont)
 	title := uxPtr(settingsHeadings[p.page])
 	bounds := rect32{sc(220), sc(34), rc.Right - sc(15), sc(80)}
 	procDrawText.Call(hdc, uintptr(unsafe.Pointer(title)), ^uintptr(0), uintptr(unsafe.Pointer(&bounds)), 0)
