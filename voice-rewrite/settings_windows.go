@@ -51,6 +51,12 @@ const (
 	uxNavSpeech       = 9120
 	uxNavAI           = 9121
 	uxNavInput        = 9122
+	uxASRURLInput     = 9130
+	uxASRModelInput   = 9131
+	uxASRKeyInput     = 9132
+	uxLLMURLInput     = 9133
+	uxLLMModelInput   = 9134
+	uxLLMKeyInput     = 9135
 	uxCBAddString     = 0x0143
 	uxCBSetCurSel     = 0x014E
 	uxCBGetCurSel     = 0x0147
@@ -770,11 +776,11 @@ func showNativeSettings(app *appState) error {
 	secondLabel, secondEdit := settingsFieldLabel(1), settingsFieldEdit(1)
 	thirdLabel, thirdEdit := settingsFieldLabel(2), settingsFieldEdit(2)
 	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, 0, false)
+	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxASRURLInput, false)
 	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, 0, false)
+	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxASRModelInput, false)
 	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, 0, false)
+	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxASRKeyInput, false)
 	p.probeStatus[0] = makeOne("STATIC", "尚未检测连接", stat, 352, 324, 435, 48, 0, false)
 	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeASRButton, false)
 	for _, c := range p.controls[start:] {
@@ -782,11 +788,11 @@ func showNativeSettings(app *appState) error {
 	}
 	start = len(p.controls)
 	makeOne("STATIC", "API 地址", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, 0, false)
+	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, firstEdit.X, firstEdit.Y, firstEdit.W, firstEdit.H, uxLLMURLInput, false)
 	makeOne("STATIC", "模型 ID", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, 0, false)
+	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, secondEdit.X, secondEdit.Y, secondEdit.W, secondEdit.H, uxLLMModelInput, false)
 	makeOne("STATIC", "API Key", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, 0, false)
+	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, thirdEdit.X, thirdEdit.Y, thirdEdit.W, thirdEdit.H, uxLLMKeyInput, false)
 	p.probeStatus[1] = makeOne("STATIC", "尚未检测连接", stat, 352, 324, 435, 48, 0, false)
 	makeOne("BUTTON", "测试连接", btn, 696, 130, 92, 30, uxProbeLLMButton, false)
 	for _, c := range p.controls[start:] {
