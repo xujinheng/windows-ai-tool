@@ -48,6 +48,9 @@ const (
 	uxProbeLLMButton  = 9105
 	uxShortcutInput   = 9106
 	uxMicrophoneInput = 9107
+	uxNavSpeech       = 9120
+	uxNavAI           = 9121
+	uxNavInput        = 9122
 	uxCBAddString     = 0x0143
 	uxCBSetCurSel     = 0x014E
 	uxCBGetCurSel     = 0x0147
@@ -96,6 +99,10 @@ type uxSettings struct {
 	scale                                   float64
 	scrollX, scrollY                        int32
 	renderer                                *resultRenderer
+	page                                    int
+	focusRow                                int
+	pages                                   [3][]uintptr
+	navButtons                              [3]uintptr
 }
 
 // Every child control is reflowed after a resize. No hard-coded physical
@@ -114,7 +121,7 @@ func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
 
 // 96-DPI logical coordinate scrolling avoids inaccessible buttons on small
 // work areas and 125%–200% display scaling.
-const uxContentWidth, uxContentHeight int32 = 676, 520
+const uxContentWidth, uxContentHeight int32 = 816, 532
 
 type uxScrollInfo struct {
 	Size, Mask    uint32
@@ -177,25 +184,70 @@ func (p *uxSettings) layout() {
 		// the form itself needs horizontal scrolling at high DPI.
 		switch ctrl.id {
 		case uxSaveButton:
-			x = 16
-		case uxAdvancedButton:
-			x = 172
-		case uxCloseButton:
-			x = viewW - w - 16
-			if x < 380 {
-				x = 380
+			x = 220
+			if viewW < 650 {
+				x = 12
 			}
+		case uxAdvancedButton:
+			x = 358
+			if viewW < 650 {
+				x = 149
+			}
+		case uxCloseButton:
+			x = viewW - w - 18
+			if viewW < 650 {
+				x = 276
+			}
+		case uxNavSpeech, uxNavAI, uxNavInput:
+			x = ctrl.x
 		}
 		if ctrl.hwnd == p.hint {
-			x = 18
-			if w > viewW-34 {
-				w = viewW - 34
+			x = 223
+			if viewW < 650 {
+				x = 14
+			}
+			if w > viewW-x-12 {
+				w = viewW - x - 12
 			}
 		}
-		procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y-p.scrollY), sc(w), sc(h), 1)
+		if ctrl.id == uxNavSpeech || ctrl.id == uxNavAI || ctrl.id == uxNavInput {
+			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
+		} else {
+			procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y-p.scrollY), sc(w), sc(h), 1)
+		}
 	}
 	procInvalidateRectSettings.Call(p.window, 0, 1)
 }
+
+// switchPage only hides controls; input values and in-flight probe results
+// remain intact so navigation cannot discard unsaved changes.
+func (p *uxSettings) switchPage(next int) {
+	if p == nil || next < 0 || next >= len(p.pages) {
+		return
+	}
+	p.page = next
+	p.focusRow = -1
+	for page, windows := range p.pages {
+		for _, handle := range windows {
+			how := uintptr(0) // SW_HIDE
+			if page == next {
+				how = SW_SHOW
+			}
+			if handle != 0 {
+				procShowWindow.Call(handle, how)
+			}
+		}
+	}
+	for _, hwnd := range p.navButtons {
+		if hwnd != 0 {
+			refreshNativeWindow(hwnd)
+		}
+	}
+	if p.window != 0 {
+		refreshNativeWindow(p.window)
+	}
+}
+
 func (p *uxSettings) scroll(axis, request uintptr) {
 	var rect rect32
 	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&rect)))
@@ -399,7 +451,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			var ps handyPaintStruct
 			hdc, _, _ := procBeginPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			if hdc != 0 {
-				if p.renderer != nil && p.renderer.drawSettings(p.scrollX, p.scrollY) {
+				if p.renderer != nil && p.renderer.drawSettings(p.page, p.scrollX, p.scrollY, p.focusRow) {
 					resultSetReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)), 1)
 				} else {
 					p.drawSettingsFallback(hdc)
@@ -411,6 +463,11 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMDrawItem:
 		if p != nil && p.window == hwnd && lParam != 0 {
 			item := (*drawItemStruct)(unsafe.Pointer(lParam))
+			if item.CtlID >= uxNavSpeech && item.CtlID <= uxNavInput {
+				if p.drawSidebarItem(item, int(item.CtlID-uxNavSpeech)) {
+					return 1
+				}
+			}
 			label := ""
 			primary := false
 			switch item.CtlID {
@@ -460,6 +517,24 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case uxWMCommand:
 		if p != nil && p.window == hwnd {
+			// Native focus events keep the D2D field outline keyboard-visible.
+			notification := (wParam >> 16) & 0xffff
+			if notification == 0x0100 || notification == 0x0200 { // EN_SETFOCUS/EN_KILLFOCUS
+				if notification == 0x0200 {
+					p.focusRow = -1
+				} else {
+					p.focusRow = -1
+					for idx, edit := range p.inputs {
+						if edit == lParam {
+							p.focusRow = idx % 3
+						}
+					}
+					if p.shortcut == lParam {
+						p.focusRow = 0
+					}
+				}
+				refreshNativeWindow(hwnd)
+			}
 			if (wParam>>16)&0xffff == 0x0300 { // EN_CHANGE
 				for idx, controls := range [2][3]uintptr{{p.inputs[0], p.inputs[1], p.inputs[2]}, {p.inputs[3], p.inputs[4], p.inputs[5]}} {
 					for _, edit := range controls {
@@ -474,6 +549,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 			}
 			switch wParam & 0xffff {
+			case uxNavSpeech, uxNavAI, uxNavInput:
+				p.switchPage(int((wParam & 0xffff) - uxNavSpeech))
+				return 0
 			case uxSaveButton:
 				if err := p.save(); err != nil {
 					uxSetText(p.hint, "保存失败："+err.Error())
@@ -629,14 +707,14 @@ func showNativeSettings(app *appState) error {
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
 	work := uxWorkAreaAtCursor()
-	winW, winH := desktopFitSize(int32(sc(710)), int32(sc(560)), work, 12)
+	winW, winH := desktopFitSize(int32(sc(860)), int32(sc(590)), work, 12)
 	x, y := uxCenteredWindow(winW, winH)
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
 		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame|WS_VSCROLL|0x00100000, uintptr(x), uintptr(y), uintptr(winW), uintptr(winH), 0, 0, module, 0)
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
-	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool), palette: resultCardPalette()}
+	p := &uxSettings{window: h, app: app, scale: scale, focusRow: -1, cardStatics: make(map[uintptr]bool), palette: resultCardPalette()}
 	uxActiveSettings = p
 	p.background, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.background))
 	p.cardBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.surface))
@@ -665,9 +743,7 @@ func showNativeSettings(app *appState) error {
 			procSendMessage.Call(control, uxEMSetMargins, 3, uintptr(8|(8<<16)))
 			resultStyleNativeEdit(control, p.palette.dark)
 		}
-		if cls == "STATIC" && y >= 54 && y < 463 {
-			p.cardStatics[control] = true
-		}
+		// Flat, unboxed settings rows have one continuous background.
 		p.controls = append(p.controls, uxControl{
 			hwnd: control, x: x, y: y, w: w, h: hh,
 			stretch: false,
@@ -677,47 +753,60 @@ func showNativeSettings(app *appState) error {
 		return control
 	}
 	stat := uintptr(uxWSChild | uxWSVisible)
-	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxWSBorder | uxESAutoScroll)
+	// Borderless Win32 EDIT + Direct2D rounded backplate: native selection, IME,
+	// password masking and Ctrl+C remain available.
+	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxBSOwnerDraw)
-	// The visual heading is rendered by DirectWrite. A native static child
-	// retains the title for Windows accessibility tools.
-	heading := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
-	setFont(heading, p.titleFont)
-	// Two side-by-side service cards eliminate three full-width stacked blocks.
-	makeOne("STATIC", "语音识别", stat, 30, 68, 175, 26, 0, true)
-	makeOne("BUTTON", "测试连接", btn, 235, 68, 85, 29, uxProbeASRButton, false)
-	makeOne("STATIC", "API 地址", stat, 30, 105, 120, 20, 0, false)
-	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 30, 128, 291, 31, 0, false)
-	makeOne("STATIC", "模型 ID", stat, 30, 169, 120, 20, 0, false)
-	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 30, 191, 291, 31, 0, false)
-	makeOne("STATIC", "API Key", stat, 30, 232, 120, 20, 0, false)
-	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 30, 254, 291, 31, 0, false)
-	p.probeStatus[0] = makeOne("STATIC", "尚未检测", stat, 30, 294, 286, 52, 0, false)
-
-	makeOne("STATIC", "AI 文本处理", stat, 364, 68, 175, 26, 0, true)
-	makeOne("BUTTON", "测试连接", btn, 572, 68, 89, 29, uxProbeLLMButton, false)
-	makeOne("STATIC", "API 地址", stat, 364, 105, 120, 20, 0, false)
-	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 364, 128, 297, 31, 0, false)
-	makeOne("STATIC", "模型 ID", stat, 364, 169, 120, 20, 0, false)
-	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 364, 191, 297, 31, 0, false)
-	makeOne("STATIC", "API Key", stat, 364, 232, 120, 20, 0, false)
-	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 364, 254, 297, 31, 0, false)
-	p.probeStatus[1] = makeOne("STATIC", "尚未检测", stat, 364, 294, 298, 52, 0, false)
-
-	makeOne("STATIC", "快捷键与输入设备", stat, 30, 373, 290, 24, 0, true)
-	makeOne("STATIC", "听写快捷键", stat, 30, 412, 110, 22, 0, false)
-	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 405, 158, 31, uxShortcutInput, false)
-	makeOne("STATIC", "麦克风", stat, 318, 412, 85, 22, 0, false)
-	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 407, 404, 254, 190, uxMicrophoneInput, false)
+	// Native sidebar navigation, one focused form page at a time.
+	p.navButtons[0] = makeOne("BUTTON", "语音识别", btn, 12, 110, 170, 35, uxNavSpeech, false)
+	p.navButtons[1] = makeOne("BUTTON", "AI 写作", btn, 12, 151, 170, 35, uxNavAI, false)
+	p.navButtons[2] = makeOne("BUTTON", "快捷键与设备", btn, 12, 192, 170, 35, uxNavInput, false)
+	head := makeOne("STATIC", "设置", uxWSChild, 0, 0, 1, 1, 0, false)
+	setFont(head, p.titleFont)
+	start := len(p.controls)
+	makeOne("STATIC", "API 地址", stat, 224, 181, 122, 24, 0, false)
+	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 350, 173, 437, 34, 0, false)
+	makeOne("STATIC", "模型 ID", stat, 224, 251, 122, 24, 0, false)
+	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 350, 243, 437, 34, 0, false)
+	makeOne("STATIC", "API Key", stat, 224, 321, 122, 24, 0, false)
+	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 350, 313, 437, 34, 0, false)
+	p.probeStatus[0] = makeOne("STATIC", "尚未检测连接", stat, 352, 375, 435, 60, 0, false)
+	makeOne("BUTTON", "测试连接", btn, 696, 138, 92, 31, uxProbeASRButton, false)
+	for _, c := range p.controls[start:] {
+		p.pages[0] = append(p.pages[0], c.hwnd)
+	}
+	start = len(p.controls)
+	makeOne("STATIC", "API 地址", stat, 224, 181, 122, 24, 0, false)
+	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 350, 173, 437, 34, 0, false)
+	makeOne("STATIC", "模型 ID", stat, 224, 251, 122, 24, 0, false)
+	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 350, 243, 437, 34, 0, false)
+	makeOne("STATIC", "API Key", stat, 224, 321, 122, 24, 0, false)
+	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 350, 313, 437, 34, 0, false)
+	p.probeStatus[1] = makeOne("STATIC", "尚未检测连接", stat, 352, 375, 435, 60, 0, false)
+	makeOne("BUTTON", "测试连接", btn, 696, 138, 92, 31, uxProbeLLMButton, false)
+	for _, c := range p.controls[start:] {
+		p.pages[1] = append(p.pages[1], c.hwnd)
+	}
+	start = len(p.controls)
+	makeOne("STATIC", "听写快捷键", stat, 224, 181, 124, 24, 0, false)
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 350, 173, 216, 34, uxShortcutInput, false)
+	makeOne("STATIC", "麦克风", stat, 224, 251, 124, 24, 0, false)
+	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 243, 437, 190, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
 	resultStyleNativeEdit(p.microphone, p.palette.dark)
-	makeOne("BUTTON", "保存设置", btn, 16, 461, 144, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级配置", btn, 172, 461, 113, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 580, 461, 96, 34, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "", stat, 18, 498, 630, 21, 0, false)
+	info := makeOne("STATIC", "更换快捷键或录音设备后，需要重启 VoiceRewrite 生效。", stat, 226, 326, 565, 44, 0, false)
+	setFont(info, p.mutedFont)
+	for _, c := range p.controls[start:] {
+		p.pages[2] = append(p.pages[2], c.hwnd)
+	}
+	makeOne("BUTTON", "保存设置", btn, 220, 472, 124, 34, uxSaveButton, false)
+	makeOne("BUTTON", "高级配置", btn, 358, 472, 112, 34, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 710, 472, 94, 34, uxCloseButton, false)
+	p.hint = makeOne("STATIC", "", stat, 223, 509, 560, 22, 0, false)
 	setFont(p.hint, p.mutedFont)
 	setFont(p.probeStatus[0], p.mutedFont)
 	setFont(p.probeStatus[1], p.mutedFont)
+	p.switchPage(0)
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)
