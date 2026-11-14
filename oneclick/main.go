@@ -1,4 +1,4 @@
-// Qwen3-ASR One-Click: launch llama.cpp and clean Qwen3-ASR output for Handy Remote.
+// Qwen3-ASR OneClick starts llama.cpp and exposes an audio transcription endpoint.
 // Windows x64 executable; Go standard library only; no Python or pip.
 package main
 
@@ -356,7 +356,7 @@ func run(o options) error {
 			return err
 		}
 	}
-	fmt.Printf("Handy Remote URL: http://%s/v1\n", o.listen)
+	fmt.Printf("VoiceRewrite ASR URL: http://%s/v1\n", o.listen)
 	fmt.Printf("Backend address: %s\n", backend)
 	if !o.attach {
 		fmt.Printf("Model: %s\nAudio encoder: %s\nGPU layers: %d; context: %d\n", o.modelPath, o.mmprojPath, o.gpuLayers, o.contextSize)
@@ -405,7 +405,7 @@ func run(o options) error {
 	ready.Store(true)
 	fmt.Println("")
 	fmt.Println("==========================================================")
-	fmt.Println("READY! Set Handy Remote Server URL to: http://" + o.listen + "/v1")
+	fmt.Println("READY! Use this ASR endpoint in VoiceRewrite: http://" + o.listen + "/v1")
 	fmt.Println("Qwen3-ASR language tags are removed for Chinese, English, etc.")
 	fmt.Println("Leave this window open; press Ctrl+C to stop both services.")
 	fmt.Println("==========================================================")

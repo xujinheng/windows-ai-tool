@@ -11,7 +11,7 @@ body:
     attributes:
       label: Build ID / commit
       description: Find the build ID in the VoiceRewrite diagnostic log.
-      placeholder: "2026-11-14-native-ux-v22"
+      placeholder: "0.29.0 (or commit SHA)"
     validations:
       required: true
   - type: textarea

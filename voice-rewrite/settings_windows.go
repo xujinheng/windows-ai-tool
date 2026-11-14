@@ -619,7 +619,7 @@ func showNativeSettings(app *appState) error {
 		procSetForegroundWindow.Call(uxActiveSettings.window)
 		return nil
 	}
-	className := uxPtr("VoiceRewrite.Settings.v20")
+	className := uxPtr("VoiceRewrite.Settings")
 	title := uxPtr("VoiceRewrite · 连接设置")
 	module, _, _ := procGetModuleHandle.Call(0)
 	klass := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: uxWindowCallback, Instance: module, ClassName: className}

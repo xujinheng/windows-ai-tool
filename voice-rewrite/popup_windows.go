@@ -469,7 +469,7 @@ func showAnswerPopup(msg popupMessage) error {
 	scale := uxMonitorScaleForPoint(msg.anchor)
 	width, height := int32(float64(logicalW)*scale), int32(float64(logicalH)*scale)
 	x, y, width, height := desktopPopupPlacement(msg.anchor.X, msg.anchor.Y, width, height, work)
-	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ResultCard.v20")
+	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ResultCard")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
 	atom, _, regErr := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))

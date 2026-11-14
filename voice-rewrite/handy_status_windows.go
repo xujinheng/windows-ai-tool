@@ -13,7 +13,7 @@ import (
 	"unsafe"
 )
 
-// Native, anti-aliased recreation of the Handy Remote compact recording overlay.
+// GDI+ recording status overlay.
 // Visual reference: Hyroniem/handy-remote src/overlay/RecordingOverlay.{tsx,css}
 // (MIT, copyright 2025 CJ Pais). All controls below are implemented in Go and
 // the Windows system GDI+ renderer; Tauri and WebView2 are not required.
@@ -574,7 +574,7 @@ func showHandyStatus(rec *audioRecorder, mode string, phase uintptr, owner uint6
 	restore := handyAwareWindowThread()
 	defer restore()
 	closeHandyStatus()
-	classname, _ := syscall.UTF16PtrFromString("VoiceRewrite.HandySmoothStatus.v14")
+	classname, _ := syscall.UTF16PtrFromString("VoiceRewrite.RecordingIndicator")
 	title, _ := syscall.UTF16PtrFromString("VoiceRewrite status")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: handyStatusWndProcCallback, Instance: instance, ClassName: classname}

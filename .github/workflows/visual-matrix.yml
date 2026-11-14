@@ -78,9 +78,9 @@ jobs:
             $env:VOICEREWRITE_VISUAL_SCALE=$case.scale
             $env:VOICEREWRITE_VISUAL_LONG=$case.long
             $class=switch($case.kind) {
-              'settings' {'VoiceRewrite.Settings.v20'}
-              'answer' {'VoiceRewrite.ResultCard.v20'}
-              'recording' {'VoiceRewrite.HandySmoothStatus.v14'}
+              'settings' {'VoiceRewrite.Settings'}
+              'answer' {'VoiceRewrite.ResultCard'}
+              'recording' {'VoiceRewrite.RecordingIndicator'}
             }
             $title=switch($case.kind) {
               'settings' {'VoiceRewrite · 连接设置'}
