@@ -8,7 +8,7 @@ type uxLayoutSpec struct {
 }
 
 func layoutSettingsRect(c uxLayoutSpec, clientWidth int32) (x, y, w, h int32) {
-	delta := clientWidth - 694
+	delta := clientWidth - 816
 	if delta < 0 {
 		delta = 0
 	}
