@@ -34,7 +34,7 @@ const (
 	uxAdvancedButton  = 9103
 	uxProbeASRButton  = 9104
 	uxProbeLLMButton  = 9105
-	uxShortcutInput    = 9106
+	uxShortcutInput   = 9106
 	uxMicrophoneInput = 9107
 	uxCBAddString     = 0x0143
 	uxCBSetCurSel     = 0x014E

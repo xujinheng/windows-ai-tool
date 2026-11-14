@@ -3,7 +3,10 @@ package main
 import "testing"
 
 func TestVersionOrdering(t *testing.T) {
-	for _, item := range []struct{ a, b string; want int }{
+	for _, item := range []struct {
+		a, b string
+		want int
+	}{
 		{"0.25.0", "0.24.9", 1},
 		{"v0.25.0", "0.25.0", 0},
 		{"0.25.0-dev", "0.25.0", -1},
@@ -12,9 +15,13 @@ func TestVersionOrdering(t *testing.T) {
 		{"1.0.0+build.1", "v1.0.0", 0},
 	} {
 		a, ok := parseAppVersion(item.a)
-		if !ok { t.Fatalf("parse %s", item.a) }
+		if !ok {
+			t.Fatalf("parse %s", item.a)
+		}
 		b, ok := parseAppVersion(item.b)
-		if !ok { t.Fatalf("parse %s", item.b) }
+		if !ok {
+			t.Fatalf("parse %s", item.b)
+		}
 		if got := versionCompare(a, b); got != item.want {
 			t.Errorf("%s vs %s = %d, want %d", item.a, item.b, got, item.want)
 		}

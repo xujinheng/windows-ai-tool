@@ -24,62 +24,97 @@ type appVersion struct {
 	major, minor, patch int64
 	pre                 string
 }
+
 func parseAppVersion(s string) (appVersion, bool) {
 	m := versionPattern.FindStringSubmatch(strings.TrimSpace(s))
-	if m == nil { return appVersion{}, false }
+	if m == nil {
+		return appVersion{}, false
+	}
 	a, ea := strconv.ParseInt(m[1], 10, 64)
 	b, eb := strconv.ParseInt(m[2], 10, 64)
 	c, ec := strconv.ParseInt(m[3], 10, 64)
-	if ea != nil || eb != nil || ec != nil { return appVersion{}, false }
+	if ea != nil || eb != nil || ec != nil {
+		return appVersion{}, false
+	}
 	return appVersion{a, b, c, m[4]}, true
 }
 func versionCompare(a, b appVersion) int {
 	left := []int64{a.major, a.minor, a.patch}
 	right := []int64{b.major, b.minor, b.patch}
 	for i := range left {
-		if left[i] < right[i] { return -1 }
-		if left[i] > right[i] { return 1 }
+		if left[i] < right[i] {
+			return -1
+		}
+		if left[i] > right[i] {
+			return 1
+		}
 	}
-	if a.pre == b.pre { return 0 }
-	if a.pre == "" { return 1 }
-	if b.pre == "" { return -1 }
+	if a.pre == b.pre {
+		return 0
+	}
+	if a.pre == "" {
+		return 1
+	}
+	if b.pre == "" {
+		return -1
+	}
 	la, lb := strings.Split(a.pre, "."), strings.Split(b.pre, ".")
 	for i := 0; i < len(la) && i < len(lb); i++ {
-		if la[i] == lb[i] { continue }
+		if la[i] == lb[i] {
+			continue
+		}
 		an, ae := strconv.ParseUint(la[i], 10, 64)
 		bn, be := strconv.ParseUint(lb[i], 10, 64)
 		if ae == nil && be == nil {
-			if an < bn { return -1 }
+			if an < bn {
+				return -1
+			}
 			return 1
 		}
-		if ae == nil { return -1 }
-		if be == nil { return 1 }
-		if la[i] < lb[i] { return -1 }
+		if ae == nil {
+			return -1
+		}
+		if be == nil {
+			return 1
+		}
+		if la[i] < lb[i] {
+			return -1
+		}
 		return 1
 	}
-	if len(la) < len(lb) { return -1 }
+	if len(la) < len(lb) {
+		return -1
+	}
 	return 1
 }
+
 type githubRelease struct {
-	TagName string `json:"tag_name"`
-	Draft bool `json:"draft"`
-	Prerelease bool `json:"prerelease"`
+	TagName    string `json:"tag_name"`
+	Draft      bool   `json:"draft"`
+	Prerelease bool   `json:"prerelease"`
 }
 type updateNotice struct {
 	latest string
-	newer bool
-	found bool
-	err error
+	newer  bool
+	found  bool
+	err    error
 }
+
 func selectUpdate(current string, releases []githubRelease) updateNotice {
 	installed, ok := parseAppVersion(current)
-	if !ok { return updateNotice{err: fmt.Errorf("无法解析当前版本 %q", current)} }
+	if !ok {
+		return updateNotice{err: fmt.Errorf("无法解析当前版本 %q", current)}
+	}
 	var latest appVersion
 	notice := updateNotice{}
 	for _, release := range releases {
-		if release.Draft { continue }
+		if release.Draft {
+			continue
+		}
 		v, valid := parseAppVersion(release.TagName)
-		if !valid { continue }
+		if !valid {
+			continue
+		}
 		if !notice.found || versionCompare(v, latest) > 0 {
 			latest = v
 			notice.found = true
@@ -94,11 +129,15 @@ func fetchUpdate(ctx context.Context, installed string, client *http.Client) upd
 		return updateNotice{err: fmt.Errorf("未识别的版本 %q", installed)}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesAPI, nil)
-	if err != nil { return updateNotice{err: err} }
+	if err != nil {
+		return updateNotice{err: err}
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("User-Agent", "VoiceRewrite-update-check/1.0")
 	resp, err := client.Do(req)
-	if err != nil { return updateNotice{err: errors.New("无法连接 GitHub，请检查网络或稍后再试")} }
+	if err != nil {
+		return updateNotice{err: errors.New("无法连接 GitHub，请检查网络或稍后再试")}
+	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return updateNotice{err: fmt.Errorf("GitHub 更新服务返回 HTTP %d", resp.StatusCode)}
@@ -117,7 +156,7 @@ func checkForUpdate(current string) updateNotice {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 	client := &http.Client{
-		Timeout: 8 * time.Second,
+		Timeout:       8 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 	return fetchUpdate(ctx, current, client)

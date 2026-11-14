@@ -7,6 +7,7 @@ import (
 	"syscall"
 	"unsafe"
 )
+
 func askViewUpdate(version string) bool {
 	text, _ := syscall.UTF16PtrFromString("发现新版本 " + version + "。\n\n当前程序不会自动下载或运行未经签名的安装文件。\n是否打开 GitHub 官方发布页面？")
 	caption, _ := syscall.UTF16PtrFromString("VoiceRewrite · 更新可用")
