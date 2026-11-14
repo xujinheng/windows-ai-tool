@@ -1,4 +1,4 @@
-# VoiceRewrite v10: 双侧键语音输入和改写
+> **Current repository snapshot:** v13 runtime; default ASR URL was changed to `http://127.0.0.1:8080/v1`. The retired OneClick proxy is no longer required to strip ASR language tags. You must start a compatible ASR server separately when building from this branch. Newer v14–v16 experiments are not yet synced to the repository.\n\n# VoiceRewrite v10: 双侧键语音输入和改写
 
 - **Mouse4 按住说话、松开听写**：无需选区，ASR 结果直接插入光标处；配备 Handy 风格底部状态条。
 - **Mouse5 保留原有行为**：选中文字后按住说话，执行 AI 改写／翻译（优先替换）或问答解释（结果卡片）。

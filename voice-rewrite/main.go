@@ -42,7 +42,7 @@ type Config struct {
 
 func defaults() Config {
 	return Config{
-		ASRBaseURL:             "http://127.0.0.1:8081/v1",
+		ASRBaseURL:             "http://127.0.0.1:8080/v1",
 		LLMBaseURL:             "http://127.0.0.1:1234/v1",
 		TextModel:              "auto",
 		ASRModel:               "whisper-1",
@@ -216,7 +216,7 @@ func transcribe(ctx context.Context, cfg Config, pcm []byte) (string, error) {
 	}
 	resp, e := requestClient(90 * time.Second).Do(req)
 	if e != nil {
-		return "", fmt.Errorf("语音转写请求失败（确认 OneClick/ASR 在 8081 运行）: %w", e)
+		return "", fmt.Errorf("语音转写请求失败（确认 ASR 服务在 8080 运行）: %w", e)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode/100 != 2 {

@@ -1,36 +1,35 @@
-# Windows AI Tools
+# VoiceRewrite · Windows voice dictation and AI rewrite
 
-Two small, local-first utilities for Windows 11. Written in Go (standard library); no Python/pip required at runtime.
+Native Go desktop utility for Windows 11 x64. Two mouse buttons, one tray app.
 
-| Tool | Purpose | Source |
-| --- | --- | --- |
-| Qwen3-ASR OneClick | Starts a local `llama-server.exe` running Qwen3-ASR, provides a Handy-compatible ASR API, removes `language English<asr_text>` / `language Chinese<asr_text>` metadata | [`oneclick/`](oneclick/) |
-| VoiceRewrite | Select text in another Windows application, use a configurable hotkey to dictate an editing instruction, transcribe it locally, ask a local text LLM to rewrite the selected text, and paste it back safely | [`voice-rewrite/`](voice-rewrite/) |
+| Gesture | Operation |
+| --- | --- |
+| Hold Mouse4, speak, release | Dictate text at the current caret (Handy-style) |
+| Select text, hold Mouse5, speak an edit command | Rewrite / translate and attempt to replace the selection |
+| Select text, hold Mouse5, ask a question | Show a small AI answer window |
 
-## Configuration / privacy
+Current `main` source is the **v13 core with the ASR default port updated to 8080**. Newer experimental v14–v16 source distributions are currently packaged separately; do not infer from this README that their runtime features are already committed to `main`.
 
-**No personal Windows usernames, machine paths, internal IP addresses or API keys are stored in this repository.** This public repository tracks only `config.example.json` templates. Each executable creates its own editable **`config.json`** alongside the executable on first launch. `.gitignore` excludes `config.json`, local model files, binaries, and logs. Never commit your real config if it contains a private path or API token.
+## Local model services
 
-The programs do not contain telemetry. They send requests only to the endpoints you configure. The examples use `127.0.0.1` (loopback), so audio and text stay on the local computer. If you point an endpoint at another machine or a cloud service, your data is sent there.
+- ASR: `http://127.0.0.1:8080/v1`, OpenAI-compatible `POST /audio/transcriptions`; Qwen3-ASR output prefix cleanup is performed by VoiceRewrite.
+- LLM: `http://127.0.0.1:1234/v1`, e.g. LM Studio.
 
-**Keep the two tools in separate runtime folders** because each uses its own `config.json` schema.
+The former `oneclick/` utility was retired. **The v13 code in this repository does not launch the ASR model server**: please start a compatible ASR server separately. v16 experiments include an optional integrated local launcher, but that code is not yet part of this main-branch source snapshot.
 
-## Build (Go 1.23+)
+No GGUF weights, llama.cpp/CUDA executables, or proprietary runtime files are redistributed by this repository.
+
+## Build
 
 ```powershell
-cd oneclick
+cd voice-rewrite
 go test ./...
-go build -o Qwen3-ASR-OneClick.exe .
-
-cd ../voice-rewrite
-go test ./...
-go build -o VoiceRewrite.exe .
+go vet ./...
+go build -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .
 ```
 
-The [GitHub Actions workflow](.github/workflows/build.yml) builds Windows x64 EXEs and uploads them as workflow artifacts. CUDA libraries, GGUF model weights, and `llama-server.exe` are **not included**. Acquire those separately from their original providers.
+See [VoiceRewrite README](voice-rewrite/README.md), [architecture](voice-rewrite/ARCHITECTURE.md), [Windows acceptance tests](voice-rewrite/CROSS_APP_ACCEPTANCE.md), and [third party notes](voice-rewrite/THIRD_PARTY_NOTICES.md).
 
-The programs have automated Go unit/integration tests, but compatibility with every Windows application, microphone, and GPU has not been verified. VoiceRewrite uses clipboard-based copy/paste and may not preserve rich clipboard formats.
+## Status and licensing
 
-## Source projects
-
-These are independent companion utilities; neither package redistributes or modifies the upstream [Handy](https://github.com/cjpais/Handy), [handy-remote](https://github.com/Hyroniem/handy-remote), or [llama.cpp](https://github.com/ggml-org/llama.cpp) binaries. See upstream projects for their licenses.
+This is an **experimental** tool. Cross-application clipboard insertion must be verified on Windows; some rich-text clipboard formats are not fully preserved. The repo owner should choose and add a clear LICENSE before presenting this as a redistributable open-source release.

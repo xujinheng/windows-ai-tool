@@ -1,5 +1,5 @@
 {
-  "asr_base_url": "http://127.0.0.1:8081/v1",
+  "asr_base_url": "http://127.0.0.1:8080/v1",
   "llm_base_url": "http://127.0.0.1:1234/v1",
   "text_model": "auto",
   "asr_model": "whisper-1",
