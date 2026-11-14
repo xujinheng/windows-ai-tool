@@ -163,13 +163,15 @@ func preferenceRect(c uxControl, viewW, viewH, scrollY int32) (x, y, w, h int32)
 	compact := viewH < 460
 	if c.id >= uxTabSpeech && c.id <= uxTabInput {
 		width := (viewW - 64 - 16) / 3
-		left:=int32(32)
-		if viewW>=680 {
-			width=134
-			left=(viewW-(3*width+16))/2
+		left := int32(32)
+		if viewW >= 680 {
+			width = 134
+			left = (viewW - (3*width + 16)) / 2
 		}
-		if width < 90 {width=90}
-		x=left+(int32(c.id-uxTabSpeech))*(width+8)
+		if width < 90 {
+			width = 90
+		}
+		x = left + (int32(c.id-uxTabSpeech))*(width+8)
 		if compact {
 			return x, 66, width, 38
 		}
@@ -572,16 +574,18 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 				// The preference switcher is a compact, centered toolbar at normal
 				// widths, with a full-width adaptive layout when space is limited.
-				navW:=int32(3*134+16)
-				navX:=(viewW-navW)/2
-				if viewW<680 {
-					navW=viewW-64
-					navX=32
+				navW := int32(3*134 + 16)
+				navX := (viewW - navW) / 2
+				if viewW < 680 {
+					navW = viewW - 64
+					navX = 32
 				}
-				navY:=int32(109)
-				if compact {navY=61}
-				uiRoundSurface(hdc,rect32{sc(navX-4),sc(navY),sc(navX+navW+4),sc(navY+52)},
-					sc(15),p.palette.color(p.palette.secondary),p.palette.color(p.palette.secondary))
+				navY := int32(109)
+				if compact {
+					navY = 61
+				}
+				uiRoundSurface(hdc, rect32{sc(navX - 4), sc(navY), sc(navX + navW + 4), sc(navY + 52)},
+					sc(15), p.palette.color(p.palette.secondary), p.palette.color(p.palette.secondary))
 				// The content surface scrolls under stable navigation and action bars.
 				saved, _, _ := procSaveDCPrefs.Call(hdc)
 				procClipPrefs.Call(hdc, 0, uintptr(sc(bodyTop)), uintptr(rc.Right), uintptr(sc(footerTop)))
@@ -637,9 +641,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				if item.ItemState&ODS_SELECTED != 0 {
 					fill = p.palette.secondaryPressed
 				}
-				base,_,_:=procCreateSolidBrush.Call(p.palette.color(p.palette.secondary))
-				if base!=0 {
-					procFillRect.Call(item.Hdc,uintptr(unsafe.Pointer(&item.Rect)),base)
+				base, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.secondary))
+				if base != 0 {
+					procFillRect.Call(item.Hdc, uintptr(unsafe.Pointer(&item.Rect)), base)
 					procDeleteObject.Call(base)
 				}
 				uiRoundSurface(item.Hdc, item.Rect, 13, p.palette.color(fill), p.palette.color(border))
