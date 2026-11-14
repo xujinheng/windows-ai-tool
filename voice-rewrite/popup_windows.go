@@ -74,7 +74,7 @@ type popupMessage struct {
 	generation  uint64
 }
 type answerPopup struct {
-	window, edit, note, eyebrow, footerNote uintptr
+	window, edit, note uintptr
 	fonts              []uintptr
 	bgBrush            uintptr
 	editBrush          uintptr
@@ -87,6 +87,8 @@ type answerPopup struct {
 	applyResult        chan error
 	generation         uint64
 	canceled           atomic.Bool
+
+	eyebrow, footerNote uintptr
 }
 
 var activeAnswer *answerPopup
