@@ -56,6 +56,8 @@ jobs:
             public static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
             [DllImport("user32.dll",CharSet=CharSet.Unicode)]
             public static extern bool SetWindowText(IntPtr hwnd,string value);
+            [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")]
+            public static extern IntPtr GetWindowLongPtr(IntPtr hwnd,int index);
           }
           '@
           $exe=Join-Path (Get-Location) 'voice-rewrite/VoiceRewrite.exe'
@@ -112,6 +114,16 @@ jobs:
               $w=$rect.Right-$rect.Left
               $h=$rect.Bottom-$rect.Top
               if($w -lt 110 -or $h -lt 30){throw "Invalid dimensions $w x $h"}
+              if($case.kind -eq 'answer') {
+                # The model result is a deliberately frameless, movable
+                # tool window, not a conventional Windows dialog.
+                $style=[MatrixWin]::GetWindowLongPtr($hwnd,-16).ToInt64()
+                if(($style -band 0x00C00000) -ne 0) {throw "Result card has old WS_CAPTION chrome"}
+                $close=[MatrixWin]::GetDlgItem($hwnd,432)
+                if($close -eq [IntPtr]::Zero -or -not [MatrixWin]::IsWindowVisible($close)) {
+                  throw "Frameless result card must provide a visible native Close button"
+                }
+              }
               $work=[System.Windows.Forms.SystemInformation]::VirtualScreen
               if($rect.Left -lt $work.Left -or $rect.Top -lt $work.Top -or $rect.Right -gt $work.Right -or $rect.Bottom -gt $work.Bottom) {
                 throw "$($case.id): window clipped by virtual display $($work.ToString()); rect=$($rect.Left),$($rect.Top) $w x $h"
