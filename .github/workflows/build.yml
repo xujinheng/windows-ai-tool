@@ -163,13 +163,17 @@ jobs:
         uses: actions/attest@v4
         with:
           subject-path: oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
+      - name: Stage OneClick executable and license
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path 'oneclick/package' -Force | Out-Null
+          Copy-Item -LiteralPath 'oneclick/Qwen3-ASR-OneClick-Windows-x64.exe' -Destination 'oneclick/package/'
+          Copy-Item -LiteralPath 'LICENSE' -Destination 'oneclick/package/'
       - name: Upload Qwen3-ASR OneClick executable
         uses: actions/upload-artifact@v4
         with:
           name: Qwen3-ASR-OneClick-Windows-x64
-          path: |
-            oneclick/Qwen3-ASR-OneClick-Windows-x64.exe
-            LICENSE
+          path: oneclick/package/*
           if-no-files-found: error
   release:
     if: startsWith(github.ref, 'refs/tags/v')
