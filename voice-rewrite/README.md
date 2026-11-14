@@ -41,3 +41,7 @@ go build -trimpath -ldflags="-H windowsgui -s -w" -o VoiceRewrite.exe .
 ```
 
 See [architecture](ARCHITECTURE.md), [Windows testing](TESTING.md), [privacy](../PRIVACY.md) and [installer instructions](../installer/README.md).
+
+## License
+
+VoiceRewrite is distributed under the [BSD 3-Clause License](../LICENSE). The [third-party notices](THIRD_PARTY_NOTICES.md) remain in effect.

@@ -14,4 +14,4 @@ Changes to UI or input handling should include the relevant [Windows interaction
 
 Never commit credentials, microphone recordings, selected user text, diagnostic logs or local model paths. See [security](SECURITY.md).
 
-The repository does not currently specify a project-wide license. Contact the maintainer before making contributions that require a defined licensing agreement.
+VoiceRewrite is licensed under [BSD 3-Clause](LICENSE). By contributing, you confirm that you have the right to submit your work under this license. Preserve existing copyright notices and third-party attributions.

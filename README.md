@@ -41,4 +41,4 @@ Servers and models must be started separately. See [setup and usage](voice-rewri
 - API keys are stored with Windows DPAPI; recent text results remain in memory for the current session.
 - [Build and contribute](CONTRIBUTING.md) · [Security](SECURITY.md) · [Windows testing](voice-rewrite/TESTING.md)
 
-**License:** No repository-wide license has been selected. Public source visibility alone does not grant redistribution rights.
+**License:** [BSD 3-Clause](LICENSE). You may use, modify and redistribute VoiceRewrite, including commercially, subject to the license conditions. See [third-party notices](voice-rewrite/THIRD_PARTY_NOTICES.md) for existing attribution and separately licensed material.
