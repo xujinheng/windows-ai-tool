@@ -138,6 +138,23 @@ jobs:
             }
           }
           $report | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 'visual-matrix/diagnostics.json'
+      - name: Assert real screenshots exist and differ by theme
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $folder = 'visual-matrix'
+          $expected = @('settings-light-top','settings-dark-top','settings-125-top','settings-150-top','settings-200-top','settings-200-bottom','answer-light-top','answer-dark-long-top','recording-200-top')
+          foreach ($name in $expected) {
+            $path = Join-Path $folder ($name + '.png')
+            if (!(Test-Path -LiteralPath $path)) { throw "Missing actual capture: $name" }
+            if ((Get-Item $path).Length -lt 2000) { throw "Unusually small capture: $name" }
+          }
+          foreach ($pair in @(@('settings-light-top','settings-dark-top'),@('settings-200-top','settings-200-bottom'))) {
+            $first = (Get-FileHash (Join-Path $folder ($pair[0] + '.png')) -Algorithm SHA256).Hash
+            $second = (Get-FileHash (Join-Path $folder ($pair[1] + '.png')) -Algorithm SHA256).Hash
+            if ($first -eq $second) { throw "Visual states rendered identically: $($pair -join ' vs ')" }
+          }
+          Write-Host 'Nine real Win32 screen captures validated; dark theme and scroll positions differ.'
       - name: Upload actual screenshot evidence
         if: always()
         uses: actions/upload-artifact@v4
