@@ -377,6 +377,9 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			hdc, _, _ := procBeginPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			if hdc != 0 {
 				painted := activeAnswer.renderer != nil && activeAnswer.renderer.draw()
+				if painted {
+					resultSetReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)), 1)
+				}
 				if !painted {
 					var rc rect32
 					procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
@@ -468,6 +471,7 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case WM_NCDESTROY:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			removePopupClickAwayHook()
+			resultRemoveReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)))
 			activeAnswer.canceled.Store(true)
 			if activeAnswer.renderer != nil {
 				activeAnswer.renderer.close()
