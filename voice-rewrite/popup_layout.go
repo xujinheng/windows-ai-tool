@@ -1,18 +1,16 @@
 package main
 
-// Keep results close to the mouse: short answers should not need a giant
-// reading sheet, while long AI responses still have a scrollable native EDIT.
+// A single compact heading replaces the three prior decorative header rows.
+// Only the reading viewport grows, and the native EDIT can always scroll.
 func popupSizeForText(runes int) (width, height int32) {
-	width, height = 510, 300
+	width, height = 476, 258
 	switch {
 	case runes > 1200:
-		height = 530
+		height = 500
 	case runes > 600:
-		height = 475
-	case runes > 260:
-		height = 405
-	case runes > 100:
-		height = 345
+		height = 430
+	case runes > 200:
+		height = 315
 	}
 	return
 }
