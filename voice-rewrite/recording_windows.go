@@ -34,10 +34,14 @@ func winmmCheck(rc uintptr, op string) error {
 	}
 	return nil
 }
-func startRecorder(maxSec int) (*audioRecorder, error) {
+func startRecorder(maxSec, deviceID int) (*audioRecorder, error) {
 	f := waveFormatEx{FormatTag: WAVE_FORMAT_PCM, Channels: 1, SamplesPerSec: 16000, AvgBytesPerSec: 32000, BlockAlign: 2, BitsPerSample: 16}
 	var h uintptr
-	rc, _, _ := procWaveInOpen.Call(uintptr(unsafe.Pointer(&h)), WAVE_MAPPER, uintptr(unsafe.Pointer(&f)), 0, 0, 0)
+	device := WAVE_MAPPER
+	if deviceID >= 0 {
+		device = uintptr(deviceID)
+	}
+	rc, _, _ := procWaveInOpen.Call(uintptr(unsafe.Pointer(&h)), device, uintptr(unsafe.Pointer(&f)), 0, 0, 0)
 	if e := winmmCheck(rc, "waveInOpen"); e != nil {
 		return nil, e
 	}

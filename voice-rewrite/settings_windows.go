@@ -34,7 +34,12 @@ const (
 	uxAdvancedButton  = 9103
 	uxProbeASRButton  = 9104
 	uxProbeLLMButton  = 9105
-	uxShortcutInput   = 9106
+	uxShortcutInput    = 9106
+	uxMicrophoneInput = 9107
+	uxCBAddString     = 0x0143
+	uxCBSetCurSel     = 0x014E
+	uxCBGetCurSel     = 0x0147
+	uxCBSDropDownList = 0x0003
 	uxWSChild         = 0x40000000
 	uxWSVisible       = 0x10000000
 	uxWSTabStop       = 0x00010000
@@ -62,6 +67,8 @@ type uxSettings struct {
 	app             *appState
 	inputs          [6]uintptr
 	shortcut        uintptr
+	microphone      uintptr
+	microphoneIDs   []int
 	hint            uintptr
 	font, titleFont uintptr
 	background      uintptr
@@ -332,12 +339,17 @@ func (p *uxSettings) save() error {
 	}
 	changedShortcut := cfg.DictationHotkey != newShortcut
 	cfg.DictationHotkey = newShortcut
+	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
+	if p.microphone != 0 && int(selected) < len(p.microphoneIDs) {
+		cfg.AudioDeviceID = p.microphoneIDs[selected]
+	}
+	changedAudioDevice := cfg.AudioDeviceID != p.app.cfg.AudioDeviceID
 	if err = saveConfig(cfg); err != nil {
 		return err
 	}
 	p.app.cfg = cfg
-	if changedShortcut {
-		uxSetText(p.hint, "设置已保存。听写快捷键将在重新启动 VoiceRewrite 后生效。")
+	if changedShortcut || changedAudioDevice {
+		uxSetText(p.hint, "设置已保存。快捷键和录音设备将在重启 VoiceRewrite 后生效。")
 	} else {
 		uxSetText(p.hint, "✓ 已保存，API 地址和模型立即生效")
 	}
@@ -496,7 +508,9 @@ func showNativeSettings(app *appState) error {
 	makeOne("STATIC", "03   快捷键", stat, 34, 490, 300, 26, 0, true)
 	makeOne("STATIC", "听写快捷键", stat, 34, 527, 108, 22, 0, false)
 	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 521, 290, 30, uxShortcutInput, false)
-	makeOne("STATIC", "Mouse4 / Mouse5 / F1–F24 · 更改后重启", stat, 435, 525, 210, 22, 0, false)
+	makeOne("STATIC", "麦克风", stat, 431, 525, 64, 22, 0, false)
+	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 495, 520, 149, 192, uxMicrophoneInput, false)
+	p.populateMicrophones(app.cfg.AudioDeviceID)
 	makeOne("BUTTON", "保存并应用", btn, 29, 575, 141, 34, uxSaveButton, false)
 	makeOne("BUTTON", "高级设置", btn, 186, 575, 119, 34, uxAdvancedButton, false)
 	makeOne("BUTTON", "关闭", btn, 550, 575, 93, 34, uxCloseButton, false)

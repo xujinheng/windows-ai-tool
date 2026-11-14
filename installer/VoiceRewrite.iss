@@ -1,5 +1,5 @@
 #ifndef AppVersion
-#define AppVersion "0.24.0"
+#define AppVersion "0.25.0"
 #endif
 #define AppName "VoiceRewrite"
 #define AppExe "VoiceRewrite.exe"
@@ -15,6 +15,8 @@ DefaultDirName={localappdata}\Programs\VoiceRewrite
 DefaultGroupName=VoiceRewrite
 UninstallDisplayIcon={app}\{#AppExe}
 PrivilegesRequired=lowest
+; Prevent upgrading or uninstalling while the tray process is running.
+AppMutex=Local\VoiceRewrite_OneInstance_v1
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=output

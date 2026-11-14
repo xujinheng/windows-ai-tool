@@ -18,6 +18,7 @@ type Config struct {
 	ASRAPIKey              string `json:"asr_api_key"`
 	LLMAPIKey              string `json:"llm_api_key"`
 	ASRModel               string `json:"asr_model"`
+	AudioDeviceID          int    `json:"audio_device_id"`
 	HotkeyRecord           string `json:"hotkey_record"`
 	DictationHotkey        string `json:"dictation_hotkey"`
 	RecordMode             string `json:"record_mode"`
@@ -36,6 +37,7 @@ func defaults() Config {
 		LLMBaseURL:             "http://127.0.0.1:1234/v1",
 		TextModel:              "auto",
 		ASRModel:               "whisper-1",
+		AudioDeviceID:          -1,
 		HotkeyRecord:           "Mouse5",
 		DictationHotkey:        "Mouse4",
 		RecordMode:             "hold",
@@ -109,6 +111,9 @@ func loadConfig() (Config, error) {
 	}
 	if cfg.HotkeyExit == "" {
 		cfg.HotkeyExit = "Ctrl+Alt+F10"
+	}
+	if cfg.AudioDeviceID < -1 || cfg.AudioDeviceID > 255 {
+		return cfg, fmt.Errorf("录音设备编号无效：%d", cfg.AudioDeviceID)
 	}
 	if cfg.MaxResponseTokens < 128 || cfg.MaxResponseTokens > 4096 {
 		cfg.MaxResponseTokens = 1200

@@ -56,6 +56,8 @@ var (
 	procCloseHandle                = kernel32.NewProc("CloseHandle")
 	procBeep                       = kernel32.NewProc("Beep")
 	procWaveInOpen                 = winmm.NewProc("waveInOpen")
+	procWaveInGetNumDevs          = winmm.NewProc("waveInGetNumDevs")
+	procWaveInGetDevCaps          = winmm.NewProc("waveInGetDevCapsW")
 	procWaveInPrepareHeader        = winmm.NewProc("waveInPrepareHeader")
 	procWaveInUnprepareHeader      = winmm.NewProc("waveInUnprepareHeader")
 	procWaveInAddBuffer            = winmm.NewProc("waveInAddBuffer")
@@ -487,7 +489,7 @@ func runApp() {
 			app.fail(errors.New("没有可用的目标窗口"))
 			return
 		}
-		rec, e := startRecorder(cfg.MaxRecordSeconds)
+		rec, e := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 		if e != nil {
 			app.fail(e)
 			return
@@ -812,7 +814,7 @@ func runApp() {
 					app.busy.Store(false)
 					return
 				}
-				rec, err := startRecorder(cfg.MaxRecordSeconds)
+				rec, err := startRecorder(cfg.MaxRecordSeconds, cfg.AudioDeviceID)
 				if err != nil {
 					restoreSelectionClipboardIfOwned(hwnd, sel)
 					app.fail(err)
