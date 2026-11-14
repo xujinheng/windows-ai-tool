@@ -26,16 +26,44 @@ foreach ($item in $captures) {
     if (!(Test-Path -LiteralPath $source -PathType Leaf)) {
         throw "Missing real EXE screenshot: $source"
     }
-    # Decode the PNG before publishing; do not accept empty/corrupt image files.
+    # Preserve the full unaltered HWND captures in the Actions artifact.
+    # Documentation copies are trimmed only to remove pixels belonging
+    # to the desktop behind the DWM/window border (e.g. console text).
+    # The actual controls and every interior pixel come from the real EXE.
     $image = [System.Drawing.Image]::FromFile((Resolve-Path $source).Path)
     try {
         if ($image.Width -lt 100 -or $image.Height -lt 30) {
             throw "Unexpected screenshot dimensions: $source ($($image.Width)x$($image.Height))"
         }
+        $left = 8
+        $right = 8
+        $top = 0
+        $bottom = 10
+        if ($item.To -eq 'recording-overlay.png') {
+            $left = 11
+            $right = 11
+            $top = 10
+            $bottom = 10
+        }
+        $cropWidth = $image.Width - $left - $right
+        $cropHeight = $image.Height - $top - $bottom
+        if ($cropWidth -lt 100 -or $cropHeight -lt 30) {
+            throw "Screenshot too small after border trimming: $source"
+        }
+        $clean = [System.Drawing.Bitmap]::new($cropWidth, $cropHeight)
+        $painter = [System.Drawing.Graphics]::FromImage($clean)
+        try {
+            $dest = [System.Drawing.Rectangle]::new(0, 0, $cropWidth, $cropHeight)
+            $sourceRect = [System.Drawing.Rectangle]::new($left, $top, $cropWidth, $cropHeight)
+            $painter.DrawImage($image, $dest, $sourceRect, [System.Drawing.GraphicsUnit]::Pixel)
+            $clean.Save((Join-Path (Get-Location) (Join-Path $OutputDir $item.To)), [System.Drawing.Imaging.ImageFormat]::Png)
+        } finally {
+            $painter.Dispose()
+            $clean.Dispose()
+        }
     } finally {
         $image.Dispose()
     }
-    Copy-Item -LiteralPath $source -Destination (Join-Path $OutputDir $item.To) -Force
 }
 
 function UiColor([string]$hex) {
