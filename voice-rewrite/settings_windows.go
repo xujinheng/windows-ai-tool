@@ -273,7 +273,7 @@ func (p *uxSettings) layout() {
 		if c.tab>=0 {
 			if c.role!=uxRolePageTitle && c.role!=uxRolePageDescription && (y<bodyTop || y+h>footerTop) {visible=false}
 		}
-		if compact && c.tab<0 && (c.y==60 || c.x>=510 || c.y>=600) {visible=false}
+		if compact && c.tab<0 && (c.y==65 || c.x>=510 || c.y>=600) {visible=false}
 		if visible { procShowWindow.Call(c.hwnd,SW_SHOW) } else {procShowWindow.Call(c.hwnd,0)}
 	}
 	procInvalidateRectSettings.Call(p.window,0,1)
@@ -537,7 +537,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			primary := false
 			switch item.CtlID {
 			case uxSaveButton:
-				label, primary = "保存并应用", true
+				label, primary = "保存设置", true
 			case uxCloseButton:
 				label = "关闭"
 			case uxAdvancedButton:
@@ -790,7 +790,7 @@ func showNativeSettings(app *appState) error {
 		role,row:=uxRoleOther,0
 		if tabGroup>=0 {
 			switch {
-			case strings.HasPrefix(t,"●"): role=uxRoleStatus
+			case strings.HasPrefix(t,"●") || strings.HasPrefix(t,"修改快捷键"): role=uxRoleStatus
 			case cls=="EDIT" || cls=="COMBOBOX":role=uxRoleField
 			case id==uxProbeASRButton || id==uxProbeLLMButton:role=uxRoleProbe
 			case y<208:role=uxRolePageTitle
