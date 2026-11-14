@@ -332,7 +332,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case uxWMSize:
 		if p != nil && p.window == hwnd {
-			if p.renderer != nil { p.renderer.resized() }
+			if p.renderer != nil {
+				p.renderer.resized()
+			}
 			p.layout()
 		}
 		return 0
@@ -356,7 +358,10 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMNCDestroy:
 		if p != nil && p.window == hwnd {
 			uxActiveSettings = nil
-			if p.renderer != nil {p.renderer.close(); p.renderer=nil}
+			if p.renderer != nil {
+				p.renderer.close()
+				p.renderer = nil
+			}
 			if p.font != 0 {
 				procDeleteObject.Call(p.font)
 			}
