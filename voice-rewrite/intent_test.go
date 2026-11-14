@@ -46,6 +46,9 @@ func TestIntentsRouting(t *testing.T) {
 		{"为什么会出现这个错误", "answer", false, false, "popup"},
 		{"总结这段话", "summarize", false, false, "popup"},
 		{"帮我润色一下", "ambiguous", true, true, "replace"},
+		{"帮我", "edit", true, false, "popup"},
+		{"嗯", "translate", false, true, "popup"},
+		{"看一下", "edit", false, false, "popup"},
 	} {
 		got := routeTask(AssistantResult{Intent: tc.intent, Result: "text"}, tc.instruction, tc.editable, tc.browser)
 		if got != tc.want {

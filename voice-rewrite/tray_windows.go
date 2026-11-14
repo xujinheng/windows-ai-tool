@@ -20,6 +20,7 @@ const (
 	WM_TRAY_CONFIG       = 0x8000 + 54
 	WM_TRAY_LOG          = 0x8000 + 55
 	WM_TRAY_CLOSE_POPUP  = 0x8000 + 62
+	WM_TRAY_LAST_ERROR   = 0x8000 + 63
 	TRAY_RESET_TIMER_ID  = 3002
 	WM_RBUTTONUP         = 0x0205
 	WM_CONTEXTMENU       = 0x007B
@@ -284,16 +285,19 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 	}
 	defer procDestroyMenu.Call(m)
 	configLabel, _ := syscall.UTF16PtrFromString("设置与连接检测…")
-	logLabel, _ := syscall.UTF16PtrFromString("查看日志")
+	logLabel, _ := syscall.UTF16PtrFromString("查看诊断日志")
+	errorLabel, _ := syscall.UTF16PtrFromString("最近一次错误与解决方法")
 	closeLabel, _ := syscall.UTF16PtrFromString("关闭 AI 结果窗口")
 	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
 	procAppendMenu.Call(m, MF_STRING, 2, uintptr(unsafe.Pointer(configLabel)))
 	procAppendMenu.Call(m, MF_STRING, 3, uintptr(unsafe.Pointer(logLabel)))
+	procAppendMenu.Call(m, MF_STRING, 5, uintptr(unsafe.Pointer(errorLabel)))
 	procAppendMenu.Call(m, MF_STRING, 4, uintptr(unsafe.Pointer(closeLabel)))
 	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
 	procAppendMenu.Call(m, MF_STRING, 1, uintptr(unsafe.Pointer(exitLabel)))
 	runtime.KeepAlive(configLabel)
 	runtime.KeepAlive(logLabel)
+	runtime.KeepAlive(errorLabel)
 	runtime.KeepAlive(closeLabel)
 	runtime.KeepAlive(exitLabel)
 	var p trayPoint
@@ -320,6 +324,8 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 		procPostMessage.Call(t.hwnd, WM_TRAY_LOG, 0, 0)
 	case 4:
 		procPostMessage.Call(t.hwnd, WM_TRAY_CLOSE_POPUP, 0, 0)
+	case 5:
+		procPostMessage.Call(t.hwnd, WM_TRAY_LAST_ERROR, 0, 0)
 	}
 	return selected, nil
 }

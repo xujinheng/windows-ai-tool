@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -38,6 +39,7 @@ const (
 	ES_MULTILINE                   = 0x0004
 	ES_AUTOVSCROLL                 = 0x0040
 	ES_READONLY                    = 0x0800
+	EM_LIMITTEXT                   = 0x00C5
 	BS_OWNERDRAW                   = 0x0000000B
 	SW_SHOWNOACTIVATE              = 4
 	SWP_NOACTIVATE                 = 0x0010
@@ -405,10 +407,8 @@ func showAnswerPopup(msg popupMessage) error {
 	if strings.TrimSpace(msg.body) == "" {
 		return errors.New("AI 未返回可显示的文字")
 	}
-	if utf8.RuneCountInString(msg.body) > 5500 {
-		r := []rune(msg.body)
-		msg.body = string(r[:5500]) + "\n\n（内容过长，显示已截断）"
-	}
+	// Never truncate a model response: users must be able to review and copy
+	// the full answer, including large translations and generated documents.
 	n := utf8.RuneCountInString(msg.body)
 	width, height := v14PopupSize(n)
 	x, y := msg.anchor.X+18, msg.anchor.Y+22
@@ -429,7 +429,7 @@ func showAnswerPopup(msg popupMessage) error {
 	if y < vy {
 		y = vy
 	}
-	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ModernCard.v14")
+	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ResultCard.v20")
 	instance, _, _ := procGetModuleHandle.Call(0)
 	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
 	atom, _, regErr := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
@@ -471,12 +471,16 @@ func showAnswerPopup(msg popupMessage) error {
 		bodyStyle |= WS_VSCROLL
 	}
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
-	editor, err := makeChild("EDIT", editorText, bodyStyle, 22, 77, cw-44, ch-132, hwnd, 0)
+	editor, err := makeChild("EDIT", "", bodyStyle, 22, 77, cw-44, ch-132, hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
 		return err
 	}
 	popup.edit = editor
+	// Multiline EDIT controls default to a 32K character limit. Raise it
+	// before setting the text, otherwise the UI silently drops the tail.
+	procSendMessage.Call(editor, EM_LIMITTEXT, uintptr(len(utf16.Encode([]rune(editorText)))+1), 0)
+	uxSetText(editor, editorText)
 	if size, _, _ := procGetWindowTextLength.Call(editor); size == 0 {
 		closeActiveAnswer()
 		return errors.New("卡片正文控件未收到模型结果")

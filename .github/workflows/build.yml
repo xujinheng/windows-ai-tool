@@ -14,6 +14,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.23'
+      - name: Check Go formatting
+        working-directory: voice-rewrite
+        shell: pwsh
+        run: |
+          $unformatted = @(gofmt -l .)
+          if ($unformatted.Count -gt 0) {
+            Write-Error ("gofmt required: " + ($unformatted -join ", "))
+            exit 1
+          }
       - name: Test
         working-directory: voice-rewrite
         run: go test ./...

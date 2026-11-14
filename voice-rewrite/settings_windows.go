@@ -4,10 +4,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"syscall"
@@ -17,28 +15,31 @@ import (
 // A small, native settings surface; it does not host a browser or intercept
 // the editor focus until deliberately opened from the tray menu.
 const (
-	uxWMCommand      = 0x0111
-	uxWMClose        = 0x0010
-	uxWMEraseBkgnd   = 0x0014
-	uxWMPaint        = 0x000F
-	uxWMNCDestroy    = 0x0082
-	uxWMColorStatic  = 0x0138
-	uxWMColorEdit    = 0x0133
-	uxWMProbeDone    = 0x8000 + 104
-	uxSaveButton     = 9101
-	uxCloseButton    = 9102
-	uxAdvancedButton = 9103
-	uxProbeASRButton = 9104
-	uxProbeLLMButton = 9105
-	uxWSChild        = 0x40000000
-	uxWSVisible      = 0x10000000
-	uxWSTabStop      = 0x00010000
-	uxESAutoScroll   = 0x0080
-	uxESPassword     = 0x0020
-	uxWSBorder       = 0x00800000
-	uxWSCaption      = 0x00C00000
-	uxWSSysMenu      = 0x00080000
-	uxWSMinimizeBox  = 0x00020000
+	uxWMCommand       = 0x0111
+	uxWMSize          = 0x0005
+	uxWMGetMinMaxInfo = 0x0024
+	uxWSThickFrame    = 0x00040000
+	uxWMClose         = 0x0010
+	uxWMEraseBkgnd    = 0x0014
+	uxWMPaint         = 0x000F
+	uxWMNCDestroy     = 0x0082
+	uxWMColorStatic   = 0x0138
+	uxWMColorEdit     = 0x0133
+	uxWMProbeDone     = 0x8000 + 104
+	uxSaveButton      = 9101
+	uxCloseButton     = 9102
+	uxAdvancedButton  = 9103
+	uxProbeASRButton  = 9104
+	uxProbeLLMButton  = 9105
+	uxWSChild         = 0x40000000
+	uxWSVisible       = 0x10000000
+	uxWSTabStop       = 0x00010000
+	uxESAutoScroll    = 0x0080
+	uxESPassword      = 0x0020
+	uxWSBorder        = 0x00800000
+	uxWSCaption       = 0x00C00000
+	uxWSSysMenu       = 0x00080000
+	uxWSMinimizeBox   = 0x00020000
 )
 
 var (
@@ -62,9 +63,46 @@ type uxSettings struct {
 	cardBrush       uintptr
 	cardStatics     map[uintptr]bool
 	probeMu         sync.Mutex
-	probeResult     string
+	probeResult     [2]string
+	probeStatus     [2]uintptr
+	probeSerial     [2]uint64
+	controls        []uxControl
 	scale           float64
 }
+
+// Every child control is reflowed after a resize. No hard-coded physical
+// coordinates may escape uxLayoutRect; the data is in 96-DPI logical units.
+type uxControl struct {
+	hwnd       uintptr
+	x, y, w, h int32
+	stretch    bool
+	right      bool
+}
+
+func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
+	return layoutSettingsRect(uxLayoutSpec{x: c.x, y: c.y, w: c.w, h: c.h, stretch: c.stretch, right: c.right}, clientWidth)
+}
+func (p *uxSettings) layout() {
+	if p == nil || p.window == 0 {
+		return
+	}
+	var rect rect32
+	procGetClientRect.Call(p.window, uintptr(unsafe.Pointer(&rect)))
+	logical := int32(float64(rect.Right-rect.Left) / p.scale)
+	for _, control := range p.controls {
+		x, y, w, h := uxLayoutRect(control, logical)
+		sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
+		procMoveWindow.Call(control.hwnd, sc(x), sc(y), sc(w), sc(h), 1)
+	}
+	procInvalidateRectSettings.Call(p.window, 0, 1)
+}
+
+var (
+	procMoveWindow             = user32.NewProc("MoveWindow")
+	procInvalidateRectSettings = user32.NewProc("InvalidateRect")
+)
+
+type uxMinMaxInfo struct{ Reserved, MaxSize, MaxPos, MinSize, MaxTrack trayPoint }
 
 func uxPtr(s string) *uint16 { ptr, _ := syscall.UTF16PtrFromString(s); return ptr }
 
@@ -89,6 +127,17 @@ func uxSetText(hwnd uintptr, text string) {
 func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	p := uxActiveSettings
 	switch uint32(msg) {
+	case uxWMSize:
+		if p != nil && p.window == hwnd {
+			p.layout()
+		}
+		return 0
+	case uxWMGetMinMaxInfo:
+		if p != nil && lParam != 0 {
+			bounds := (*uxMinMaxInfo)(unsafe.Pointer(lParam))
+			bounds.MinSize = trayPoint{X: int32(680 * p.scale), Y: int32(680 * p.scale)}
+		}
+		return 0
 	case uxWMClose:
 		procDestroyWindow.Call(hwnd)
 		return 0
@@ -124,9 +173,11 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				old, _, _ := uxSelectObject.Call(hdc, p.cardBrush)
 				nullPen, _, _ := uxGetStockObject.Call(8) // NULL_PEN
 				oldPen, _, _ := uxSelectObject.Call(hdc, nullPen)
-				for _, top := range []int32{99, 308} {
+				for _, top := range []int32{99, 335} {
 					sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
-					uxRoundRect.Call(hdc, sc(17), sc(top), sc(657), sc(top+196), sc(18), sc(18))
+					var rc rect32
+					procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+					uxRoundRect.Call(hdc, sc(17), sc(top), uintptr(rc.Right)-sc(17), sc(top+218), sc(18), sc(18))
 				}
 				uxSelectObject.Call(hdc, old)
 				uxSelectObject.Call(hdc, oldPen)
@@ -146,11 +197,15 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	case uxWMColorEdit:
 		// Preserve the standard high-contrast system EDIT background.
 	case uxWMProbeDone:
-		if p != nil && p.window == hwnd {
+		if p != nil && p.window == hwnd && wParam < 2 {
+			idx := int(wParam)
 			p.probeMu.Lock()
-			result := p.probeResult
+			serial := p.probeSerial[idx]
+			result := p.probeResult[idx]
 			p.probeMu.Unlock()
-			uxSetText(p.hint, result)
+			if serial == uint64(lParam) {
+				uxSetText(p.probeStatus[idx], result)
+			}
 		}
 		return 0
 	case uxWMCommand:
@@ -196,11 +251,7 @@ func (p *uxSettings) save() error {
 	if err != nil {
 		return err
 	}
-	blob, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	if err = os.WriteFile(configPath(), append(blob, '\n'), 0600); err != nil {
+	if err = saveConfig(cfg); err != nil {
 		return err
 	}
 	p.app.cfg = cfg
@@ -212,14 +263,24 @@ func (p *uxSettings) check(kind, base, key string) {
 	if p == nil || p.window == 0 {
 		return
 	}
-	uxSetText(p.hint, "正在检测 "+kind+" API…")
+	idx := 0
+	if kind == "LLM" {
+		idx = 1
+	}
+	p.probeMu.Lock()
+	p.probeSerial[idx]++
+	serial := p.probeSerial[idx]
+	p.probeMu.Unlock()
+	uxSetText(p.probeStatus[idx], "正在检测服务…")
 	h := p.window
 	go func() {
 		result := uxProbeWithKey(context.Background(), kind, base, key)
 		p.probeMu.Lock()
-		p.probeResult = result
+		if serial == p.probeSerial[idx] {
+			p.probeResult[idx] = result
+		}
 		p.probeMu.Unlock()
-		procPostMessage.Call(h, uxWMProbeDone, 0, 0)
+		procPostMessage.Call(h, uxWMProbeDone, uintptr(idx), uintptr(serial))
 	}()
 }
 
@@ -270,7 +331,7 @@ func showNativeSettings(app *appState) error {
 		procSetForegroundWindow.Call(uxActiveSettings.window)
 		return nil
 	}
-	className := uxPtr("VoiceRewrite.Settings.ClientOnly.v19")
+	className := uxPtr("VoiceRewrite.Settings.v20")
 	title := uxPtr("VoiceRewrite · 连接设置")
 	module, _, _ := procGetModuleHandle.Call(0)
 	klass := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: uxWindowCallback, Instance: module, ClassName: className}
@@ -284,20 +345,20 @@ func showNativeSettings(app *appState) error {
 		scale = 1
 	}
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*scale + 0.5)) }
-	x, y := uxCenteredWindow(int32(sc(694)), int32(sc(626)))
+	x, y := uxCenteredWindow(int32(sc(714)), int32(sc(714)))
 	if y < 0 {
 		y = 60
 	}
 	h, _, createErr := procCreateWindow.Call(0, uintptr(unsafe.Pointer(className)), uintptr(unsafe.Pointer(title)),
-		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox, uintptr(x), uintptr(y), sc(694), sc(626), 0, 0, module, 0)
+		uxWSCaption|uxWSSysMenu|uxWSMinimizeBox|uxWSThickFrame, uintptr(x), uintptr(y), sc(714), sc(714), 0, 0, module, 0)
 	if h == 0 {
 		return fmt.Errorf("创建设置窗口失败: %w", createErr)
 	}
 	p := &uxSettings{window: h, app: app, scale: scale, cardStatics: make(map[uintptr]bool)}
 	uxActiveSettings = p
-	p.background, _, _ = procCreateSolidBrush.Call(uintptr(0x00F7F6F4))
+	p.background, _, _ = procCreateSolidBrush.Call(uintptr(0x00FAF8F6))
 	p.cardBrush, _, _ = procCreateSolidBrush.Call(uintptr(0x00FFFFFF))
-	fontName := uxPtr("Microsoft YaHei UI")
+	fontName := uxPtr("Segoe UI Variable")
 	p.font, _, _ = procCreateFont.Call(sc(-15), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.titleFont, _, _ = procCreateFont.Call(sc(-21), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	makeOne := func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr {
@@ -306,40 +367,49 @@ func showNativeSettings(app *appState) error {
 			useFont = p.titleFont
 		}
 		control := uxCreateControl(h, cls, t, style, int32(sc(x)), int32(sc(y)), int32(sc(w)), int32(sc(hh)), id, useFont)
-		if cls == "STATIC" && y >= 99 && y < 504 {
+		if control == 0 {
+			return 0
+		}
+		if cls == "STATIC" && y >= 99 && y < 553 {
 			p.cardStatics[control] = true
 		}
+		p.controls = append(p.controls, uxControl{
+			hwnd: control, x: x, y: y, w: w, h: hh,
+			stretch: (x == 130 || (cls == "STATIC" && w >= 380)),
+			right:   (x >= 527),
+		})
 		return control
 	}
 	stat := uintptr(uxWSChild | uxWSVisible)
 	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxWSBorder | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop)
-	makeOne("STATIC", "VoiceRewrite", stat, 28, 19, 360, 32, 0, true)
-	makeOne("STATIC", "纯客户端  ·  Mouse4 听写  /  Mouse5 改写与解释", stat, 30, 57, 595, 24, 0, false)
-	// Both required connections are visible at once. No tabs or server lifecycle controls.
-	makeOne("STATIC", "01    语音识别 API   ·   两种功能共用", stat, 34, 109, 400, 24, 0, true)
-	makeOne("STATIC", "服务地址", stat, 34, 141, 100, 20, 0, false)
-	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 130, 137, 385, 29, 0, false)
-	makeOne("BUTTON", "检测", btn, 527, 137, 96, 29, uxProbeASRButton, false)
-	makeOne("STATIC", "模型 ID", stat, 34, 185, 100, 20, 0, false)
-	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 130, 180, 493, 29, 0, false)
-	makeOne("STATIC", "API Key（可选）", stat, 34, 228, 100, 20, 0, false)
-	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 130, 222, 493, 29, 0, false)
-	makeOne("STATIC", "用于音频转写的 OpenAI 兼容接口", stat, 132, 265, 435, 19, 0, false)
+	makeOne("STATIC", "VoiceRewrite", stat, 28, 18, 400, 34, 0, true)
+	makeOne("STATIC", "全局语音操作  ·  Mouse4 听写  ·  Mouse5 改写与问答", stat, 30, 59, 610, 23, 0, false)
+	makeOne("STATIC", "01   语音识别 ASR", stat, 34, 115, 410, 28, 0, true)
+	makeOne("STATIC", "API 地址", stat, 34, 163, 100, 20, 0, false)
+	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 130, 157, 385, 30, 0, false)
+	makeOne("BUTTON", "检测", btn, 527, 157, 96, 30, uxProbeASRButton, false)
+	makeOne("STATIC", "模型 ID", stat, 34, 208, 100, 20, 0, false)
+	p.inputs[1] = makeOne("EDIT", app.cfg.ASRModel, edit, 130, 202, 493, 30, 0, false)
+	makeOne("STATIC", "API Key", stat, 34, 252, 100, 20, 0, false)
+	p.inputs[2] = makeOne("EDIT", app.cfg.ASRAPIKey, edit|uxESPassword, 130, 246, 493, 30, 0, false)
+	p.probeStatus[0] = makeOne("STATIC", "● 尚未检测 · 可在设置后试录音验证", stat, 34, 287, 594, 24, 0, false)
 
-	makeOne("STATIC", "02    文本处理 API   ·   仅 Mouse5", stat, 34, 317, 400, 24, 0, true)
-	makeOne("STATIC", "服务地址", stat, 34, 350, 100, 20, 0, false)
-	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 130, 345, 385, 29, 0, false)
-	makeOne("BUTTON", "检测", btn, 527, 345, 96, 29, uxProbeLLMButton, false)
-	makeOne("STATIC", "模型 ID", stat, 34, 393, 100, 20, 0, false)
-	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 130, 388, 493, 29, 0, false)
-	makeOne("STATIC", "API Key（可选）", stat, 34, 436, 100, 20, 0, false)
-	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 130, 430, 493, 29, 0, false)
-	makeOne("STATIC", "用于改写 / 翻译 / 问答的 Chat Completions 接口", stat, 132, 472, 495, 19, 0, false)
-	makeOne("BUTTON", "保存并应用", btn, 29, 519, 133, 32, uxSaveButton, false)
-	makeOne("BUTTON", "高级 JSON", btn, 178, 519, 119, 32, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 550, 519, 93, 32, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "连接检测只检查服务可达性；真正转写请按 Mouse4 试用", stat, 30, 557, 615, 21, 0, false)
+	makeOne("STATIC", "02   AI 文本处理 LLM", stat, 34, 351, 410, 28, 0, true)
+	makeOne("STATIC", "API 地址", stat, 34, 398, 100, 20, 0, false)
+	p.inputs[3] = makeOne("EDIT", app.cfg.LLMBaseURL, edit, 130, 392, 385, 30, 0, false)
+	makeOne("BUTTON", "检测", btn, 527, 392, 96, 30, uxProbeLLMButton, false)
+	makeOne("STATIC", "模型 ID", stat, 34, 442, 100, 20, 0, false)
+	p.inputs[4] = makeOne("EDIT", app.cfg.TextModel, edit, 130, 436, 493, 30, 0, false)
+	makeOne("STATIC", "API Key", stat, 34, 484, 100, 20, 0, false)
+	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 130, 478, 493, 30, 0, false)
+	p.probeStatus[1] = makeOne("STATIC", "● 尚未检测 · 用于改写 / 翻译 / 问答", stat, 34, 522, 594, 24, 0, false)
+
+	makeOne("BUTTON", "保存并应用", btn, 29, 572, 141, 34, uxSaveButton, false)
+	makeOne("BUTTON", "高级设置", btn, 186, 572, 119, 34, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 550, 572, 93, 34, uxCloseButton, false)
+	p.hint = makeOne("STATIC", "检测仅说明 API 可达；实际听写请使用 Mouse4。API Key 在磁盘上加密保存。", stat, 30, 622, 610, 22, 0, false)
+	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)
 	procDwmSetWindowAttribute.Call(h, DWMWA_WINDOW_CORNER_PREFERENCE, uintptr(unsafe.Pointer(&rounding)), 4)

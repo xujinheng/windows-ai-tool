@@ -99,6 +99,9 @@ func loadConfig() (Config, error) {
 	if err = json.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("配置文件 JSON 错误: %w", err)
 	}
+	if cfg, err = decryptConfigSecrets(cfg); err != nil {
+		return cfg, fmt.Errorf("无法解锁 API 凭据（当前 Windows 用户）: %w", err)
+	}
 	if cfg.ASRModel == "" {
 		cfg.ASRModel = "whisper-1"
 	}
@@ -438,12 +441,8 @@ func routeTask(result AssistantResult, instruction string, safelyEditable, brows
 	if questionCuePattern.MatchString(instruction) {
 		return "popup"
 	}
-	if result.Intent == "edit" || result.Intent == "translate" {
-		if safelyEditable {
-			return "replace"
-		}
-		return "try_replace"
-	}
+	// A model classification is useful for rendering a preview, but it cannot
+	// independently authorize a destructive cross-application paste.
 	return "popup"
 }
 

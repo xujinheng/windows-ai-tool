@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-14-client-only-v19"
+const buildID = "2026-11-14-experience-v20"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -159,15 +159,17 @@ type selectedText struct {
 	Anchor               trayPoint
 }
 type appState struct {
-	Window uintptr
-	logger *log.Logger
-	cfg    Config
-	busy   atomic.Bool
-	epoch  taskEpoch
-	status atomic.Int32
-	trayMu sync.Mutex
-	tray   *trayIndicator
-	popups chan popupMessage
+	Window      uintptr
+	logger      *log.Logger
+	cfg         Config
+	busy        atomic.Bool
+	epoch       taskEpoch
+	status      atomic.Int32
+	trayMu      sync.Mutex
+	tray        *trayIndicator
+	popups      chan popupMessage
+	lastErrorMu sync.Mutex
+	lastError   string
 }
 
 // Shell notification APIs and icon lifetime are owned by the Windows UI thread.
@@ -219,7 +221,10 @@ func (a *appState) fail(e error) {
 		return
 	}
 	a.logger.Printf("ERROR: %v", e)
-	a.setStatus(trayError) // non-modal: tooltip + log via tray menu
+	a.lastErrorMu.Lock()
+	a.lastError = friendlyError(e)
+	a.lastErrorMu.Unlock()
+	a.setStatus(trayError) // nonmodal; available via tray's last-error command
 }
 
 var hotkeyPattern = regexp.MustCompile(`(?i)^Ctrl\+Alt\+(Shift\+)?F([1-9]|1[0-9]|2[0-4])$`)
@@ -599,6 +604,16 @@ func runApp() {
 		if msg.Message == WM_TRAY_CLOSE_POPUP {
 			closeActiveAnswer()
 			l.Print("popup closed through tray menu")
+			continue
+		}
+		if msg.Message == WM_TRAY_LAST_ERROR {
+			app.lastErrorMu.Lock()
+			latest := app.lastError
+			app.lastErrorMu.Unlock()
+			if latest == "" {
+				latest = "目前没有记录到错误。"
+			}
+			winErr(latest)
 			continue
 		}
 		if msg.Message == WM_TRAY_LOG {

@@ -1,8 +1,8 @@
-# VoiceRewrite v19 (client-only)
+# VoiceRewrite v20 — Experience Foundation
 
 Windows 11 x64 native Go desktop voice dictation and AI rewrite tool.
 
-This source snapshot was restored from the v19 user-provided Windows release archive.
+The v20 desktop UX refactor builds on the restored v19 client-only core. See [v20 engineering notes](voice-rewrite/EXPERIENCE-V20.md) for implementation details and current limitations.
 
 Read [the detailed README](voice-rewrite/README.md) for usage, API configuration, privacy and limitations.
 
@@ -12,7 +12,7 @@ The original [Qwen3-ASR OneClick](oneclick/README.md) source (previously deleted
 
 OneClick is a small launcher + proxy, **not** an all-in-one model/runtime installer. Supply a compatible `llama-server.exe`, CUDA DLLs and matching Qwen3-ASR model/MMProj GGUF locally. Do not upload model weights, credentials, or user-specific config.
 
-**Port compatibility:** Original OneClick defaults to proxy `127.0.0.1:8081`, backend `127.0.0.1:8080`. VoiceRewrite v19 expects ASR at `127.0.0.1:8080/v1`. To keep VoiceRewrite unchanged, copy [config.voicerewrite-v19.example.json](oneclick/config.voicerewrite-v19.example.json) next to the OneClick executable as `config.json` and edit GGUF and llama-server paths. That preset uses a proxy at 8080 and backend at 8082. Alternatively keep original OneClick ports and configure VoiceRewrite's ASR URL as `http://127.0.0.1:8081/v1`.
+**Port compatibility:** Original OneClick defaults to proxy `127.0.0.1:8081`, backend `127.0.0.1:8080`. VoiceRewrite v20 expects ASR at `127.0.0.1:8080/v1`. To keep VoiceRewrite unchanged, copy [config.voicerewrite-v19.example.json](oneclick/config.voicerewrite-v19.example.json) next to the OneClick executable as `config.json` and edit GGUF and llama-server paths. That preset uses a proxy at 8080 and backend at 8082. Alternatively keep original OneClick ports and configure VoiceRewrite's ASR URL as `http://127.0.0.1:8081/v1`.
 
 Qwen3.5 text generation may continue using LM Studio or a separate compatible llama-server on port 1234; the optional [two-server script](scripts/local-models/README.md) is not required for OneClick.
 
