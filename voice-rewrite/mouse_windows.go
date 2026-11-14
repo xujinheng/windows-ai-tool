@@ -24,8 +24,8 @@ const (
 	WM_XBUTTONDBLCLK = 0x020D
 	WM_SIDE_DOWN     = 0x8000 + 52
 	WM_SIDE_UP       = 0x8000 + 53
-	WM_SIDE_ARM      = 0x8000 + 54
-	WM_SIDE_CANCEL   = 0x8000 + 55
+	WM_SIDE_ARM      = 0x8000 + 72
+	WM_SIDE_CANCEL   = 0x8000 + 73
 	WM_QUIT          = 0x0012
 )
 
