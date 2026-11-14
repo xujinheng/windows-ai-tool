@@ -188,7 +188,7 @@ func (p *uxSettings) layout() {
 		if ctrl.hwnd == p.hint {
 			x = 33
 			if w > viewW-45 {
-				w = viewW-45
+				w = viewW - 45
 			}
 		}
 		procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y-p.scrollY), sc(w), sc(h), 1)
