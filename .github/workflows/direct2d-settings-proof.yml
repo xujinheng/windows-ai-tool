@@ -1,0 +1,131 @@
+name: Direct2D + DirectWrite native settings experiment
+on:
+  push:
+    paths:
+      - 'experiments/direct2d-settings/**'
+      - '.github/workflows/direct2d-settings-proof.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  actual-windows-renderer:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - name: Check source and build real Win64 UI
+        working-directory: experiments/direct2d-settings
+        shell: pwsh
+        run: |
+          if ((gofmt -l main_windows.go) -ne $null) {
+            $unformatted = @(gofmt -l main_windows.go)
+            if($unformatted.Count -gt 0) { throw "gofmt required: $($unformatted -join ', ')" }
+          }
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags '-H=windowsgui' -o Direct2D-Settings.exe .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Exercise real UI, capture screenshots and measure process memory
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.Drawing
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type @'
+          using System;
+          using System.Runtime.InteropServices;
+          public class NativePreview {
+            [StructLayout(LayoutKind.Sequential)]
+            public struct RECT { public int Left,Top,Right,Bottom; }
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)]
+            public static extern IntPtr FindWindow(string cls,string title);
+            [DllImport("user32.dll")]
+            public static extern bool GetWindowRect(IntPtr hwnd,out RECT rect);
+            [DllImport("user32.dll")]
+            public static extern bool SetWindowPos(IntPtr hwnd,IntPtr after,int x,int y,int w,int h,uint flags);
+            [DllImport("user32.dll")]
+            public static extern IntPtr SendMessage(IntPtr hwnd,uint msg,IntPtr wparam,IntPtr lparam);
+            [DllImport("user32.dll")]
+            public static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
+            [DllImport("user32.dll")]
+            public static extern bool IsWindowVisible(IntPtr hwnd);
+          }
+          '@
+          $exe=Join-Path (Get-Location) 'experiments/direct2d-settings/Direct2D-Settings.exe'
+          New-Item -ItemType Directory -Force -Path 'd2d-evidence' | Out-Null
+          $cases=@(
+            @{id='dark-asr';theme='dark';tab=0},
+            @{id='dark-ai';theme='dark';tab=1},
+            @{id='dark-shortcuts';theme='dark';tab=2},
+            @{id='light-asr';theme='light';tab=0}
+          )
+          $samples=@()
+          foreach($case in $cases) {
+            $env:VOICEREWRITE_D2D_THEME=$case.theme
+            $env:VOICEREWRITE_D2D_SCALE='1'
+            $proc=Start-Process -FilePath $exe -PassThru
+            try {
+              $hwnd=[IntPtr]::Zero
+              for($i=0;$i -lt 45;$i++) {
+                Start-Sleep -Milliseconds 250
+                $hwnd=[NativePreview]::FindWindow('VoiceRewrite.Direct2D.Settings.v1','VoiceRewrite · Direct2D 原生设置预览')
+                if($hwnd -ne [IntPtr]::Zero) { break }
+                $proc.Refresh()
+                if($proc.HasExited) {throw "$($case.id): renderer failed to start, exit code $($proc.ExitCode)"}
+              }
+              if($hwnd -eq [IntPtr]::Zero) {throw "$($case.id): no native HWND"}
+              # Move to visible desktop instead of relying on runner resolution.
+              [void][NativePreview]::SetWindowPos($hwnd,[IntPtr]::Zero,40,35,0,0,0x0001 -bor 0x0004)
+              if($case.tab -gt 0) {
+                $x=48; $y=143+48*$case.tab+16
+                $lp=[IntPtr](($y -shl 16) -bor $x)
+                [void][NativePreview]::SendMessage($hwnd,0x0201,[IntPtr]::Zero,$lp)
+              }
+              Start-Sleep -Milliseconds 1100
+              $window=New-Object NativePreview+RECT
+              if(-not [NativePreview]::GetWindowRect($hwnd,[ref]$window)) {throw "GetWindowRect failed"}
+              $w=$window.Right-$window.Left; $h=$window.Bottom-$window.Top
+              if($w -lt 500 -or $h -lt 400) {throw "Unexpected native window size $w x $h"}
+              $bounds=[System.Windows.Forms.SystemInformation]::VirtualScreen
+              if($window.Left -lt $bounds.Left -or $window.Top -lt $bounds.Top -or $window.Right -gt $bounds.Right -or $window.Bottom -gt $bounds.Bottom) {throw "$($case.id): window clipped on runner display $bounds"}
+              $first=[NativePreview]::FindWindowEx($hwnd,[IntPtr]::Zero,'Edit',$null)
+              if($first -eq [IntPtr]::Zero) {throw "$($case.id): missing real Win32 EDIT"}
+              if($case.tab -ne 2 -and -not [NativePreview]::IsWindowVisible($first)) {throw "$($case.id): native EDIT not visible"}
+              $bmp=[System.Drawing.Bitmap]::new($w,$h)
+              $g=[System.Drawing.Graphics]::FromImage($bmp)
+              try {
+                $g.CopyFromScreen($window.Left,$window.Top,0,0,[System.Drawing.Size]::new($w,$h))
+                $out=Join-Path (Get-Location) "d2d-evidence/$($case.id).png"
+                $bmp.Save($out,[System.Drawing.Imaging.ImageFormat]::Png)
+                if((Get-Item $out).Length -lt 4500) {throw "$($case.id): screenshot unexpectedly empty"}
+                $unique=New-Object 'System.Collections.Generic.HashSet[int]'
+                for($xx=24;$xx -lt $w;$xx+=12) {for($yy=42;$yy -lt $h;$yy+=12) {[void]$unique.Add($bmp.GetPixel($xx,$yy).ToArgb())}}
+                if($unique.Count -lt 12) {throw "$($case.id): too few pixel colors: D2D drawing likely absent"}
+              } finally {$g.Dispose();$bmp.Dispose()}
+              $proc.Refresh()
+              $samples+=[pscustomobject]@{
+                case=$case.id; theme=$case.theme; tab=$case.tab;
+                workingSetMB=[math]::Round($proc.WorkingSet64/1MB,2);
+                privateMemoryMB=[math]::Round($proc.PrivateMemorySize64/1MB,2);
+                note='Standalone proof process, NOT incremental usage over existing 40.4 MB VoiceRewrite'
+              }
+              Write-Host "CAPTURED $($case.id) — working set $([math]::Round($proc.WorkingSet64/1MB,1)) MB"
+            } finally {
+              $proc.Refresh()
+              if(-not $proc.HasExited) {Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue}
+              Start-Sleep -Milliseconds 100
+            }
+          }
+          $samples | ConvertTo-Json -Depth 4 | Set-Content -Encoding UTF8 'd2d-evidence/memory.json'
+          $hashes=@('dark-asr','dark-ai','dark-shortcuts','light-asr') | ForEach-Object {(Get-FileHash "d2d-evidence/$_.png").Hash}
+          if(($hashes | Select-Object -Unique).Count -ne 4) {throw "Theme/tabs did not produce four different screenshots"}
+      - name: Upload real Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Direct2D-DirectWrite-native-settings-evidence
+          path: d2d-evidence/
+          if-no-files-found: warn
