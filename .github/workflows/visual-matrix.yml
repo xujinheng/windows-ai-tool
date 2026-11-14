@@ -155,9 +155,21 @@ jobs:
                 }
               }
               if($case.kind -eq 'settings' -and $case.focus -eq '1') {
-                $first=[MatrixWin]::FindWindowEx($hwnd,[IntPtr]::Zero,'Edit',$null)
-                $second=[MatrixWin]::FindWindowEx($hwnd,$first,'Edit',$null)
-                if($first -eq [IntPtr]::Zero -or $second -eq [IntPtr]::Zero){throw "missing native model ID editor"}
+                # Win32 FindWindowEx enumerates Z-order, NOT form order.
+                # Select the second *visible* editor sorted by its real Y,
+                # otherwise a hidden AI field or the API Key gets highlighted.
+                $editors=@()
+                $cursor=[IntPtr]::Zero
+                for($z=0;$z -lt 20;$z++){
+                  $cursor=[MatrixWin]::FindWindowEx($hwnd,$cursor,'Edit',$null)
+                  if($cursor -eq [IntPtr]::Zero){break}
+                  if(-not [MatrixWin]::IsWindowVisible($cursor)){continue}
+                  $er=New-Object MatrixWin+RECT
+                  if(-not [MatrixWin]::GetWindowRect($cursor,[ref]$er)){continue}
+                  $editors+= [pscustomobject]@{handle=$cursor;top=$er.Top}
+                }
+                if($editors.Count -lt 3){throw "missing three visible native input controls"}
+                $second=($editors | Sort-Object top)[1].handle
                 $editRect=New-Object MatrixWin+RECT
                 if(-not [MatrixWin]::GetWindowRect($second,[ref]$editRect)){throw "model edit rect unavailable"}
                 [MatrixWin]::SetCursorPos($editRect.Left+25,[int](($editRect.Top+$editRect.Bottom)/2)) | Out-Null
