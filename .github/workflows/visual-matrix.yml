@@ -49,6 +49,8 @@ jobs:
             [DllImport("user32.dll")]
             public static extern IntPtr SendMessage(IntPtr hwnd,uint msg,IntPtr wp,IntPtr lp);
             [DllImport("user32.dll")]
+            public static extern IntPtr GetDlgItem(IntPtr hwnd,int id);
+            [DllImport("user32.dll")]
             public static extern bool IsWindowVisible(IntPtr hwnd);
           }
           '@
@@ -107,6 +109,17 @@ jobs:
                   [void][MatrixWin]::SendMessage($hwnd,0x115,[IntPtr]7,[IntPtr]::Zero)
                   [void][MatrixWin]::SendMessage($hwnd,0x114,[IntPtr]7,[IntPtr]::Zero)
                   Start-Sleep -Milliseconds 300
+                  # An image alone is not a pass: the primary footer actions
+                  # must remain fully visible even after BOTH axes scroll.
+                  foreach($id in @(9101,9103,9102)) {
+                    $ctrl=[MatrixWin]::GetDlgItem($hwnd,$id)
+                    if($ctrl -eq [IntPtr]::Zero) {throw "Missing footer control $id"}
+                    $cr=New-Object MatrixWin+RECT
+                    if(-not [MatrixWin]::GetWindowRect($ctrl,[ref]$cr)) {throw "Footer control $id has no geometry"}
+                    if($cr.Left -lt $rect.Left -or $cr.Right -gt $rect.Right -or $cr.Top -lt $rect.Top -or $cr.Bottom -gt $rect.Bottom) {
+                      throw "$($case.id): footer control $id clipped after scroll: x=$($cr.Left)..$($cr.Right), y=$($cr.Top)..$($cr.Bottom)"
+                    }
+                  }
                 }
                 $bitmap=[System.Drawing.Bitmap]::new($w,$h)
                 $g=[System.Drawing.Graphics]::FromImage($bitmap)

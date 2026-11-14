@@ -104,6 +104,7 @@ type uxControl struct {
 	x, y, w, h int32
 	stretch    bool
 	right      bool
+	id         uintptr
 }
 
 func uxLayoutRect(c uxControl, clientWidth int32) (x, y, w, h int32) {
@@ -170,7 +171,27 @@ func (p *uxSettings) layout() {
 	sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
 	for _, ctrl := range p.controls {
 		x, y, w, h := uxLayoutRect(ctrl, contentW)
-		procMoveWindow.Call(ctrl.hwnd, sc(x-p.scrollX), sc(y-p.scrollY), sc(w), sc(h), 1)
+		x -= p.scrollX
+		// Keep the primary footer actions horizontally accessible even when
+		// the form itself needs horizontal scrolling at high DPI.
+		switch ctrl.id {
+		case uxSaveButton:
+			x = 29
+		case uxAdvancedButton:
+			x = 212
+		case uxCloseButton:
+			x = viewW - w - 20
+			if x < 350 {
+				x = 350
+			}
+		}
+		if ctrl.hwnd == p.hint {
+			x = 33
+			if w > viewW-45 {
+				w = viewW-45
+			}
+		}
+		procMoveWindow.Call(ctrl.hwnd, sc(x), sc(y-p.scrollY), sc(w), sc(h), 1)
 	}
 	procInvalidateRectSettings.Call(p.window, 0, 1)
 }
@@ -650,6 +671,7 @@ func showNativeSettings(app *appState) error {
 			hwnd: control, x: x, y: y, w: w, h: hh,
 			stretch: (x == 130 || (cls == "STATIC" && w >= 380)),
 			right:   (x >= 527),
+			id:      id,
 		})
 		return control
 	}
