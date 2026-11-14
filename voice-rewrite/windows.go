@@ -54,7 +54,6 @@ var (
 	procGlobalSize                 = kernel32.NewProc("GlobalSize")
 	procCreateMutex                = kernel32.NewProc("CreateMutexW")
 	procCloseHandle                = kernel32.NewProc("CloseHandle")
-	procBeep                       = kernel32.NewProc("Beep")
 	procWaveInOpen                 = winmm.NewProc("waveInOpen")
 	procWaveInGetNumDevs           = winmm.NewProc("waveInGetNumDevs")
 	procWaveInGetDevCaps           = winmm.NewProc("waveInGetDevCapsW")
@@ -233,7 +232,6 @@ func winErr(msg string) {
 	runtime.KeepAlive(content)
 	runtime.KeepAlive(title)
 }
-func beep(freq, dur uintptr) { procBeep.Call(freq, dur) }
 
 func (a *appState) fail(e error) {
 	if e == nil {
@@ -533,13 +531,13 @@ func runApp() {
 		if button == 0 || !promotePendingHandyStatus(rec, statusMode, holdGeneration) {
 			showHandyStatus(rec, statusMode, statusRecording, holdGeneration)
 		}
-		beep(900, 60)
+		// The native status bar is the start feedback. A synchronous Beep
+		// blocks this Win32 message loop and makes the shortcut feel sluggish.
 		l.Printf("recording active, flow=%s button=%d", map[bool]string{true: "dictation", false: "rewrite"}[dictation], button)
 	}
 
 	startHold := func(dictation bool, button uint16) {
 		if app.paused.Load() || app.busy.Load() || active != nil || pendingSide != nil {
-			beep(320, 90)
 			return
 		}
 		if uxActiveSettings != nil && isSameForegroundWindow(uxActiveSettings.window) {
@@ -917,7 +915,6 @@ func runApp() {
 				continue
 			}
 			if app.busy.Load() {
-				beep(320, 90)
 				continue
 			}
 			if active != nil {
