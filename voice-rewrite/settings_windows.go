@@ -16,64 +16,64 @@ import (
 // A small, native settings surface; it does not host a browser or intercept
 // the editor focus until deliberately opened from the tray menu.
 const (
-	uxWMCommand       = 0x0111
-	uxWMSize          = 0x0005
-	uxWMVScroll       = 0x0115
-	uxWMHScroll       = 0x0114
-	uxWMMouseWheel    = 0x020A
-	uxSIFRange        = 1
-	uxSIFPage         = 2
-	uxSIFPos          = 4
-	uxSIFTrackPos     = 16
-	uxSBHorz          = 0
-	uxSBVert          = 1
-	uxWMGetMinMaxInfo = 0x0024
-	uxWSThickFrame    = 0x00040000
-	uxWMSettingChange = 0x001A
-	uxWMThemeChanged  = 0x031A
-	uxWMClose         = 0x0010
-	uxWMEraseBkgnd    = 0x0014
-	uxWMPaint         = 0x000F
-	uxWMNCDestroy     = 0x0082
-	uxWMColorStatic   = 0x0138
-	uxWMColorEdit     = 0x0133
-	uxWMDrawItem      = 0x002B
-	uxBSOwnerDraw     = 0x000B
-	uxEMSetMargins    = 0x00D3
-	uxWMProbeDone     = 0x8000 + 104
-	uxSaveButton      = 9101
-	uxCloseButton     = 9102
-	uxAdvancedButton  = 9103
-	uxProbeASRButton  = 9104
-	uxProbeLLMButton  = 9105
-	uxShortcutInput   = 9106
-	uxRewriteInput    = 9108
-	uxCaptureRewrite  = 9140
-	uxCaptureDictation = 9141
+	uxWMCommand               = 0x0111
+	uxWMSize                  = 0x0005
+	uxWMVScroll               = 0x0115
+	uxWMHScroll               = 0x0114
+	uxWMMouseWheel            = 0x020A
+	uxSIFRange                = 1
+	uxSIFPage                 = 2
+	uxSIFPos                  = 4
+	uxSIFTrackPos             = 16
+	uxSBHorz                  = 0
+	uxSBVert                  = 1
+	uxWMGetMinMaxInfo         = 0x0024
+	uxWSThickFrame            = 0x00040000
+	uxWMSettingChange         = 0x001A
+	uxWMThemeChanged          = 0x031A
+	uxWMClose                 = 0x0010
+	uxWMEraseBkgnd            = 0x0014
+	uxWMPaint                 = 0x000F
+	uxWMNCDestroy             = 0x0082
+	uxWMColorStatic           = 0x0138
+	uxWMColorEdit             = 0x0133
+	uxWMDrawItem              = 0x002B
+	uxBSOwnerDraw             = 0x000B
+	uxEMSetMargins            = 0x00D3
+	uxWMProbeDone             = 0x8000 + 104
+	uxSaveButton              = 9101
+	uxCloseButton             = 9102
+	uxAdvancedButton          = 9103
+	uxProbeASRButton          = 9104
+	uxProbeLLMButton          = 9105
+	uxShortcutInput           = 9106
+	uxRewriteInput            = 9108
+	uxCaptureRewrite          = 9140
+	uxCaptureDictation        = 9141
 	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
-	uxMicrophoneInput = 9107
-	uxNavSpeech       = 9120
-	uxNavAI           = 9121
-	uxNavInput        = 9122
-	uxASRURLInput     = 9130
-	uxASRModelInput   = 9131
-	uxASRKeyInput     = 9132
-	uxLLMURLInput     = 9133
-	uxLLMModelInput   = 9134
-	uxLLMKeyInput     = 9135
-	uxCBAddString     = 0x0143
-	uxCBSetCurSel     = 0x014E
-	uxCBGetCurSel     = 0x0147
-	uxCBSDropDownList = 0x0003
-	uxWSChild         = 0x40000000
-	uxWSVisible       = 0x10000000
-	uxWSTabStop       = 0x00010000
-	uxESAutoScroll    = 0x0080
-	uxESPassword      = 0x0020
-	uxWSBorder        = 0x00800000
-	uxWSCaption       = 0x00C00000
-	uxWSSysMenu       = 0x00080000
-	uxWSMinimizeBox   = 0x00020000
+	uxMicrophoneInput         = 9107
+	uxNavSpeech               = 9120
+	uxNavAI                   = 9121
+	uxNavInput                = 9122
+	uxASRURLInput             = 9130
+	uxASRModelInput           = 9131
+	uxASRKeyInput             = 9132
+	uxLLMURLInput             = 9133
+	uxLLMModelInput           = 9134
+	uxLLMKeyInput             = 9135
+	uxCBAddString             = 0x0143
+	uxCBSetCurSel             = 0x014E
+	uxCBGetCurSel             = 0x0147
+	uxCBSDropDownList         = 0x0003
+	uxWSChild                 = 0x40000000
+	uxWSVisible               = 0x10000000
+	uxWSTabStop               = 0x00010000
+	uxESAutoScroll            = 0x0080
+	uxESPassword              = 0x0020
+	uxWSBorder                = 0x00800000
+	uxWSCaption               = 0x00C00000
+	uxWSSysMenu               = 0x00080000
+	uxWSMinimizeBox           = 0x00020000
 )
 
 var (
@@ -238,7 +238,9 @@ func (p *uxSettings) switchPage(next int) {
 	if p == nil || next < 0 || next >= len(p.pages) {
 		return
 	}
-	if next != p.page { p.stopShortcutCapture() }
+	if next != p.page {
+		p.stopShortcutCapture()
+	}
 	p.page = next
 	p.focusRow = -1
 	for page, windows := range p.pages {
@@ -589,7 +591,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				label = "测试连接"
 			case uxCaptureRewrite, uxCaptureDictation:
 				label = "录入按键"
-				if p.capturingShortcut == uintptr(item.CtlID) { label = "等待按键…" }
+				if p.capturingShortcut == uintptr(item.CtlID) {
+					label = "等待按键…"
+				}
 			}
 			if label != "" && uiDrawActionButton(item, p.palette, p.font, label, primary) {
 				return 1
@@ -640,8 +644,12 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 							p.focusRow = idx % 3
 						}
 					}
-					if p.rewriteShortcut == lParam { p.focusRow = 0 }
-                    if p.shortcut == lParam { p.focusRow = 1 }
+					if p.rewriteShortcut == lParam {
+						p.focusRow = 0
+					}
+					if p.shortcut == lParam {
+						p.focusRow = 1
+					}
 				}
 				refreshNativeWindow(hwnd)
 			}
@@ -914,18 +922,18 @@ func showNativeSettings(app *appState) error {
 		p.pages[1] = append(p.pages[1], c.hwnd)
 	}
 	start = len(p.controls)
-    // Shortcut displays are read-only; the recorder button captures physical events.
-    short0 := settingsShortcutEdit()
-    short1 := short0
-    short1.Y += settingsFieldRowStep
-    makeOne("STATIC", "语音指令", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
-    p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, short0.X, short0.Y, short0.W, short0.H, uxRewriteInput, false)
-    p.captureButtons[0] = makeOne("BUTTON", "录入按键", btn, 593, 169, 194, 34, uxCaptureRewrite, false)
-    makeOne("STATIC", "听写快捷键", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
-    p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, short1.X, short1.Y, short1.W, short1.H, uxShortcutInput, false)
-    p.captureButtons[1] = makeOne("BUTTON", "录入按键", btn, 593, 223, 194, 34, uxCaptureDictation, false)
-    makeOne("STATIC", "麦克风", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
-    p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 281, 437, 190, uxMicrophoneInput, false)
+	// Shortcut displays are read-only; the recorder button captures physical events.
+	short0 := settingsShortcutEdit()
+	short1 := short0
+	short1.Y += settingsFieldRowStep
+	makeOne("STATIC", "语音指令", stat, firstLabel.X, firstLabel.Y, firstLabel.W, firstLabel.H, 0, false)
+	p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, short0.X, short0.Y, short0.W, short0.H, uxRewriteInput, false)
+	p.captureButtons[0] = makeOne("BUTTON", "录入按键", btn, 593, 169, 194, 34, uxCaptureRewrite, false)
+	makeOne("STATIC", "听写快捷键", stat, secondLabel.X, secondLabel.Y, secondLabel.W, secondLabel.H, 0, false)
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, short1.X, short1.Y, short1.W, short1.H, uxShortcutInput, false)
+	p.captureButtons[1] = makeOne("BUTTON", "录入按键", btn, 593, 223, 194, 34, uxCaptureDictation, false)
+	makeOne("STATIC", "麦克风", stat, thirdLabel.X, thirdLabel.Y, thirdLabel.W, thirdLabel.H, 0, false)
+	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 281, 437, 190, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
 	resultStyleNativeEdit(p.microphone, p.palette.dark)
 	info := makeOne("STATIC", "语音指令用于改写/解释/问答；更换按键或设备后需重启软件。", stat, 226, 345, 565, 44, 0, false)
