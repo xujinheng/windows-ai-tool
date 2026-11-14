@@ -448,7 +448,7 @@ func uxSettingsKeyMessage(msg winMSG) bool {
 			return false
 		}
 	}
-	procDestroyWindow.Call(p.window)
+	procSendMessage.Call(p.window,uxWMClose,0,0)
 	return true
 }
 
@@ -539,6 +539,15 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 	case uxWMClose:
+		if p != nil && p.window==hwnd && p.dirty {
+			question:=uxPtr("当前有未保存的设置。确定放弃这些更改吗？")
+			title:=uxPtr("VoiceRewrite · 放弃更改")
+			// Yes/No with No as the safe default; do not silently discard credentials.
+			choice,_,_:=user32.NewProc("MessageBoxW").Call(hwnd,
+				uintptr(unsafe.Pointer(question)),uintptr(unsafe.Pointer(title)),
+				0x00000004|0x00000030|0x00000100)
+			if choice!=6 {return 0} // IDYES
+		}
 		procDestroyWindow.Call(hwnd)
 		return 0
 	case uxWMNCDestroy:
@@ -777,7 +786,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				}
 				return 0
 			case uxCloseButton:
-				procDestroyWindow.Call(hwnd)
+				procSendMessage.Call(hwnd,uxWMClose,0,0)
 				return 0
 			case uxAdvancedButton:
 				if err := shellOpenLocalFile(configPath()); err != nil {
