@@ -29,6 +29,10 @@ const (
 	WM_DRAWITEM                    = 0x002B
 	VK_ESCAPE                      = 0x1b
 	WS_OVERLAPPED                  = 0
+	popupWSPopup                  = 0x80000000
+	popupWMNCHitTest              = 0x0084
+	popupHTCaption                = 2
+	popupHTClient                 = 1
 	WS_CAPTION                     = 0x00c00000
 	WS_SYSMENU                     = 0x00080000
 	WS_CHILD                       = 0x40000000
@@ -299,6 +303,22 @@ func (p *answerPopup) refreshTheme() {
 
 func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch uint32(msg) {
+	case popupWMNCHitTest:
+		if activeAnswer != nil && activeAnswer.window==hwnd {
+			// Return HTCAPTION only inside the safe drag strip, leaving the
+			// explicit top-right Close button and other native children clickable.
+			var bounds rect32
+			if ok,_,_:=user32.NewProc("GetWindowRect").Call(hwnd,uintptr(unsafe.Pointer(&bounds)));ok!=0 {
+				screenX:=int32(int16(uint16(lParam&0xffff)))
+				screenY:=int32(int16(uint16((lParam>>16)&0xffff)))
+				stripBottom:=bounds.Top+int32(64*activeAnswer.scale)
+				closeLeft:=bounds.Right-int32(74*activeAnswer.scale)
+				if screenY>=bounds.Top && screenY<stripBottom && screenX<closeLeft {
+					return popupHTCaption
+				}
+				return popupHTClient
+			}
+		}
 	case uxWMSettingChange, uxWMThemeChanged:
 		if activeAnswer != nil && activeAnswer.window == hwnd {
 			activeAnswer.refreshTheme()
@@ -425,7 +445,7 @@ func drawCardButton(item *drawItemStruct) bool {
 		label = "应用到原文"
 		primary = true
 	case BUTTON_CLOSE:
-		label = "关闭"
+		label = "×"
 	default:
 		return false
 	}
@@ -493,7 +513,7 @@ func showAnswerPopup(msg popupMessage) error {
 	x, y, width, height := desktopPopupPlacement(msg.anchor.X, msg.anchor.Y, width, height, work)
 	class, _ := syscall.UTF16PtrFromString("VoiceRewrite.ResultCard.v20")
 	instance, _, _ := procGetModuleHandle.Call(0)
-	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
+	wc := trayWindowClass{Size: uint32(unsafe.Sizeof(trayWindowClass{})), Style: 0x00020000, WndProc: answerWndProcCallback, Instance: instance, ClassName: class}
 	atom, _, regErr := procRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
 	runtime.KeepAlive(wc)
 	if atom == 0 && regErr != syscall.Errno(1410) {
@@ -501,7 +521,7 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	caption, _ := syscall.UTF16PtrFromString("VoiceRewrite")
 	hwnd, _, err := procCreateWindow.Call(WS_EX_TOPMOST|WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(caption)),
-		WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, instance, 0)
+		popupWSPopup|WS_SYSMENU, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, instance, 0)
 	runtime.KeepAlive(class)
 	runtime.KeepAlive(caption)
 	if hwnd == 0 {
@@ -522,6 +542,13 @@ func showAnswerPopup(msg popupMessage) error {
 		return err
 	}
 	popup.eyebrow = eyebrow
+	// A full native HWND button replaces the old Windows dialog title-bar X.
+	// It remains keyboard reachable and can be clicked independently of dragging.
+	if _,err=makeChild("BUTTON","关闭",WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW,
+		cw-px(58),px(24),px(30),px(30),hwnd,BUTTON_CLOSE);err!=nil {
+		closeActiveAnswer()
+		return err
+	}
 	title, err := makeChild("STATIC", msg.title, WS_CHILD|WS_VISIBLE, px(34), px(76), cw-px(68), px(34), hwnd, 0)
 	if err != nil {
 		closeActiveAnswer()
@@ -529,7 +556,7 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	summary := "安全预览  ·  原文未修改"
 	if msg.selection == nil {
-		summary = "原输入位置已变化  ·  完整结果保留在此，可复制"
+		summary = "未找到可写入的原编辑位置  ·  结果可安全复制"
 	} else if !msg.allowApply {
 		summary = "围绕选中文字生成  ·  原文未修改"
 	}
@@ -565,16 +592,12 @@ func showAnswerPopup(msg popupMessage) error {
 	}
 	popup.footerNote = footerNote
 	if msg.allowApply {
-		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(342), bottom, px(122), px(34), hwnd, BUTTON_APPLY); err != nil {
+		if _, err = makeChild("BUTTON", "应用到原文", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(272), bottom, px(124), px(34), hwnd, BUTTON_APPLY); err != nil {
 			closeActiveAnswer()
 			return err
 		}
 	}
-	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(209), bottom, px(102), px(34), hwnd, BUTTON_COPY); err != nil {
-		closeActiveAnswer()
-		return err
-	}
-	if _, err = makeChild("BUTTON", "关闭", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(96), bottom, px(74), px(34), hwnd, BUTTON_CLOSE); err != nil {
+	if _, err = makeChild("BUTTON", "复制结果", WS_CHILD|WS_VISIBLE|uxWSTabStop|BS_OWNERDRAW, cw-px(136), bottom, px(108), px(34), hwnd, BUTTON_COPY); err != nil {
 		closeActiveAnswer()
 		return err
 	}
