@@ -1,8 +1,8 @@
-# VoiceRewrite v20 — Experience Foundation
+# VoiceRewrite v21 — Everyday-use refinement
 
 Windows 11 x64 native Go desktop voice dictation and AI rewrite tool.
 
-The v20 desktop UX refactor builds on the restored v19 client-only core. See [v20 engineering notes](voice-rewrite/EXPERIENCE-V20.md) for implementation details and current limitations.
+VoiceRewrite v21 improves the v20 desktop UX: pause/resume native mouse interception and preserve full dictation text when focus changes or pasting fails. See [v21 engineering notes](voice-rewrite/EXPERIENCE-V21.md) for implementation details and current limitations.
 
 Read [the detailed README](voice-rewrite/README.md) for usage, API configuration, privacy and limitations.
 

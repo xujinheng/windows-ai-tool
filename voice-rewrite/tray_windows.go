@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"unsafe"
 )
@@ -21,6 +22,7 @@ const (
 	WM_TRAY_LOG          = 0x8000 + 55
 	WM_TRAY_CLOSE_POPUP  = 0x8000 + 62
 	WM_TRAY_LAST_ERROR   = 0x8000 + 63
+	WM_TRAY_TOGGLE_PAUSE = 0x8000 + 64
 	TRAY_RESET_TIMER_ID  = 3002
 	WM_RBUTTONUP         = 0x0205
 	WM_CONTEXTMENU       = 0x007B
@@ -55,6 +57,7 @@ const (
 	trayRewriting
 	traySuccess
 	trayError
+	trayPaused
 )
 
 type trayStateInfo struct {
@@ -74,6 +77,8 @@ func trayInfo(s trayState) trayStateInfo {
 		return trayStateInfo{"处理完成", 0x29a568}
 	case trayError:
 		return trayStateInfo{"操作失败 · 查看错误提示", 0xed8438}
+	case trayPaused:
+		return trayStateInfo{"已暂停 · 鼠标侧键恢复正常功能", 0x8b95a8}
 	default:
 		return trayStateInfo{"待机 · Mouse4 听写 / Mouse5 选区改写", 0x7c8794}
 	}
@@ -144,7 +149,8 @@ var (
 type trayIndicator struct {
 	hwnd           uintptr
 	menuOwner      uintptr
-	icons          [6]uintptr
+	icons          [7]uintptr
+	paused         *atomic.Bool
 	taskbarCreated uint32
 	created        bool
 }
@@ -199,8 +205,8 @@ func colorIcon(rgb uint32) (uintptr, error) {
 	return h, nil
 }
 
-func newTrayIndicator(hwnd uintptr) (*trayIndicator, error) {
-	t := &trayIndicator{hwnd: hwnd}
+func newTrayIndicator(hwnd uintptr, paused *atomic.Bool) (*trayIndicator, error) {
+	t := &trayIndicator{hwnd: hwnd, paused: paused}
 	class, _ := syscall.UTF16PtrFromString("STATIC")
 	title, _ := syscall.UTF16PtrFromString("VoiceRewriteMenuOwner")
 	owner, _, _ := procCreateWindow.Call(WS_EX_TOOLWINDOW, uintptr(unsafe.Pointer(class)), uintptr(unsafe.Pointer(title)), WS_POPUP, 0, 0, 1, 1, 0, 0, 0, 0)
@@ -237,7 +243,7 @@ func (t *trayIndicator) notify(status trayState, add bool) error {
 	if t == nil {
 		return nil
 	}
-	if status < trayIdle || status > trayError {
+	if status < trayIdle || status > trayPaused {
 		status = trayIdle
 	}
 	data := notifyIconData{Size: uint32(unsafe.Sizeof(notifyIconData{})), Hwnd: t.hwnd, ID: TRAY_ICON_ID, Flags: NIF_MESSAGE | NIF_ICON | NIF_TIP, CallbackMessage: WM_TRAY_NOTIFY, Icon: t.icons[status]}
@@ -284,17 +290,24 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 		return 0, errors.New("CreatePopupMenu failed")
 	}
 	defer procDestroyMenu.Call(m)
+	pauseText := "暂停语音操作（保留鼠标侧键原功能）"
+	if t.paused != nil && t.paused.Load() {
+		pauseText = "恢复语音操作"
+	}
+	pauseLabel, _ := syscall.UTF16PtrFromString(pauseText)
 	configLabel, _ := syscall.UTF16PtrFromString("设置与连接检测…")
 	logLabel, _ := syscall.UTF16PtrFromString("查看诊断日志")
 	errorLabel, _ := syscall.UTF16PtrFromString("最近一次错误与解决方法")
 	closeLabel, _ := syscall.UTF16PtrFromString("关闭 AI 结果窗口")
 	exitLabel, _ := syscall.UTF16PtrFromString("退出 VoiceRewrite")
+	procAppendMenu.Call(m, MF_STRING, 6, uintptr(unsafe.Pointer(pauseLabel)))
 	procAppendMenu.Call(m, MF_STRING, 2, uintptr(unsafe.Pointer(configLabel)))
 	procAppendMenu.Call(m, MF_STRING, 3, uintptr(unsafe.Pointer(logLabel)))
 	procAppendMenu.Call(m, MF_STRING, 5, uintptr(unsafe.Pointer(errorLabel)))
 	procAppendMenu.Call(m, MF_STRING, 4, uintptr(unsafe.Pointer(closeLabel)))
 	procAppendMenu.Call(m, MF_SEPARATOR, 0, 0)
 	procAppendMenu.Call(m, MF_STRING, 1, uintptr(unsafe.Pointer(exitLabel)))
+	runtime.KeepAlive(pauseLabel)
 	runtime.KeepAlive(configLabel)
 	runtime.KeepAlive(logLabel)
 	runtime.KeepAlive(errorLabel)
@@ -326,6 +339,8 @@ func (t *trayIndicator) contextMenu() (uintptr, error) {
 		procPostMessage.Call(t.hwnd, WM_TRAY_CLOSE_POPUP, 0, 0)
 	case 5:
 		procPostMessage.Call(t.hwnd, WM_TRAY_LAST_ERROR, 0, 0)
+	case 6:
+		procPostMessage.Call(t.hwnd, WM_TRAY_TOGGLE_PAUSE, 0, 0)
 	}
 	return selected, nil
 }

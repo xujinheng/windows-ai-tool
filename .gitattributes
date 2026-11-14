@@ -1,0 +1,5 @@
+# Keep Go formatting consistent on Windows runners, regardless of core.autocrlf
+*.go text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.ps1 text eol=crlf

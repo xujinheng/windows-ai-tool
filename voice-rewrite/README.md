@@ -1,4 +1,4 @@
-# VoiceRewrite v20 — Windows native voice writing assistant
+# VoiceRewrite v21 — Windows native voice writing assistant
 
 VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4** to dictate at the caret; hold **Mouse5** after selecting text to rewrite, translate, or ask a question. VoiceRewrite is a **client**, not a model installer: ASR and LLM endpoints are configured separately.
 
@@ -12,10 +12,10 @@ VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4** to dictate a
 
 ## Everyday use
 
-- **Mouse4** held: record, release to transcribe and attempt to insert. If the target changes, the operation stops rather than writing into another app.
+- **Mouse4** held: record, release to transcribe and attempt to insert. If the target changes or paste fails, the complete recognized text appears in a copyable result card instead of writing into another app.
 - **Mouse5** held with selected text: a clear edit command attempts a guarded replacement; explanation and ambiguous commands open a preview.
 - **Result card**: copy the complete result; optionally apply it back to the original selection after validation. Long results are scrollable and not truncated.
-- **Tray**: settings, recent error and recovery guidance, diagnostic log, close answer, exit.
+- **Tray**: pause/resume background mouse interception, settings, recent error and recovery guidance, diagnostic log, close answer, exit. Pausing returns Mouse4/Mouse5 to normal browser/OS behavior.
 
 ## Architecture
 

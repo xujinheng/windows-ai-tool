@@ -457,7 +457,9 @@ func showAnswerPopup(msg popupMessage) error {
 		return err
 	}
 	summary := "基于选中文字 · 未修改原文"
-	if !msg.allowApply {
+	if msg.selection == nil {
+		summary = "原输入位置不可用 · 完整结果保留在此，可复制"
+	} else if !msg.allowApply {
 		summary = "基于选中文字 · AI 回答"
 	}
 	note, err := makeChild("STATIC", summary, WS_CHILD|WS_VISIBLE, 23, 46, cw-46, 21, hwnd, 0)

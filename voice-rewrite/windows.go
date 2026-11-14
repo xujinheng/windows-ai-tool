@@ -24,7 +24,7 @@ import (
 	"unsafe"
 )
 
-const buildID = "2026-11-14-experience-v20"
+const buildID = "2026-11-14-experience-v21"
 
 var (
 	user32                         = syscall.NewLazyDLL("user32.dll")
@@ -170,6 +170,7 @@ type appState struct {
 	popups      chan popupMessage
 	lastErrorMu sync.Mutex
 	lastError   string
+	paused      atomic.Bool
 }
 
 // Shell notification APIs and icon lifetime are owned by the Windows UI thread.
@@ -362,7 +363,7 @@ func runApp() {
 		return
 	}
 	defer procUnregisterHotKey.Call(0, HOTKEY_EXIT)
-	indicator, err := newTrayIndicator(hwnd)
+	indicator, err := newTrayIndicator(hwnd, &app.paused)
 	if err != nil {
 		winErr("无法创建系统托盘图标: " + err.Error())
 		return
@@ -384,7 +385,7 @@ func runApp() {
 	// The tray icon is the UI. Do not steal focus with an instructional MessageBox.
 	// Install the hook on its own locked OS thread; the UI remains independent.
 	if usingMouse || dictationMouse {
-		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton)
+		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton, &app.paused)
 		if hookErr != nil {
 			winErr(hookErr.Error())
 			return
@@ -578,7 +579,11 @@ func runApp() {
 			procKillTimer.Call(0, TRAY_RESET_TIMER_ID)
 			state := trayState(app.status.Load())
 			if state == traySuccess || state == trayError {
-				app.setStatus(trayIdle)
+				if app.paused.Load() {
+					app.setStatus(trayPaused)
+				} else {
+					app.setStatus(trayIdle)
+				}
 			}
 			continue
 		}
@@ -604,6 +609,20 @@ func runApp() {
 		if msg.Message == WM_TRAY_CLOSE_POPUP {
 			closeActiveAnswer()
 			l.Print("popup closed through tray menu")
+			continue
+		}
+		if msg.Message == WM_TRAY_TOGGLE_PAUSE {
+			if app.busy.Load() {
+				winErr("当前任务仍在处理；结束后可暂停语音操作。")
+				continue
+			}
+			newPaused := !app.paused.Load()
+			app.paused.Store(newPaused)
+			if newPaused {
+				app.setStatus(trayPaused)
+			} else {
+				app.setStatus(trayIdle)
+			}
 			continue
 		}
 		if msg.Message == WM_TRAY_LAST_ERROR {
@@ -861,19 +880,17 @@ func processDictationHold(app *appState, rec *audioRecorder, expectedWindow uint
 	}
 	// Focus may have changed while ASR ran: never insert in another app.
 	if !isSameForegroundWindow(expectedWindow) {
-		if copyErr := setClipboardText(app.Window, text); copyErr != nil {
-			app.fail(fmt.Errorf("原窗口已切换，听写结果复制失败：%w", copyErr))
-			app.postHandyPhase(statusError, generation)
-		} else {
-			app.fail(errors.New("原窗口已切换：听写结果已复制到剪贴板，请手动粘贴"))
-			app.postHandyPhase(statusFallback, generation)
-		}
+		// A result card preserves the transcript without requiring the user to
+		// guess what happened to their clipboard after a focus change.
+		app.showAnswer("听写结果 · 未自动插入", text, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(statusFallback, generation)
 		return
 	}
 	start = time.Now()
 	if err = insertDictationText(app.Window, expectedWindow, text, func() bool { return app.epoch.valid(generation) }); err != nil {
 		app.fail(err)
-		app.postHandyPhase(statusError, generation)
+		app.showAnswer("听写结果 · 请手动复制", text, currentCursorPoint(), nil, false, generation)
+		app.postHandyPhase(statusFallback, generation)
 		return
 	}
 	app.logger.Printf("stage=paste flow=dictation ms=%d chars=%d status=unverified", time.Since(start).Milliseconds(), utf8.RuneCountInString(text))

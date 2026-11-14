@@ -23,3 +23,8 @@
 - Unit tests, Windows vet and cross-compilation prove source integrity, not real display quality, cross-app success or runtime compatibility.
 - Follow-up work: desktop accessibility audit, complete clipboard IDataObject snapshot and restore, signed installer/automatic upgrade, theme switching, keyboard-only alternative to mouse side buttons, end-to-end microphone and GPU testing.
 - Avoid exposing real API keys, transcripts or clipboard payloads in issue reports and screenshots.
+
+## Daily-usage refinement
+
+- Tray menu can pause/resume background mouse interception; when paused, the original XBUTTON Back/Forward events are passed through unchanged. No stop/start of model services.
+- Dictation target focus changes and text injection failures now retain the full ASR transcript in a copyable answer card; the app never attempts to write to a different foreground window.

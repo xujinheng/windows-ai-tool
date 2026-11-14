@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -50,7 +51,7 @@ type mouseHookReady struct {
 	err      error
 }
 
-func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16) (*sideMouseHook, error) {
+func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, paused *atomic.Bool) (*sideMouseHook, error) {
 	if hwnd == 0 || (rewriteButton == 0 && dictationButton == 0) || rewriteButton == dictationButton {
 		return nil, errors.New("鼠标侧键钩子参数无效")
 	}
@@ -64,6 +65,11 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16) (
 		var pressed [3]bool
 		hook := uintptr(0)
 		callback := syscall.NewCallback(func(code, message, data uintptr) uintptr {
+			// A paused background assistant must not swallow normal Back/Forward
+			// mouse navigation events in the user's browser or other apps.
+			if paused != nil && paused.Load() {
+				return callNextMouseHook(hook, code, message, data)
+			}
 			if int32(code) >= 0 && data != 0 {
 				event := uint32(message)
 				if event == WM_XBUTTONDOWN || event == WM_XBUTTONUP || event == WM_XBUTTONDBLCLK {
