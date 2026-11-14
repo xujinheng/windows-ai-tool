@@ -137,6 +137,17 @@ jobs:
               [RWResult]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
               Start-Sleep -Milliseconds 250
               if([RWResult]::FindWindow('VoiceRewrite.ResultCard','VoiceRewrite') -eq [IntPtr]::Zero) {throw "clicking response text dismissed the card"}
+              # Clicking a real Copy/Apply button is an explicit user action,
+              # and must never trigger the generic click-away dismissal.
+              $action=$copy
+              if($case.apply -eq '1'){$action=$apply}
+              $btnRect=New-Object RWResult+RECT
+              if(-not [RWResult]::GetWindowRect($action,[ref]$btnRect)){throw "action position unavailable"}
+              [RWResult]::SetCursorPos([int](($btnRect.Left+$btnRect.Right)/2),[int](($btnRect.Top+$btnRect.Bottom)/2)) | Out-Null
+              [RWResult]::mouse_event(2,0,0,0,[UIntPtr]::Zero)
+              [RWResult]::mouse_event(4,0,0,0,[UIntPtr]::Zero)
+              Start-Sleep -Milliseconds 250
+              if([RWResult]::FindWindow('VoiceRewrite.ResultCard','VoiceRewrite') -eq [IntPtr]::Zero){throw "clicking action button dismissed the card"}
               # Empty header and clicks outside the window must both dismiss.
               if($case.name -eq 'rewrite-light' -or $case.name -eq 'answer-dark'){
                 $cx=$rect.Left+180; $cy=$rect.Top+26
