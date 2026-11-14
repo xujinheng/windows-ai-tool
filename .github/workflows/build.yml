@@ -10,10 +10,37 @@ permissions:
 
 # Cancel superseded branch/PR builds, but never cancel a tagged release.
 concurrency:
-  group: build-${{ github.event.pull_request.number || github.ref }}
+  group: build-${{ github.event.pull_request.number || (contains(github.event.head_commit.message, '[publish-v0.1.0]') && 'cut-v0.1.0') || github.ref }}
   cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
+  # One-time bootstrap: create the v0.1.0 tag, then explicitly dispatch the
+  # tagged build. GITHUB_TOKEN-generated tag pushes do not trigger workflows,
+  # but workflow_dispatch is explicitly exempt from that restriction.
+  cut-v0_1_0:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[publish-v0.1.0]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create version tag and dispatch release build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin refs/tags/v0.1.0 >/dev/null 2>&1; then
+            echo "Release tag v0.1.0 already exists" >&2
+            exit 1
+          fi
+          git tag v0.1.0 "$GITHUB_SHA"
+          git push origin refs/tags/v0.1.0
+          gh workflow run build.yml --ref v0.1.0
   test-core:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -187,7 +214,8 @@ jobs:
       - name: Publish unsigned preview release
         uses: softprops/action-gh-release@v2
         with:
-          prerelease: true
+          prerelease: ${{ github.ref_name != 'v0.1.0' }}
+          name: VoiceRewrite ${{ github.ref_name }}
           generate_release_notes: true
           files: release/*
           fail_on_unmatched_files: true
