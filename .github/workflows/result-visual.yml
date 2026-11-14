@@ -51,6 +51,9 @@ jobs:
               if($p.HasExited) { throw "GUI exited: $($p.ExitCode)" }
             }
             if($hwnd -eq [IntPtr]::Zero) { throw 'Result card window not found' }
+            # FindWindow can succeed before the child EDIT and actions finish
+            # initializing. Never snapshot a blank, half-constructed result.
+            Start-Sleep -Milliseconds 550
             $r=New-Object ResultNative+RECT
             if(-not [ResultNative]::GetWindowRect($hwnd,[ref]$r)) { throw 'GetWindowRect failed' }
             $w=$r.Right-$r.Left; $h=$r.Bottom-$r.Top
