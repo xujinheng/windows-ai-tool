@@ -115,7 +115,7 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 		tid, _, _ := procGetCurrentThreadID.Call()
 		var mu sync.Mutex
 		var buttons [3]sideButtonState
-        var capturedDown [3]bool
+		var capturedDown [3]bool
 		var timers [3]*time.Timer
 		closed := false
 		replay := make(chan uint16, 32)
@@ -143,25 +143,29 @@ func installSideMouseHook(hwnd uintptr, rewriteButton, dictationButton uint16, p
 				return callNextMouseHook(hook, code, message, data)
 			}
 			button := uint16(info.MouseData >> 16)
-            if button != 1 && button != 2 {return callNextMouseHook(hook,code,message,data)}
-            mu.Lock()
-            // Capture the next physical mouse side-button in Settings before
-            // the user's normal hold/navigation binding can consume it.
-            if capturedDown[button] {
-                if event==WM_XBUTTONUP {capturedDown[button]=false}
-                mu.Unlock()
-                return 1
-            }
-            if target:=sideShortcutCapture.Load(); target!=0 && (event==WM_XBUTTONDOWN || event==WM_XBUTTONDBLCLK) {
-                capturedDown[button]=true
-                procPostMessage.Call(hwnd,WM_SETTINGS_CAPTURE_MOUSE,uintptr(button),uintptr(target))
-                mu.Unlock()
-                return 1
-            }
-            if button != rewriteButton && button != dictationButton {
-                mu.Unlock()
-                return callNextMouseHook(hook,code,message,data)
-            }
+			if button != 1 && button != 2 {
+				return callNextMouseHook(hook, code, message, data)
+			}
+			mu.Lock()
+			// Capture the next physical mouse side-button in Settings before
+			// the user's normal hold/navigation binding can consume it.
+			if capturedDown[button] {
+				if event == WM_XBUTTONUP {
+					capturedDown[button] = false
+				}
+				mu.Unlock()
+				return 1
+			}
+			if target := sideShortcutCapture.Load(); target != 0 && (event == WM_XBUTTONDOWN || event == WM_XBUTTONDBLCLK) {
+				capturedDown[button] = true
+				procPostMessage.Call(hwnd, WM_SETTINGS_CAPTURE_MOUSE, uintptr(button), uintptr(target))
+				mu.Unlock()
+				return 1
+			}
+			if button != rewriteButton && button != dictationButton {
+				mu.Unlock()
+				return callNextMouseHook(hook, code, message, data)
+			}
 			if event == WM_XBUTTONDOWN || event == WM_XBUTTONDBLCLK {
 				if buttons[button].down {
 					mu.Unlock()

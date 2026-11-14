@@ -243,11 +243,15 @@ func (a *appState) fail(e error) {
 }
 
 // Reuse the portable capture/parser rules for registration.
-func parseHotkey(s string) (uintptr,uintptr,error) {
-    _, mods, vk, mouse, err := parseShortcutParts(s)
-    if err != nil { return 0,0,err }
-    if mouse { return 0,0,fmt.Errorf("mouse button %q must use the mouse hook",s) }
-    return uintptr(mods),uintptr(vk),nil
+func parseHotkey(s string) (uintptr, uintptr, error) {
+	_, mods, vk, mouse, err := parseShortcutParts(s)
+	if err != nil {
+		return 0, 0, err
+	}
+	if mouse {
+		return 0, 0, fmt.Errorf("mouse button %q must use the mouse hook", s)
+	}
+	return uintptr(mods), uintptr(vk), nil
 }
 
 var recordVirtualKey uintptr = VK_F9
@@ -334,13 +338,13 @@ func runApp() {
 	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
 	dictationButton, dictationMouse := mouseSideButton(cfg.DictationHotkey)
 	var dictationVK, dictationMods uintptr
-    if !dictationMouse {
-        dictationMods, dictationVK, e = parseHotkey(cfg.DictationHotkey)
-        if e != nil || dictationVK == VK_PAUSE {
-            winErr("听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）")
-            return
-        }
-    }
+	if !dictationMouse {
+		dictationMods, dictationVK, e = parseHotkey(cfg.DictationHotkey)
+		if e != nil || dictationVK == VK_PAUSE {
+			winErr("听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）")
+			return
+		}
+	}
 	if dictationMouse && usingMouse && dictationButton == selectedMouseButton {
 		winErr("听写和改写不能占用同一个鼠标侧键")
 		return
@@ -368,15 +372,15 @@ func runApp() {
 		return
 	}
 	if (!usingMouse && recordMods == exitMods && recordVK == exitVK) ||
-        (!usingMouse && !dictationMouse && recordMods == dictationMods && recordVK == dictationVK) ||
-        (!dictationMouse && exitMods == dictationMods && exitVK == dictationVK) {
+		(!usingMouse && !dictationMouse && recordMods == dictationMods && recordVK == dictationVK) ||
+		(!dictationMouse && exitMods == dictationMods && exitVK == dictationVK) {
 		winErr("Record and exit hotkeys must differ")
 		return
 	}
 	if cfg.RecordMode == "hold" && !usingMouse && recordVK == VK_PAUSE {
-        winErr("Pause/Break 不支持按住录音模式")
-        return
-    }
+		winErr("Pause/Break 不支持按住录音模式")
+		return
+	}
 	if !usingMouse {
 		recordVirtualKey = recordVK
 		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_RECORD, recordMods, recordVK); rv == 0 {
@@ -420,7 +424,7 @@ func runApp() {
 	// Install the hook on its own locked OS thread; the UI remains independent.
 	{
 		// Even keyboard-only bindings need the hook while Settings captures
-        // Mouse4/Mouse5. Unassigned buttons still pass through untouched.
+		// Mouse4/Mouse5. Unassigned buttons still pass through untouched.
 		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton, &app.paused)
 		if hookErr != nil {
 			winErr(hookErr.Error())
@@ -505,8 +509,10 @@ func runApp() {
 				vk = dictationVK
 			}
 			mods := recordMods
-            if dictation { mods = dictationMods }
-            go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+			if dictation {
+				mods = dictationMods
+			}
+			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
 		}
 		statusMode := "改写"
 		if dictation {
@@ -854,20 +860,24 @@ func runApp() {
 			continue
 		}
 		if msg.Message == WM_SETTINGS_CAPTURE_MOUSE {
-            if p:=uxActiveSettings; p!=nil && p.capturingShortcut==msg.LParam {
-                if msg.WParam==1 {p.acceptShortcut("Mouse4")} else if msg.WParam==2 {p.acceptShortcut("Mouse5")}
-            }
-            continue
-        }
-        if msg.Message == WM_HOTKEY && uxActiveSettings!=nil && uxActiveSettings.capturingShortcut!=0 {
-            // RegisterHotKey consumes existing global bindings. Capture these
-            // as user input rather than firing the existing command/exit.
-            vk:=uint32((msg.LParam>>16)&0xffff)
-            mods:=uint32(msg.LParam&0x0007)
-            uxActiveSettings.acceptShortcutKey(vk,mods)
-            continue
-        }
-        if msg.Message == WM_SIDE_ARM {
+			if p := uxActiveSettings; p != nil && p.capturingShortcut == msg.LParam {
+				if msg.WParam == 1 {
+					p.acceptShortcut("Mouse4")
+				} else if msg.WParam == 2 {
+					p.acceptShortcut("Mouse5")
+				}
+			}
+			continue
+		}
+		if msg.Message == WM_HOTKEY && uxActiveSettings != nil && uxActiveSettings.capturingShortcut != 0 {
+			// RegisterHotKey consumes existing global bindings. Capture these
+			// as user input rather than firing the existing command/exit.
+			vk := uint32((msg.LParam >> 16) & 0xffff)
+			mods := uint32(msg.LParam & 0x0007)
+			uxActiveSettings.acceptShortcutKey(vk, mods)
+			continue
+		}
+		if msg.Message == WM_SIDE_ARM {
 			armSide(uint16(msg.WParam))
 			continue
 		}

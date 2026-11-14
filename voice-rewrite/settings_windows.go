@@ -16,58 +16,58 @@ import (
 // A small, native settings surface; it does not host a browser or intercept
 // the editor focus until deliberately opened from the tray menu.
 const (
-	uxWMCommand       = 0x0111
-	uxWMSize          = 0x0005
-	uxWMVScroll       = 0x0115
-	uxWMHScroll       = 0x0114
-	uxWMMouseWheel    = 0x020A
-	uxSIFRange        = 1
-	uxSIFPage         = 2
-	uxSIFPos          = 4
-	uxSIFTrackPos     = 16
-	uxSBHorz          = 0
-	uxSBVert          = 1
-	uxWMGetMinMaxInfo = 0x0024
-	uxWSThickFrame    = 0x00040000
-	uxWMSettingChange = 0x001A
-	uxWMThemeChanged  = 0x031A
-	uxWMClose         = 0x0010
-	uxWMEraseBkgnd    = 0x0014
-	uxWMPaint         = 0x000F
-	uxWMNCDestroy     = 0x0082
-	uxWMColorStatic   = 0x0138
-	uxWMColorEdit     = 0x0133
-	uxWMDrawItem      = 0x002B
-	uxBSOwnerDraw     = 0x000B
-	uxEMSetMargins    = 0x00D3
-	uxWMProbeDone     = 0x8000 + 104
-	uxSaveButton      = 9101
-	uxCloseButton     = 9102
-	uxAdvancedButton  = 9103
-	uxProbeASRButton  = 9104
-	uxProbeLLMButton  = 9105
-	uxShortcutInput   = 9106
-    uxRewriteInput    = 9108
-    uxCaptureRewrite  = 9130
-    uxCaptureDictation = 9131
-    WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
-	uxMicrophoneInput = 9107
-	uxNavSpeech       = 9120
-	uxNavAI           = 9121
-	uxNavInput        = 9122
-	uxCBAddString     = 0x0143
-	uxCBSetCurSel     = 0x014E
-	uxCBGetCurSel     = 0x0147
-	uxCBSDropDownList = 0x0003
-	uxWSChild         = 0x40000000
-	uxWSVisible       = 0x10000000
-	uxWSTabStop       = 0x00010000
-	uxESAutoScroll    = 0x0080
-	uxESPassword      = 0x0020
-	uxWSBorder        = 0x00800000
-	uxWSCaption       = 0x00C00000
-	uxWSSysMenu       = 0x00080000
-	uxWSMinimizeBox   = 0x00020000
+	uxWMCommand               = 0x0111
+	uxWMSize                  = 0x0005
+	uxWMVScroll               = 0x0115
+	uxWMHScroll               = 0x0114
+	uxWMMouseWheel            = 0x020A
+	uxSIFRange                = 1
+	uxSIFPage                 = 2
+	uxSIFPos                  = 4
+	uxSIFTrackPos             = 16
+	uxSBHorz                  = 0
+	uxSBVert                  = 1
+	uxWMGetMinMaxInfo         = 0x0024
+	uxWSThickFrame            = 0x00040000
+	uxWMSettingChange         = 0x001A
+	uxWMThemeChanged          = 0x031A
+	uxWMClose                 = 0x0010
+	uxWMEraseBkgnd            = 0x0014
+	uxWMPaint                 = 0x000F
+	uxWMNCDestroy             = 0x0082
+	uxWMColorStatic           = 0x0138
+	uxWMColorEdit             = 0x0133
+	uxWMDrawItem              = 0x002B
+	uxBSOwnerDraw             = 0x000B
+	uxEMSetMargins            = 0x00D3
+	uxWMProbeDone             = 0x8000 + 104
+	uxSaveButton              = 9101
+	uxCloseButton             = 9102
+	uxAdvancedButton          = 9103
+	uxProbeASRButton          = 9104
+	uxProbeLLMButton          = 9105
+	uxShortcutInput           = 9106
+	uxRewriteInput            = 9108
+	uxCaptureRewrite          = 9130
+	uxCaptureDictation        = 9131
+	WM_SETTINGS_CAPTURE_MOUSE = 0x8000 + 105
+	uxMicrophoneInput         = 9107
+	uxNavSpeech               = 9120
+	uxNavAI                   = 9121
+	uxNavInput                = 9122
+	uxCBAddString             = 0x0143
+	uxCBSetCurSel             = 0x014E
+	uxCBGetCurSel             = 0x0147
+	uxCBSDropDownList         = 0x0003
+	uxWSChild                 = 0x40000000
+	uxWSVisible               = 0x10000000
+	uxWSTabStop               = 0x00010000
+	uxESAutoScroll            = 0x0080
+	uxESPassword              = 0x0020
+	uxWSBorder                = 0x00800000
+	uxWSCaption               = 0x00C00000
+	uxWSSysMenu               = 0x00080000
+	uxWSMinimizeBox           = 0x00020000
 )
 
 var (
@@ -86,9 +86,9 @@ type uxSettings struct {
 	app                                     *appState
 	inputs                                  [6]uintptr
 	shortcut                                uintptr
-    rewriteShortcut                         uintptr
-    capturingShortcut                       uintptr
-    captureButtons                          [2]uintptr
+	rewriteShortcut                         uintptr
+	capturingShortcut                       uintptr
+	captureButtons                          [2]uintptr
 	microphone                              uintptr
 	microphoneIDs                           []int
 	hint                                    uintptr
@@ -232,7 +232,9 @@ func (p *uxSettings) switchPage(next int) {
 	if p == nil || next < 0 || next >= len(p.pages) {
 		return
 	}
-    if next != p.page { p.stopShortcutCapture() }
+	if next != p.page {
+		p.stopShortcutCapture()
+	}
 	p.page = next
 	p.focusRow = -1
 	for page, windows := range p.pages {
@@ -327,80 +329,111 @@ func uxSetText(hwnd uintptr, text string) {
 // button. Key events are intercepted BEFORE IsDialogMessage/TranslateMessage
 // so they never enter an EDIT box as text.
 func (p *uxSettings) stopShortcutCapture() {
-    if p == nil { return }
-    p.capturingShortcut = 0
-    sideShortcutCapture.Store(0)
-    for _,button := range p.captureButtons {
-        if button != 0 { refreshNativeWindow(button) }
-    }
+	if p == nil {
+		return
+	}
+	p.capturingShortcut = 0
+	sideShortcutCapture.Store(0)
+	for _, button := range p.captureButtons {
+		if button != 0 {
+			refreshNativeWindow(button)
+		}
+	}
 }
 func (p *uxSettings) beginShortcutCapture(id uintptr) {
-    p.stopShortcutCapture()
-    p.capturingShortcut = id
-    sideShortcutCapture.Store(uint32(id))
-    for _,button := range p.captureButtons { if button!=0 { refreshNativeWindow(button) } }
-    uxSetText(p.hint, "正在监听按键… 按下键盘组合键、F1–F24 或 Mouse4/Mouse5；Esc 取消")
+	p.stopShortcutCapture()
+	p.capturingShortcut = id
+	sideShortcutCapture.Store(uint32(id))
+	for _, button := range p.captureButtons {
+		if button != 0 {
+			refreshNativeWindow(button)
+		}
+	}
+	uxSetText(p.hint, "正在监听按键… 按下键盘组合键、F1–F24 或 Mouse4/Mouse5；Esc 取消")
 }
 func uxCurrentShortcutModifiers() uint32 {
-    var mods uint32
-    for _, m := range []struct{vk uintptr; flag uint32}{
-        {VK_CONTROL, shortcutCtrl},{VK_MENU,shortcutAlt},{VK_SHIFT,shortcutShift},
-    } {
-        state,_,_ := procGetAsyncKeyState.Call(m.vk)
-        if state&0x8000!=0 { mods |= m.flag }
-    }
-    return mods
+	var mods uint32
+	for _, m := range []struct {
+		vk   uintptr
+		flag uint32
+	}{
+		{VK_CONTROL, shortcutCtrl}, {VK_MENU, shortcutAlt}, {VK_SHIFT, shortcutShift},
+	} {
+		state, _, _ := procGetAsyncKeyState.Call(m.vk)
+		if state&0x8000 != 0 {
+			mods |= m.flag
+		}
+	}
+	return mods
 }
 func (p *uxSettings) acceptShortcutKey(vk, mods uint32) {
-    if p == nil || p.capturingShortcut == 0 { return }
-    if vk==0x10 || vk==0x11 || vk==0x12 || vk==0xA0 || vk==0xA1 ||
-       vk==0xA2 || vk==0xA3 || vk==0xA4 || vk==0xA5 { return }
-    winL,_,_:=procGetAsyncKeyState.Call(0x5B)
-    winR,_,_:=procGetAsyncKeyState.Call(0x5C)
-    if winL&0x8000!=0 || winR&0x8000!=0 {
-        uxSetText(p.hint,"Windows 系统键组合不可录入，请使用 Ctrl/Alt/Shift")
-        return
-    }
-    candidate,err:=shortcutFromKey(vk,mods)
-    if err!=nil { uxSetText(p.hint,"无法录入："+err.Error()); return }
-    p.acceptShortcut(candidate)
+	if p == nil || p.capturingShortcut == 0 {
+		return
+	}
+	if vk == 0x10 || vk == 0x11 || vk == 0x12 || vk == 0xA0 || vk == 0xA1 ||
+		vk == 0xA2 || vk == 0xA3 || vk == 0xA4 || vk == 0xA5 {
+		return
+	}
+	winL, _, _ := procGetAsyncKeyState.Call(0x5B)
+	winR, _, _ := procGetAsyncKeyState.Call(0x5C)
+	if winL&0x8000 != 0 || winR&0x8000 != 0 {
+		uxSetText(p.hint, "Windows 系统键组合不可录入，请使用 Ctrl/Alt/Shift")
+		return
+	}
+	candidate, err := shortcutFromKey(vk, mods)
+	if err != nil {
+		uxSetText(p.hint, "无法录入："+err.Error())
+		return
+	}
+	p.acceptShortcut(candidate)
 }
 func (p *uxSettings) acceptShortcut(candidate string) {
-    if p == nil || p.capturingShortcut == 0 { return }
-    var normalized string
-    var err error
-    var target uintptr
-    if p.capturingShortcut==uxCaptureRewrite {
-        target=p.rewriteShortcut
-        normalized,err=uxRewriteShortcut(candidate,uxWinText(p.shortcut),p.app.cfg.HotkeyExit)
-    } else {
-        target=p.shortcut
-        normalized,err=uxDictationShortcut(candidate,uxWinText(p.rewriteShortcut),p.app.cfg.HotkeyExit)
-    }
-    if err!=nil {uxSetText(p.hint,"无法录入："+err.Error());return}
-    uxSetText(target,normalized)
-    p.stopShortcutCapture()
-    uxSetText(p.hint,"已录入 "+normalized+"。点击「保存设置」并重启软件后生效。")
+	if p == nil || p.capturingShortcut == 0 {
+		return
+	}
+	var normalized string
+	var err error
+	var target uintptr
+	if p.capturingShortcut == uxCaptureRewrite {
+		target = p.rewriteShortcut
+		normalized, err = uxRewriteShortcut(candidate, uxWinText(p.shortcut), p.app.cfg.HotkeyExit)
+	} else {
+		target = p.shortcut
+		normalized, err = uxDictationShortcut(candidate, uxWinText(p.rewriteShortcut), p.app.cfg.HotkeyExit)
+	}
+	if err != nil {
+		uxSetText(p.hint, "无法录入："+err.Error())
+		return
+	}
+	uxSetText(target, normalized)
+	p.stopShortcutCapture()
+	uxSetText(p.hint, "已录入 "+normalized+"。点击「保存设置」并重启软件后生效。")
 }
 func uxSettingsKeyMessage(msg winMSG) bool {
-    p:=uxActiveSettings
-    if p==nil||p.window==0 {return false}
-    if msg.Hwnd!=p.window {
-        child,_,_:=procIsChild.Call(p.window,msg.Hwnd)
-        if child==0 {return false}
-    }
-    if p.capturingShortcut!=0 && (msg.Message==WM_KEYDOWN || msg.Message==0x0104) {
-        if msg.WParam==VK_ESCAPE {
-            p.stopShortcutCapture()
-            uxSetText(p.hint,"已取消快捷键录入")
-        } else {
-            p.acceptShortcutKey(uint32(msg.WParam),uxCurrentShortcutModifiers())
-        }
-        return true
-    }
-    if msg.Message!=WM_KEYDOWN || msg.WParam!=VK_ESCAPE {return false}
-    procDestroyWindow.Call(p.window)
-    return true
+	p := uxActiveSettings
+	if p == nil || p.window == 0 {
+		return false
+	}
+	if msg.Hwnd != p.window {
+		child, _, _ := procIsChild.Call(p.window, msg.Hwnd)
+		if child == 0 {
+			return false
+		}
+	}
+	if p.capturingShortcut != 0 && (msg.Message == WM_KEYDOWN || msg.Message == 0x0104) {
+		if msg.WParam == VK_ESCAPE {
+			p.stopShortcutCapture()
+			uxSetText(p.hint, "已取消快捷键录入")
+		} else {
+			p.acceptShortcutKey(uint32(msg.WParam), uxCurrentShortcutModifiers())
+		}
+		return true
+	}
+	if msg.Message != WM_KEYDOWN || msg.WParam != VK_ESCAPE {
+		return false
+	}
+	procDestroyWindow.Call(p.window)
+	return true
 }
 
 func (p *uxSettings) refreshTheme() {
@@ -480,7 +513,7 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 		return 0
 	case uxWMNCDestroy:
 		if p != nil && p.window == hwnd {
-            p.stopShortcutCapture()
+			p.stopShortcutCapture()
 			uxActiveSettings = nil
 			resultRemoveReadyProperty.Call(hwnd, uintptr(unsafe.Pointer(resultReadyProperty)))
 			if p.renderer != nil {
@@ -550,9 +583,11 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				label = "高级配置"
 			case uxProbeASRButton, uxProbeLLMButton:
 				label = "测试连接"
-            case uxCaptureRewrite, uxCaptureDictation:
-                label = "录入按键"
-                if p.capturingShortcut==uintptr(item.CtlID) {label="等待按键…"}
+			case uxCaptureRewrite, uxCaptureDictation:
+				label = "录入按键"
+				if p.capturingShortcut == uintptr(item.CtlID) {
+					label = "等待按键…"
+				}
 			}
 			if label != "" && uiDrawActionButton(item, p.palette, p.font, label, primary) {
 				return 1
@@ -603,8 +638,12 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 							p.focusRow = idx % 3
 						}
 					}
-					if p.rewriteShortcut == lParam { p.focusRow = 0 }
-                    if p.shortcut == lParam { p.focusRow = 1 }
+					if p.rewriteShortcut == lParam {
+						p.focusRow = 0
+					}
+					if p.shortcut == lParam {
+						p.focusRow = 1
+					}
 				}
 				refreshNativeWindow(hwnd)
 			}
@@ -625,9 +664,9 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 			case uxNavSpeech, uxNavAI, uxNavInput:
 				p.switchPage(int((wParam & 0xffff) - uxNavSpeech))
 				return 0
-            case uxCaptureRewrite, uxCaptureDictation:
-                p.beginShortcutCapture(wParam&0xffff)
-                return 0
+			case uxCaptureRewrite, uxCaptureDictation:
+				p.beginShortcutCapture(wParam & 0xffff)
+				return 0
 			case uxSaveButton:
 				if err := p.save(); err != nil {
 					uxSetText(p.hint, "保存失败："+err.Error())
@@ -668,16 +707,22 @@ func (p *uxSettings) save() error {
 	if err != nil {
 		return err
 	}
-	if p.capturingShortcut != 0 { return errors.New("请先完成按键录入，或按 Esc 取消") }
-    newRewrite:=strings.TrimSpace(uxWinText(p.rewriteShortcut))
-    newDictation:=strings.TrimSpace(uxWinText(p.shortcut))
-    newRewrite,err=uxRewriteShortcut(newRewrite,newDictation,cfg.HotkeyExit)
-    if err!=nil {return err}
-    newDictation,err=uxDictationShortcut(newDictation,newRewrite,cfg.HotkeyExit)
-    if err!=nil {return err}
-    changedShortcut:=cfg.HotkeyRecord!=newRewrite||cfg.DictationHotkey!=newDictation
-    cfg.HotkeyRecord=newRewrite
-    cfg.DictationHotkey=newDictation
+	if p.capturingShortcut != 0 {
+		return errors.New("请先完成按键录入，或按 Esc 取消")
+	}
+	newRewrite := strings.TrimSpace(uxWinText(p.rewriteShortcut))
+	newDictation := strings.TrimSpace(uxWinText(p.shortcut))
+	newRewrite, err = uxRewriteShortcut(newRewrite, newDictation, cfg.HotkeyExit)
+	if err != nil {
+		return err
+	}
+	newDictation, err = uxDictationShortcut(newDictation, newRewrite, cfg.HotkeyExit)
+	if err != nil {
+		return err
+	}
+	changedShortcut := cfg.HotkeyRecord != newRewrite || cfg.DictationHotkey != newDictation
+	cfg.HotkeyRecord = newRewrite
+	cfg.DictationHotkey = newDictation
 	selected, _, _ := procSendMessage.Call(p.microphone, uxCBGetCurSel, 0, 0)
 	if p.microphone != 0 && selected != ^uintptr(0) && selected < uintptr(len(p.microphoneIDs)) {
 		cfg.AudioDeviceID = p.microphoneIDs[selected]
@@ -867,16 +912,16 @@ func showNativeSettings(app *appState) error {
 	}
 	start = len(p.controls)
 	makeOne("STATIC", "语音指令", stat, 224, 181, 124, 24, 0, false)
-    p.rewriteShortcut=makeOne("EDIT",app.cfg.HotkeyRecord,edit|0x0800,350,173,226,34,uxRewriteInput,false) // ES_READONLY
-    p.captureButtons[0]=makeOne("BUTTON","录入按键",btn,593,173,194,34,uxCaptureRewrite,false)
-    makeOne("STATIC", "听写快捷键", stat, 224, 251, 124, 24, 0, false)
-    p.shortcut=makeOne("EDIT",app.cfg.DictationHotkey,edit|0x0800,350,243,226,34,uxShortcutInput,false)
-    p.captureButtons[1]=makeOne("BUTTON","录入按键",btn,593,243,194,34,uxCaptureDictation,false)
-    makeOne("STATIC", "麦克风", stat, 224, 321, 124, 24, 0, false)
-    p.microphone=makeOne("COMBOBOX","",uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL,350,313,437,190,uxMicrophoneInput,false)
-    p.populateMicrophones(app.cfg.AudioDeviceID)
-    resultStyleNativeEdit(p.microphone,p.palette.dark)
-    info:=makeOne("STATIC","语音指令：改写/解释/问答。点击录入后按键；修改后需重启软件。",stat,226,385,565,44,0,false)
+	p.rewriteShortcut = makeOne("EDIT", app.cfg.HotkeyRecord, edit|0x0800, 350, 173, 226, 34, uxRewriteInput, false) // ES_READONLY
+	p.captureButtons[0] = makeOne("BUTTON", "录入按键", btn, 593, 173, 194, 34, uxCaptureRewrite, false)
+	makeOne("STATIC", "听写快捷键", stat, 224, 251, 124, 24, 0, false)
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit|0x0800, 350, 243, 226, 34, uxShortcutInput, false)
+	p.captureButtons[1] = makeOne("BUTTON", "录入按键", btn, 593, 243, 194, 34, uxCaptureDictation, false)
+	makeOne("STATIC", "麦克风", stat, 224, 321, 124, 24, 0, false)
+	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 350, 313, 437, 190, uxMicrophoneInput, false)
+	p.populateMicrophones(app.cfg.AudioDeviceID)
+	resultStyleNativeEdit(p.microphone, p.palette.dark)
+	info := makeOne("STATIC", "语音指令：改写/解释/问答。点击录入后按键；修改后需重启软件。", stat, 226, 385, 565, 44, 0, false)
 	setFont(info, p.mutedFont)
 	for _, c := range p.controls[start:] {
 		p.pages[2] = append(p.pages[2], c.hwnd)

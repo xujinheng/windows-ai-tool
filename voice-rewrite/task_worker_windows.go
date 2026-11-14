@@ -53,17 +53,17 @@ func watchHoldRelease(hwnd, vk, mods, session uintptr, canceled <-chan struct{},
 				logger.Printf("hold watcher state; session=%d down=%t elapsed=%s", session, pressedValue&0x8000 != 0, time.Since(start).Truncate(time.Millisecond))
 			}
 			// A chord must be fully released before we process text/clipboard:
-            // holding Ctrl during a simulated Ctrl+C/V would break editing.
-            down := pressedValue&0x8000 != 0
-            for _, required := range []struct{ flag, vk uintptr }{
-                {MOD_CTRL, VK_CONTROL}, {MOD_ALT, VK_MENU}, {MOD_SHIFT, VK_SHIFT},
-            } {
-                if mods&required.flag != 0 {
-                    state, _, _ := procGetAsyncKeyState.Call(required.vk)
-                    down = down || state&0x8000 != 0
-                }
-            }
-            if releaseDebounced(down, &releasedTicks) {
+			// holding Ctrl during a simulated Ctrl+C/V would break editing.
+			down := pressedValue&0x8000 != 0
+			for _, required := range []struct{ flag, vk uintptr }{
+				{MOD_CTRL, VK_CONTROL}, {MOD_ALT, VK_MENU}, {MOD_SHIFT, VK_SHIFT},
+			} {
+				if mods&required.flag != 0 {
+					state, _, _ := procGetAsyncKeyState.Call(required.vk)
+					down = down || state&0x8000 != 0
+				}
+			}
+			if releaseDebounced(down, &releasedTicks) {
 				logger.Printf("hold watcher detected key release; session=%d elapsed=%s", session, time.Since(start).Truncate(time.Millisecond))
 				if ok, _, err := procPostMessage.Call(hwnd, WM_HOLD_RELEASE, session, 0); ok == 0 {
 					logger.Printf("ERROR: cannot post hold release: %v", err)

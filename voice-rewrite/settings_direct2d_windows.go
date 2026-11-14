@@ -64,16 +64,18 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 		}
 	} else {
 		rectX, rectY := float32(345)-float32(scrollX), float32(169)-float32(scrollY)
-		for i, y:=range []float32{169,239} {
-            rectY=y-float32(scrollY)
-            d.round(rectX,rectY,236,42,8,2)
-            outline:=6
-            if focusRow==i {outline=7}
-            d.outline(rectX,rectY,236,42,8,outline)
-        }
-        d.fill(224-float32(scrollX),216-float32(scrollY),w-253,1,6)
-        d.fill(224-float32(scrollX),286-float32(scrollY),w-253,1,6)
-        d.fill(224-float32(scrollX),356-float32(scrollY),w-253,1,6)
+		for i, y := range []float32{169, 239} {
+			rectY = y - float32(scrollY)
+			d.round(rectX, rectY, 236, 42, 8, 2)
+			outline := 6
+			if focusRow == i {
+				outline = 7
+			}
+			d.outline(rectX, rectY, 236, 42, 8, outline)
+		}
+		d.fill(224-float32(scrollX), 216-float32(scrollY), w-253, 1, 6)
+		d.fill(224-float32(scrollX), 286-float32(scrollY), w-253, 1, 6)
+		d.fill(224-float32(scrollX), 356-float32(scrollY), w-253, 1, 6)
 	}
 	d.fill(194, h-77, w-194, 1, 6)
 	hr := resultCOM(d.target, 49, 0, 0)
