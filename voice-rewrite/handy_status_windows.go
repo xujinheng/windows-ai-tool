@@ -406,7 +406,7 @@ func drawHandyStatus(s *handyStatus) {
 	// DIB width to a painter which itself multiplies by s.scale.
 	p.pill(0x11000000, 3, 8, logicalWidth-6, handyBodyHeight)
 	p.pill(0x22000000, 4, 7, logicalWidth-8, handyBodyHeight)
-	p.pill(0xFF24212D, handyPillInset, handyBodyTop, logicalWidth-2*handyPillInset, handyBodyHeight)
+	p.pill(0xFF1E2029, handyPillInset, handyBodyTop, logicalWidth-2*handyPillInset, handyBodyHeight)
 	// Avoid a translucent full-size second fill: it makes a faint double edge
 	// and reduces color consistency around anti-aliased corners.
 
@@ -418,11 +418,16 @@ func drawHandyStatus(s *handyStatus) {
 		accent = 0xFFFF818A
 	}
 	if s.phase == statusRecording {
+		p.roundBar(accent, 12, 18, 3, 14)
 		// Left pink live indicator + nine equal-width capsule bars.
 		p.fill(accent, 23, handyIconCenterY-4, 8, 8, true)
 		level := 0.0
 		if s.mic != nil {
 			level = float64(s.mic.level.Load()) / 1000.0
+		}
+		if s.mic == nil && s.owner == 0x56525348 {
+			// Synthetic waveform only in explicit visual-preview mode.
+			level = 0.48
 		}
 		s.smoothedLevel = handySmoothedLevel(s.smoothedLevel, level)
 		for i := 0; i < 9; i++ {
@@ -430,7 +435,7 @@ func drawHandyStatus(s *handyStatus) {
 			p.roundBar(accent, handyWaveformX(i), handyIconCenterY-h/2, handyWaveBarWidth, h)
 		}
 		// Non-overlapping time and close-button lanes.
-		p.text(handyDurationText(s.started, time.Now()), handyClockX, 10, handyClockWidth, 30, 14, 500, 0xFFE8E2EB)
+		p.text(handyDurationText(s.started, time.Now()), handyClockX, 10, handyClockWidth, 30, 14, 600, 0xFFF5F3F7)
 	} else {
 		if isHandyTerminalPhase(s.phase) {
 			// Sending Ctrl+V is not proof that the target accepted the text.

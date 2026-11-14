@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - 'voice-rewrite/visual_preview_windows.go'
+      - 'voice-rewrite/handy_status_windows.go'
       - '.github/workflows/recording-visual.yml'
   workflow_dispatch:
 permissions:

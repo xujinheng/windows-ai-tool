@@ -28,6 +28,9 @@ const (
 	uxWMNCDestroy     = 0x0082
 	uxWMColorStatic   = 0x0138
 	uxWMColorEdit     = 0x0133
+	uxWMDrawItem      = 0x002B
+	uxBSOwnerDraw     = 0x000B
+	uxEMSetMargins    = 0x00D3
 	uxWMProbeDone     = 0x8000 + 104
 	uxSaveButton      = 9101
 	uxCloseButton     = 9102
@@ -241,16 +244,55 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				sc := func(v int32) uintptr { return uintptr(int32(float64(v)*p.scale + 0.5)) }
 				var rc rect32
 				procGetClientRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
-				uxRoundRect.Call(hdc, sc(17), sc(477), uintptr(rc.Right)-sc(17), sc(565), sc(18), sc(18))
+				uxRoundRect.Call(hdc, sc(17), sc(477), uintptr(rc.Right)-sc(17), sc(595), sc(18), sc(18))
+				// Accent rails establish a consistent hierarchy across sections.
+				accentBrush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.primary))
+				if accentBrush != 0 {
+					for _, r := range []rect32{
+						{Left: int32(sc(25)), Top: int32(sc(23)), Right: int32(sc(30)), Bottom: int32(sc(51))},
+						{Left: int32(sc(25)), Top: int32(sc(106)), Right: int32(sc(29)), Bottom: int32(sc(128))},
+						{Left: int32(sc(25)), Top: int32(sc(298)), Right: int32(sc(29)), Bottom: int32(sc(320))},
+						{Left: int32(sc(25)), Top: int32(sc(491)), Right: int32(sc(29)), Bottom: int32(sc(513))},
+					} {
+						procFillRect.Call(hdc, uintptr(unsafe.Pointer(&r)), accentBrush)
+					}
+					procDeleteObject.Call(accentBrush)
+				}
 				uxSelectObject.Call(hdc, old)
 				uxSelectObject.Call(hdc, oldPen)
 				procEndPaintHandy.Call(hwnd, uintptr(unsafe.Pointer(&ps)))
 			}
 			return 0
 		}
+	case uxWMDrawItem:
+		if p != nil && p.window == hwnd && wParam == uxSaveButton && lParam != 0 {
+			item := (*drawItemStruct)(unsafe.Pointer(lParam))
+			brush, _, _ := procCreateSolidBrush.Call(p.palette.color(p.palette.primary))
+			if brush != 0 {
+				oldBrush, _, _ := uxSelectObject.Call(item.Hdc, brush)
+				pen, _, _ := uxGetStockObject.Call(8)
+				oldPen, _, _ := uxSelectObject.Call(item.Hdc, pen)
+				r := item.Rect
+				uxRoundRect.Call(item.Hdc, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right), uintptr(r.Bottom), 12, 12)
+				uxSelectObject.Call(item.Hdc, oldPen)
+				uxSelectObject.Call(item.Hdc, oldBrush)
+				procDeleteObject.Call(brush)
+			}
+			uxSetBkMode.Call(item.Hdc, TRANSPARENT)
+			uxSetTextColor.Call(item.Hdc, p.palette.color(p.palette.primaryText))
+			oldFont, _, _ := uxSelectObject.Call(item.Hdc, p.font)
+			label := uxPtr("保存并应用")
+			procDrawText.Call(item.Hdc, uintptr(unsafe.Pointer(label)), ^uintptr(0), uintptr(unsafe.Pointer(&item.Rect)), 0x25)
+			uxSelectObject.Call(item.Hdc, oldFont)
+			return 1
+		}
 	case uxWMColorStatic:
 		if p != nil && p.window == hwnd && p.background != 0 {
-			uxSetTextColor.Call(wParam, p.palette.color(p.palette.text))
+			color := p.palette.text
+			if lParam == p.hint || lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
+				color = p.palette.muted
+			}
+			uxSetTextColor.Call(wParam, p.palette.color(color))
 			uxSetBkMode.Call(wParam, TRANSPARENT)
 			if p.cardStatics[lParam] {
 				return p.cardBrush
@@ -459,8 +501,8 @@ func showNativeSettings(app *appState) error {
 	p.editBrush, _, _ = procCreateSolidBrush.Call(p.palette.color(p.palette.field))
 	applyWindowPalette(h, p.palette)
 	fontName := uxPtr("Segoe UI Variable")
-	p.font, _, _ = procCreateFont.Call(sc(-15), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
-	p.titleFont, _, _ = procCreateFont.Call(sc(-21), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
+	p.font, _, _ = procCreateFont.Call(sc(-16), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
+	p.titleFont, _, _ = procCreateFont.Call(sc(-22), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	makeOne := func(cls, t string, style uintptr, x, y, w, hh int32, id uintptr, head bool) uintptr {
 		useFont := p.font
 		if head {
@@ -470,7 +512,10 @@ func showNativeSettings(app *appState) error {
 		if control == 0 {
 			return 0
 		}
-		if cls == "STATIC" && y >= 99 && y < 659 {
+		if cls == "EDIT" {
+			procSendMessage.Call(control, uxEMSetMargins, 3, uintptr(8|(8<<16)))
+		}
+		if cls == "STATIC" && y >= 99 && y < 596 {
 			p.cardStatics[control] = true
 		}
 		p.controls = append(p.controls, uxControl{
@@ -483,8 +528,8 @@ func showNativeSettings(app *appState) error {
 	stat := uintptr(uxWSChild | uxWSVisible)
 	edit := uintptr(uxWSChild | uxWSVisible | uxWSTabStop | uxWSBorder | uxESAutoScroll)
 	btn := uintptr(uxWSChild | uxWSVisible | uxWSTabStop)
-	makeOne("STATIC", "VoiceRewrite", stat, 28, 18, 400, 34, 0, true)
-	makeOne("STATIC", "全局语音操作  ·  "+app.cfg.DictationHotkey+" 听写  ·  "+app.cfg.HotkeyRecord+" 改写与问答", stat, 30, 59, 610, 23, 0, false)
+	makeOne("STATIC", "VoiceRewrite", stat, 42, 18, 400, 34, 0, true)
+	makeOne("STATIC", "语音听写  /  智能改写  /  本地 AI", stat, 42, 59, 610, 23, 0, false)
 	makeOne("STATIC", "01   语音识别 ASR", stat, 34, 101, 410, 28, 0, true)
 	makeOne("STATIC", "API 地址", stat, 34, 141, 100, 20, 0, false)
 	p.inputs[0] = makeOne("EDIT", app.cfg.ASRBaseURL, edit, 130, 135, 385, 30, 0, false)
@@ -505,16 +550,16 @@ func showNativeSettings(app *appState) error {
 	p.inputs[5] = makeOne("EDIT", app.cfg.LLMAPIKey, edit|uxESPassword, 130, 407, 493, 30, 0, false)
 	p.probeStatus[1] = makeOne("STATIC", "● 尚未检测 · 用于改写 / 翻译 / 问答", stat, 34, 451, 594, 24, 0, false)
 
-	makeOne("STATIC", "03   快捷键", stat, 34, 490, 300, 26, 0, true)
+	makeOne("STATIC", "03   输入与快捷键", stat, 34, 490, 300, 26, 0, true)
 	makeOne("STATIC", "听写快捷键", stat, 34, 527, 108, 22, 0, false)
-	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 521, 290, 30, uxShortcutInput, false)
-	makeOne("STATIC", "麦克风", stat, 431, 525, 64, 22, 0, false)
-	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 495, 520, 149, 192, uxMicrophoneInput, false)
+	p.shortcut = makeOne("EDIT", app.cfg.DictationHotkey, edit, 130, 521, 493, 30, uxShortcutInput, false)
+	makeOne("STATIC", "麦克风", stat, 34, 562, 90, 22, 0, false)
+	p.microphone = makeOne("COMBOBOX", "", uxWSChild|uxWSVisible|uxWSTabStop|uxCBSDropDownList|WS_VSCROLL, 130, 557, 493, 192, uxMicrophoneInput, false)
 	p.populateMicrophones(app.cfg.AudioDeviceID)
-	makeOne("BUTTON", "保存并应用", btn, 29, 575, 141, 34, uxSaveButton, false)
-	makeOne("BUTTON", "高级设置", btn, 186, 575, 119, 34, uxAdvancedButton, false)
-	makeOne("BUTTON", "关闭", btn, 550, 575, 93, 34, uxCloseButton, false)
-	p.hint = makeOne("STATIC", "服务检测不等于转写成功 · 实际听写请按住 "+app.cfg.DictationHotkey+" · API Key 已加密", stat, 30, 634, 610, 22, 0, false)
+	makeOne("BUTTON", "保存并应用", btn|uxBSOwnerDraw, 29, 607, 150, 36, uxSaveButton, false)
+	makeOne("BUTTON", "高级设置", btn, 195, 607, 119, 36, uxAdvancedButton, false)
+	makeOne("BUTTON", "关闭", btn, 550, 607, 93, 36, uxCloseButton, false)
+	p.hint = makeOne("STATIC", "本地优先  ·  API Key 已加密  ·  按住 "+app.cfg.DictationHotkey+" 开始听写", stat, 30, 656, 610, 22, 0, false)
 	p.layout()
 	// Windows 11 DWM-rounded frame and non-activating status pill are separate.
 	rounding := uint32(2)

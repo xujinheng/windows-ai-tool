@@ -13,7 +13,7 @@ import (
 func runRecordingVisualPreview() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	showHandyStatus(nil, "听写", statusRecording, 1)
+	showHandyStatus(nil, "听写", statusRecording, 0x56525348)
 	defer closeHandyStatus()
 	if activeHandyStatus == nil {
 		return

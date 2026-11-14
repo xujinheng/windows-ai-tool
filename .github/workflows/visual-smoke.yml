@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/visual-smoke.yml'
+      - 'voice-rewrite/settings_windows.go'
 permissions:
   contents: read
 jobs:
