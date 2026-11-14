@@ -11,7 +11,7 @@ var settingsHeadings = [3]string{"语音识别", "AI 写作", "快捷键与设�
 var settingsSubtitles = [3]string{
 	"连接语音识别服务，将录音转换为文字。",
 	"配置用于改写、翻译与问答的文本模型。",
-	"选择听写快捷键和录音输入设备。",
+	"录入语音指令、听写快捷键，并选择麦克风。",
 }
 var settingsSectionNames = [3]string{"连接配置", "模型配置", "输入偏好"}
 
@@ -52,12 +52,13 @@ func (d *resultRenderer) drawSettings(page int, scrollX, scrollY int32, focusRow
 	// 54px row pitch; native text has its own 24px vertically centered HWND.
 	rows := 3
 	if page == 2 {
-		rows = 1
+		rows = 2
 	}
 	for i := 0; i < rows; i++ {
 		frame := settingsFieldFrame(i)
 		if page == 2 {
 			frame = settingsShortcutFrame()
+			frame.Y += int32(i) * settingsFieldRowStep
 		}
 		x := float32(frame.X - scrollX)
 		y := float32(frame.Y - scrollY)
@@ -88,12 +89,13 @@ func (p *uxSettings) drawSettingsFallback(hdc uintptr) {
 	procFillRect.Call(hdc, uintptr(unsafe.Pointer(&line)), p.editBrush)
 	rows := 3
 	if p.page == 2 {
-		rows = 1
+		rows = 2
 	}
 	for i := 0; i < rows; i++ {
 		frame := settingsFieldFrame(i)
 		if p.page == 2 {
 			frame = settingsShortcutFrame()
+			frame.Y += int32(i) * settingsFieldRowStep
 		}
 		outline := p.palette.color(p.palette.border)
 		if p.focusRow == i {

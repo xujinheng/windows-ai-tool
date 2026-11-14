@@ -8,10 +8,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"runtime/debug"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -244,27 +242,16 @@ func (a *appState) fail(e error) {
 	a.setStatus(trayError) // nonmodal; available via tray's last-error command
 }
 
-var hotkeyPattern = regexp.MustCompile(`(?i)^Ctrl\+Alt\+(Shift\+)?F([1-9]|1[0-9]|2[0-4])$`)
-var plainFKeyPattern = regexp.MustCompile(`(?i)^F([1-9]|1[0-9]|2[0-4])$`)
-
+// Reuse the portable capture/parser rules for registration.
 func parseHotkey(s string) (uintptr, uintptr, error) {
-	if match := plainFKeyPattern.FindStringSubmatch(strings.TrimSpace(s)); match != nil {
-		num, _ := strconv.Atoi(match[1])
-		return MOD_NOREPEAT, uintptr(0x70 + num - 1), nil
+	_, mods, vk, mouse, err := parseShortcutParts(s)
+	if err != nil {
+		return 0, 0, err
 	}
-	if strings.EqualFold(strings.TrimSpace(s), "Pause") || strings.EqualFold(strings.TrimSpace(s), "Break") {
-		return MOD_NOREPEAT, VK_PAUSE, nil
+	if mouse {
+		return 0, 0, fmt.Errorf("mouse button %q must use the mouse hook", s)
 	}
-	match := hotkeyPattern.FindStringSubmatch(strings.TrimSpace(s))
-	if match == nil {
-		return 0, 0, fmt.Errorf("invalid hotkey %q: use F9, Pause, Ctrl+Alt+F9 or Ctrl+Alt+Shift+F9", s)
-	}
-	num, _ := strconv.Atoi(match[2])
-	mods := uintptr(MOD_CTRL | MOD_ALT | MOD_NOREPEAT)
-	if match[1] != "" {
-		mods |= MOD_SHIFT
-	}
-	return mods, uintptr(0x70 + num - 1), nil
+	return uintptr(mods), uintptr(vk), nil
 }
 
 var recordVirtualKey uintptr = VK_F9
@@ -350,14 +337,13 @@ func runApp() {
 	activeHandyAppWindow = hwnd
 	selectedMouseButton, usingMouse := mouseSideButton(cfg.HotkeyRecord)
 	dictationButton, dictationMouse := mouseSideButton(cfg.DictationHotkey)
-	var dictationVK uintptr
+	var dictationVK, dictationMods uintptr
 	if !dictationMouse {
-		mods, key, parseErr := parseHotkey(cfg.DictationHotkey)
-		if parseErr != nil || mods != MOD_NOREPEAT || key == VK_PAUSE {
-			winErr("听写快捷键请选择 Mouse4、Mouse5 或 F1–F24 单独功能键")
+		dictationMods, dictationVK, e = parseHotkey(cfg.DictationHotkey)
+		if e != nil || dictationVK == VK_PAUSE {
+			winErr("听写快捷键无效，请重新录入（支持功能键和 Ctrl/Alt 组合键）")
 			return
 		}
-		dictationVK = key
 	}
 	if dictationMouse && usingMouse && dictationButton == selectedMouseButton {
 		winErr("听写和改写不能占用同一个鼠标侧键")
@@ -386,13 +372,13 @@ func runApp() {
 		return
 	}
 	if (!usingMouse && recordMods == exitMods && recordVK == exitVK) ||
-		(!dictationMouse && recordVK != 0 && dictationVK == recordVK) ||
-		(!dictationMouse && exitMods == MOD_NOREPEAT && exitVK == dictationVK) {
+		(!usingMouse && !dictationMouse && recordMods == dictationMods && recordVK == dictationVK) ||
+		(!dictationMouse && exitMods == dictationMods && exitVK == dictationVK) {
 		winErr("Record and exit hotkeys must differ")
 		return
 	}
-	if cfg.RecordMode == "hold" && !usingMouse && (recordMods != MOD_NOREPEAT || recordVK == VK_PAUSE) {
-		winErr("按住录音模式请使用 F1~F24 等单独的功能键，例如 F9。Pause/Break 通常没有可靠的松开事件，Ctrl+Alt 组合键会干扰复制选中文字。")
+	if cfg.RecordMode == "hold" && !usingMouse && recordVK == VK_PAUSE {
+		winErr("Pause/Break 不支持按住录音模式")
 		return
 	}
 	if !usingMouse {
@@ -404,7 +390,7 @@ func runApp() {
 		defer procUnregisterHotKey.Call(0, HOTKEY_RECORD)
 	}
 	if !dictationMouse {
-		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_DICTATION, MOD_NOREPEAT, dictationVK); rv == 0 {
+		if rv, _, _ := procRegisterHotKey.Call(0, HOTKEY_DICTATION, dictationMods, dictationVK); rv == 0 {
 			winErr("无法注册听写快捷键：" + cfg.DictationHotkey + "（可能已被其他程序占用）")
 			return
 		}
@@ -436,7 +422,9 @@ func runApp() {
 	}
 	// The tray icon is the UI. Do not steal focus with an instructional MessageBox.
 	// Install the hook on its own locked OS thread; the UI remains independent.
-	if usingMouse || dictationMouse {
+	{
+		// Even keyboard-only bindings need the hook while Settings captures
+		// Mouse4/Mouse5. Unassigned buttons still pass through untouched.
 		mouseHook, hookErr := installSideMouseHook(hwnd, selectedMouseButton, dictationButton, &app.paused)
 		if hookErr != nil {
 			winErr(hookErr.Error())
@@ -520,7 +508,11 @@ func runApp() {
 			if dictation {
 				vk = dictationVK
 			}
-			go watchHoldRelease(hwnd, vk, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
+			mods := recordMods
+			if dictation {
+				mods = dictationMods
+			}
+			go watchHoldRelease(hwnd, vk, mods, holdSession, holdWatch, time.Duration(cfg.MaxRecordSeconds+2)*time.Second, l)
 		}
 		statusMode := "改写"
 		if dictation {
@@ -865,6 +857,24 @@ func runApp() {
 				app.postHandyPhase(statusError, holdGeneration)
 				app.fail(errors.New("未收到录音按键或鼠标侧键的松开事件，已自动结束。请检查是否有鼠标驱动将侧键映射为其他按键。"))
 			}
+			continue
+		}
+		if msg.Message == WM_SETTINGS_CAPTURE_MOUSE {
+			if p := uxActiveSettings; p != nil && p.capturingShortcut == msg.LParam {
+				if msg.WParam == 1 {
+					p.acceptShortcut("Mouse4")
+				} else if msg.WParam == 2 {
+					p.acceptShortcut("Mouse5")
+				}
+			}
+			continue
+		}
+		if msg.Message == WM_HOTKEY && uxActiveSettings != nil && uxActiveSettings.capturingShortcut != 0 {
+			// RegisterHotKey consumes existing global bindings. Capture these
+			// as user input rather than firing the existing command/exit.
+			vk := uint32((msg.LParam >> 16) & 0xffff)
+			mods := uint32(msg.LParam & 0x0007)
+			uxActiveSettings.acceptShortcutKey(vk, mods)
 			continue
 		}
 		if msg.Message == WM_SIDE_ARM {
