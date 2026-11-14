@@ -725,7 +725,9 @@ func showNativeSettings(app *appState) error {
 	} else if app != nil && app.logger != nil {
 		app.logger.Printf("settings Direct2D unavailable; using GDI: %v", renderErr)
 	}
-	fontName := uxPtr("Segoe UI Variable")
+	// Match the DirectWrite Chinese UI face; Segoe UI Variable can fall back
+	// to a serif CJK face in Win32 EDIT/STATIC controls on some systems.
+	fontName := uxPtr("Microsoft YaHei UI")
 	p.font, _, _ = procCreateFont.Call(sc(-16), 0, 0, 0, 400, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.titleFont, _, _ = procCreateFont.Call(sc(-24), 0, 0, 0, 650, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
 	p.sectionFont, _, _ = procCreateFont.Call(sc(-18), 0, 0, 0, 600, 0, 0, 0, 1, 0, 0, 0, 0, uintptr(unsafe.Pointer(fontName)))
