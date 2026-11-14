@@ -93,6 +93,7 @@ type answerPopup struct {
 	generation         uint64
 	canceled           atomic.Bool
 	renderer           *resultRenderer
+	title              string
 }
 
 var activeAnswer *answerPopup
@@ -268,11 +269,31 @@ func (p *answerPopup) apply() {
 		}
 	}()
 }
+// Match the native controls to the Direct2D reading surface, independent of
+// the older rose-colored settings skin.
+func (p *answerPopup) bodyTitle() string {if p==nil{return ""};return p.title}
+
+func resultCardPalette() uiPalette {
+	p:=systemPalette()
+	if p.dark {
+		p.background,p.surface,p.field=0x101218,0x232631,0x232631
+		p.text,p.muted,p.border=0xf2f1f7,0xa4a5b7,0x353948
+		p.primary,p.primaryText=0xbaaeff,0x17121d
+		p.secondary,p.secondaryPressed=0x292c38,0x393d4b
+	} else {
+		p.background,p.surface,p.field=0xf8f9fc,0xffffff,0xffffff
+		p.text,p.muted,p.border=0x252637,0x777b8c,0xe5e6ef
+		p.primary,p.primaryText=0x7258cf,0xffffff
+		p.secondary,p.secondaryPressed=0xf0f1f6,0xe5e6ef
+	}
+	return p
+}
+
 func (p *answerPopup) refreshTheme() {
 	if p == nil || p.window == 0 {
 		return
 	}
-	palette := systemPalette()
+	palette := resultCardPalette()
 	if palette == p.palette {
 		return
 	}
@@ -333,6 +354,13 @@ func popupWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 					palette:=activeAnswer.palette
 					sc:=func(v int32)int32{return int32(float64(v)*activeAnswer.scale+0.5)}
 					uiRoundSurface(hdc,rect32{sc(23),sc(164),rc.Right-sc(23),rc.Bottom-sc(89)},sc(16),palette.color(palette.surface),palette.color(palette.border))
+					ptr:=uxPtr("VoiceRewrite  ·  "+activeAnswer.bodyTitle())
+					old,_,_:=procSelectObject.Call(hdc,activeAnswer.fonts[0])
+					procSetBkMode.Call(hdc,TRANSPARENT)
+					procSetTextColor.Call(hdc,palette.color(palette.text))
+					label:=rect32{sc(28),sc(78),rc.Right-sc(28),sc(116)}
+					procDrawText.Call(hdc,uintptr(unsafe.Pointer(ptr)),^uintptr(0),uintptr(unsafe.Pointer(&label)),0)
+					procSelectObject.Call(hdc,old)
 				}
 				procEndPaintHandy.Call(hwnd,uintptr(unsafe.Pointer(&ps)))
 			}
@@ -508,7 +536,7 @@ func showAnswerPopup(msg popupMessage) error {
 	if hwnd == 0 {
 		return fmt.Errorf("create result card: %w", err)
 	}
-	popup := &answerPopup{window: hwnd, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation, palette: systemPalette(), scale: scale}
+	popup := &answerPopup{window: hwnd, title: msg.title, body: msg.body, app: msg.app, selection: msg.selection, allowApply: msg.allowApply, generation: msg.generation, palette: resultCardPalette(), scale: scale}
 	activeAnswer = popup
 	popup.bgBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.background))
 	popup.editBrush, _, _ = procCreateSolidBrush.Call(popup.palette.color(popup.palette.surface))
