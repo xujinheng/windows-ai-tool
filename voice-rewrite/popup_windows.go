@@ -535,10 +535,7 @@ func showAnswerPopup(msg popupMessage) error {
 		return err
 	}
 	popup.note = note
-	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
-	if n > 400 {
-		bodyStyle |= WS_VSCROLL
-	}
+	bodyStyle := uintptr(WS_CHILD | WS_VISIBLE | WS_BORDER | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY)
 	editorText := strings.ReplaceAll(strings.ReplaceAll(msg.body, "\r\n", "\n"), "\n", "\r\n")
 	editor, err := makeChild("EDIT", "", bodyStyle, 22, 77, cw-44, ch-132, hwnd, 0)
 	if err != nil {
@@ -546,6 +543,8 @@ func showAnswerPopup(msg popupMessage) error {
 		return err
 	}
 	popup.edit = editor
+	// Short multiline responses must be scrollable rather than silently clipped.
+	procSendMessage.Call(editor, 0x00D3, 3, uintptr(10|(10<<16)))
 	// Multiline EDIT controls default to a 32K character limit. Raise it
 	// before setting the text, otherwise the UI silently drops the tail.
 	procSendMessage.Call(editor, EM_LIMITTEXT, uintptr(len(utf16.Encode([]rune(editorText)))+1), 0)
