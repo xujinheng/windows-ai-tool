@@ -68,6 +68,32 @@ Reference patterns: [Apple HIG Layout](https://developer.apple.com/design/human-
 [Designing for macOS](https://developer.apple.com/design/human-interface-guidelines/designing-for-macos),
 and [Materials](https://developer.apple.com/design/human-interface-guidelines/materials).
 
-**Known limitations:** real Windows accessibility, custom scrollbar appearance,
-focus/IME behavior and DPI/monitor transitions still need interactive testing.
-Automated screen captures are visual regression evidence, not production sign-off.
+## Commercial-grade interaction checklist (v3)
+
+- **Unsaved edits:** edit and microphone-selection notifications set an explicit
+  dirty state, update the Save action, and request confirmation before Escape,
+  Close or the window X discards the modifications.
+- **Connection checks:** display success, ambiguous reachability, and failure in
+  differentiated accessible-contrast colors. The copy never treats a visible
+  model or a live URL as proof that an actual transcription/rewrite will work.
+- **Keyboard access:** settings uses dialog-style Tab traversal; the result
+  pane's real EDIT and action buttons now receive Tab/Shift+Tab, Space and Enter,
+  with a visible focus state.
+- **AI result card:** the former Windows caption has been replaced with a
+  draggable frameless tool surface, an explicit native Close button, and a
+  lighter two-action footer. Complete result text remains selectable and
+  scrollable; application into the original editor still uses the existing
+  safety guards.
+- **Contrast:** dark rose primary actions use dark ink rather than white,
+  improving text contrast from approximately 2.82:1 to 6.31:1.
+- **Native scrollbars:** try the OS-provided dark-control theme for EDIT and
+  COMBOBOX, falling back to standard Windows controls when unsupported.
+- **Visual CI:** include an application-local unsaved-state fixture in the
+  screenshot matrix. Check that it genuinely renders differently, verify the
+  Close control exists on the frameless result, and keep 125/150/200% coverage.
+
+**Known limitations:** real Windows accessibility, focus/IME behavior,
+visual font fallback on English-only Windows images, dark scrollbar coverage
+across Windows versions and DPI/monitor transitions still need interactive
+testing. Automated screen captures are visual regression evidence, not
+production sign-off.
