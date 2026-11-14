@@ -732,6 +732,8 @@ func uxSettingsWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 				color = p.palette.muted
 				if p.dirty {
 					color = p.palette.primary
+				} else if status:=uxWinText(p.hint); strings.HasPrefix(status,"✓") || strings.HasPrefix(status,"设置已保存") {
+					if p.palette.dark {color=0x7BD6B1} else {color=0x237A58}
 				}
 			} else if lParam == p.probeStatus[0] || lParam == p.probeStatus[1] {
 				color = uxSettingsFeedbackColor(p.palette, uxWinText(lParam))
