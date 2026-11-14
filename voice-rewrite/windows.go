@@ -918,8 +918,8 @@ func dispatchNativeMessage(msg *winMSG) {
 	}
 	// The result is a regular top-level HWND, not a dialog: explicitly
 	// translate Tab/Shift+Tab and button activation for its native controls.
-	if activeAnswer!=nil && activeAnswer.window!=0 {
-		if handled,_,_:=procIsDialogMessage.Call(activeAnswer.window,uintptr(unsafe.Pointer(msg)));handled!=0 {
+	if activeAnswer != nil && activeAnswer.window != 0 {
+		if handled, _, _ := procIsDialogMessage.Call(activeAnswer.window, uintptr(unsafe.Pointer(msg))); handled != 0 {
 			return
 		}
 	}

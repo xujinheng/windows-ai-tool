@@ -20,17 +20,21 @@ func runAnswerVisualPreview() {
 	}
 	// Render the real Apply/Copy action combinations without a target editor,
 	// model request or text replacement. Preview Apply is intentionally inert.
-	previewApply:=os.Getenv("VOICEREWRITE_VISUAL_APPLY")=="1"
+	previewApply := os.Getenv("VOICEREWRITE_VISUAL_APPLY") == "1"
 	var selection *selectedText
-	if previewApply {selection=&selectedText{}}
-	title:="AI 回答"
-	if previewApply {title="AI 改写结果"}
+	if previewApply {
+		selection = &selectedText{}
+	}
+	title := "AI 回答"
+	if previewApply {
+		title = "AI 改写结果"
+	}
 	err := showAnswerPopup(popupMessage{
-		title: title,
-		body: body,
-		anchor: trayPoint{X: 250, Y: 160},
-		selection:selection,
-		allowApply:previewApply,
+		title:      title,
+		body:       body,
+		anchor:     trayPoint{X: 250, Y: 160},
+		selection:  selection,
+		allowApply: previewApply,
 	})
 	if err != nil {
 		return
