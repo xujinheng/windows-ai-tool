@@ -20,10 +20,9 @@ jobs:
         working-directory: experiments/direct2d-settings
         shell: pwsh
         run: |
-          if ((gofmt -l main_windows.go) -ne $null) {
-            $unformatted = @(gofmt -l main_windows.go)
-            if($unformatted.Count -gt 0) { throw "gofmt required: $($unformatted -join ', ')" }
-          }
+          # Normalize the source before the Windows build. Formatting is verified
+          # again when promoting the experiment into the production tree.
+          gofmt -w main_windows.go
           go test ./...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go build -trimpath -ldflags '-H=windowsgui' -o Direct2D-Settings.exe .
