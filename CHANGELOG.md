@@ -1,3 +1,10 @@
+## v0.26.0 (development build)
+
+- Replaced the single “last result” recovery with a bounded, memory-only history of up to 10 complete results. Tray menu labels do not expose dictated content; clear history explicitly. Added race and eviction tests.
+- The ASR connection button now exercises the real multipart WAV audio transcription route, surfacing HTTP 415, missing endpoints and authorization errors instead of treating `/models` reachability as audio compatibility. Uses generated silence only.
+- Added GitHub Actions provenance attestations to version-tag builds of the portable archive, installer, and OneClick EXE. Attestations do not substitute for publisher code signing.
+- Retained standard Inno Setup per-user installation and unsigned prerelease policy; real Windows desktop tests and Authenticode publisher signing remain outside the build environment.
+
 ## v0.25.0 — Windows interaction hardening (development)
 
 - Added microphone selection in Settings using Windows WinMM enumeration, persisting `audio_device_id` (-1 means system default).

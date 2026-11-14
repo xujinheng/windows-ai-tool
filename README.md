@@ -8,7 +8,7 @@ implemented in Go and Win32. It connects to separately configured OpenAI-compati
 
 - **Hold Mouse4** (or configure F1–F24) and dictate. Release to transcribe and attempt text insertion at the original caret.
 - **Select text, hold Mouse5** and speak an edit, translation, or question. Explicit edits may replace the selection after guarded validation; questions open a copyable result card.
-- Pause or resume hotkey interception, inspect last error, restore the most recent result in this session, and configure both services through the native tray settings.
+- Pause or resume hotkey interception, inspect last error, restore up to 10 recent results in this session, and configure both services through the native tray settings.
 
 ## Install and run
 
@@ -39,3 +39,7 @@ The native Go application is in [`voice-rewrite/`](voice-rewrite/); the independ
 ## v25 Windows usability & privacy
 
 The tray can check the GitHub Releases feed on demand (no silent installer downloads). The Settings window can select an input microphone, and a bounded Microsoft UI Automation worker checks the focused element's password status in addition to native password styles. See [v25 details](voice-rewrite/EXPERIENCE-V25.md).
+
+### v26 in-memory recovery and functional ASR checks
+
+The native tray offers a memory-only list of the last 10 dictation/rewrite results and a clear-history command. It deliberately shows no transcript text in menu labels. The ASR connection check sends a generated silent WAV through the actual transcription endpoint, identifying HTTP 415 and unsupported routes rather than mistaking `/models` for audio capability. See [v26 notes](voice-rewrite/EXPERIENCE-V26.md).

@@ -1,4 +1,4 @@
-# VoiceRewrite v25 — Windows native voice writing assistant
+# VoiceRewrite v26 — Windows native voice writing assistant
 
 VoiceRewrite is a native Windows 11 Go application. Hold **Mouse4**, or configure a standalone F-key in Settings, to dictate at the caret; hold **Mouse5** after selecting text to rewrite, translate, or ask a question. VoiceRewrite is a **client**, not a model installer: ASR and LLM endpoints are configured separately.
 
@@ -56,3 +56,9 @@ See `../installer/README.md` and `EXPERIENCE-V24.md` for release boundaries. Tag
 - Password-sensitive focus detection uses Win32 and Microsoft UI Automation `IsPassword` on a separate COM worker. Missing accessibility support can cause browser-style surfaces to reject automatic input. This check is best effort, not a guarantee of detecting every sensitive field.
 
 See [v25 development notes](EXPERIENCE-V25.md). This is an **unsigned development build**, not a production-certified application.
+
+
+## Session result history and real ASR capability check (v26)
+
+- The tray keeps up to **10 recent text results** in memory only. Use “最近 10 次结果” to reopen an entry without rewriting the original editor; use “清空本次会话历史” to erase the in-memory list. Results are not saved to disk. Menu entries display only category and time, never dictated text. If the process exits, history is lost. An individual result larger than 4 MiB is excluded from the recovery cache, but remains fully available in its original card.
+- The ASR “检测” action now sends **one second of generated silent WAV** to the configured `POST /v1/audio/transcriptions` endpoint using the actual multipart request format and model ID. This catches servers that list a model but reject audio with HTTP 415. It uploads no microphone recordings. A successful silent-file request is **not** proof of microphone quality or transcription accuracy; follow with real dictation. LLM checks still inspect the configured model via `/v1/models`.

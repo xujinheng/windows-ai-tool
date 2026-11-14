@@ -21,3 +21,7 @@ To delete local settings, exit VoiceRewrite and remove `%APPDATA%\VoiceRewrite`.
 ## v25 update and focus checks
 
 A GitHub update check occurs **only** when the user selects “检查更新” in the tray. The request to `api.github.com` includes no audio, transcripts, API keys, or user configuration; GitHub necessarily receives ordinary network request metadata. The app opens the repository's fixed HTTPS Releases page only after confirmation and does not download or execute any installer. Focused input controls are additionally checked using Windows UI Automation `CurrentIsPassword`; providers may be incomplete, and this is not a universal protection guarantee.
+
+## Session recovery data (v26)
+
+Up to 10 text results totaling no more than 4 MiB can be retained **in process memory only** for recovery via the system tray. They are not written to configuration, logs or telemetry. The tray menu contains only item type and clock time. Use the **clear current session history** menu item to discard them, or exit VoiceRewrite. Results too large for the cache are not silently truncated. The ASR connection check uploads a locally generated **silent audio test file**, not microphone data, to the user-configured ASR API.
