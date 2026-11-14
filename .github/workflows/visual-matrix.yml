@@ -52,6 +52,10 @@ jobs:
             public static extern IntPtr GetDlgItem(IntPtr hwnd,int id);
             [DllImport("user32.dll")]
             public static extern bool IsWindowVisible(IntPtr hwnd);
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)]
+            public static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
+            [DllImport("user32.dll",CharSet=CharSet.Unicode)]
+            public static extern bool SetWindowText(IntPtr hwnd,string value);
           }
           '@
           $exe=Join-Path (Get-Location) 'voice-rewrite/VoiceRewrite.exe'
@@ -59,6 +63,7 @@ jobs:
             @{id='settings-light';kind='settings';theme='light';scale='1'},
             @{id='settings-dark';kind='settings';theme='dark';scale='1'},
             @{id='settings-writing';kind='settings';theme='light';scale='1';tab='1'},
+            @{id='settings-dirty';kind='settings';theme='light';scale='1';dirty='1'},
             @{id='settings-shortcuts';kind='settings';theme='light';scale='1';tab='2'},
             @{id='settings-125';kind='settings';theme='light';scale='1.25'},
             @{id='settings-150';kind='settings';theme='dark';scale='1.5'},
@@ -96,6 +101,12 @@ jobs:
               }
               if($hwnd -eq [IntPtr]::Zero){throw "$($case.id): no HWND $class"}
               Start-Sleep -Milliseconds 450
+              if($case.dirty -eq '1') {
+                $edit=[MatrixWin]::FindWindowEx($hwnd,[IntPtr]::Zero,'Edit',$null)
+                if($edit -eq [IntPtr]::Zero -or -not [MatrixWin]::IsWindowVisible($edit)) {throw "No visible connection field for dirty-state verification"}
+                if(-not [MatrixWin]::SetWindowText($edit,'http://127.0.0.1:8080/v1-preview-only')) {throw "Could not type into real native EDIT"}
+                Start-Sleep -Milliseconds 280
+              }
               $rect=New-Object MatrixWin+RECT
               if(-not [MatrixWin]::GetWindowRect($hwnd,[ref]$rect)){throw "No window rect"}
               $w=$rect.Right-$rect.Left
@@ -147,13 +158,13 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $folder = 'visual-matrix'
-          $expected = @('settings-light-top','settings-dark-top','settings-writing-top','settings-shortcuts-top','settings-125-top','settings-150-top','settings-200-top','settings-200-bottom','answer-light-top','answer-dark-long-top','recording-200-top')
+          $expected = @('settings-light-top','settings-dark-top','settings-writing-top','settings-dirty-top','settings-shortcuts-top','settings-125-top','settings-150-top','settings-200-top','settings-200-bottom','answer-light-top','answer-dark-long-top','recording-200-top')
           foreach ($name in $expected) {
             $path = Join-Path $folder ($name + '.png')
             if (!(Test-Path -LiteralPath $path)) { throw "Missing actual capture: $name" }
             if ((Get-Item $path).Length -lt 2000) { throw "Unusually small capture: $name" }
           }
-          foreach ($pair in @(@('settings-light-top','settings-dark-top'),@('settings-light-top','settings-writing-top'),@('settings-light-top','settings-shortcuts-top'),@('settings-200-top','settings-200-bottom'))) {
+          foreach ($pair in @(@('settings-light-top','settings-dark-top'),@('settings-light-top','settings-writing-top'),@('settings-light-top','settings-dirty-top'),@('settings-light-top','settings-shortcuts-top'),@('settings-200-top','settings-200-bottom'))) {
             $first = (Get-FileHash (Join-Path $folder ($pair[0] + '.png')) -Algorithm SHA256).Hash
             $second = (Get-FileHash (Join-Path $folder ($pair[1] + '.png')) -Algorithm SHA256).Hash
             if ($first -eq $second) { throw "Visual states rendered identically: $($pair -join ' vs ')" }
